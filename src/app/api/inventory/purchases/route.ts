@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { PurchaseLineError, type PurchaseItemInput } from "@/lib/purchase-lines";
@@ -14,7 +15,7 @@ const PURCHASE_STATUSES = ["draft", "ordered", "received", "cancelled"] as const
  * caller picks a date, not an instant.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -67,7 +68,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
  * since suppliers invoice by the purchased quantity, not the base unit.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.purchasesManage);
   if (error) return error;
 
   let body: { supplierId?: string | null; note?: string; purchaseDate?: string | null; items?: PurchaseItemInput[] };

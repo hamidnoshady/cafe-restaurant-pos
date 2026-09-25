@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { WELL_KNOWN_CODES } from "@/lib/coa-template";
@@ -23,7 +24,7 @@ function inventoryCodeFor(industry: string | null): string | null {
 
 /** The markdown planner: slow/dead stock, with near-expiry cosmetics first. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const industry = await getBusinessIndustry(session.businessId);
@@ -41,7 +42,7 @@ export const GET = withTenantScope(async () => {
 
 /** Applies an accepted markdown: new price on the sell screen + a ledger write-down. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
 
   const industry = await getBusinessIndustry(session.businessId);

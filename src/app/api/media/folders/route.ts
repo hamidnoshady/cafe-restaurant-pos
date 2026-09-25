@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { MAX_FOLDER_DEPTH } from "@/lib/media";
 import { listMediaFolders } from "@/lib/media-service";
 
 /** The library's visual folder tree: list and create. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.mediaView);
   if (error) return error;
   return NextResponse.json({ folders: await listMediaFolders(session.businessId) });
 });
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.mediaManage);
   if (error) return error;
 
   let body: { name?: unknown; parentId?: unknown };

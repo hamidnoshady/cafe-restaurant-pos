@@ -29,7 +29,6 @@ export async function requireWpSection(key: WpSectionKey) {
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
-  if (!canViewWpSection(permissions, key)) redirect("/dashboard");
+  if (!canViewWpSection(access?.permissions ?? new Set(), key)) redirect("/dashboard");
   return session;
 }

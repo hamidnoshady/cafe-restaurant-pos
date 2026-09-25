@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession, withTenantScope } from "@/lib/auth";
+import { getSession, requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { computeSetupState, hasAnyUser } from "@/lib/setup-state";
 
 /**
@@ -12,9 +13,8 @@ export const GET = withTenantScope(async () => {
   if (!session) {
     return NextResponse.json({ needsBootstrap: !(await hasAnyUser()) });
   }
-  if (session.role !== "owner" && session.role !== "manager") {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-  const state = await computeSetupState(session.businessId);
+  const guard = await requirePermission(PERMISSIONS.settingsManage);
+  if (guard.error) return guard.error;
+  const state = await computeSetupState(guard.session.businessId);
   return NextResponse.json(state);
 });

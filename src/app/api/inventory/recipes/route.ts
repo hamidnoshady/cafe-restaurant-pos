@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { positiveQuantityText } from "@/lib/inventory-exact";
 
 /** Upsert one recipe line: how much of an inventory item one unit of a menu item consumes. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
 
   let body: { menuItemId?: string; inventoryItemId?: string; quantity?: number | string };
@@ -46,7 +47,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 });
 
 export const DELETE = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
 
   const { searchParams } = new URL(request.url);

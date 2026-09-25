@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { isHoloo } from "@/lib/integrations/provider-registry";
 import { beginImportRun, completeImportRun, listImportRuns } from "@/lib/integrations/holoo/migration-run-service";
@@ -15,7 +16,7 @@ import type { HolooVoucher } from "@/lib/integrations/holoo/journal-plan";
 import type { OpeningBalanceLine } from "@/lib/integrations/holoo/journal-import-service";
 
 export const GET = withTenantScope(async (_request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
   const { id } = await context.params;
   const runs = await listImportRuns(session.businessId, id);
@@ -30,7 +31,7 @@ interface MigrationManifest {
 }
 
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   const { id } = await context.params;
 

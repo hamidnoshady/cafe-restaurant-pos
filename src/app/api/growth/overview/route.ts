@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { growthOverviewForSession } from "@/lib/growth-overview";
 
@@ -13,7 +13,7 @@ import { growthOverviewForSession } from "@/lib/growth-overview";
  * same reason the ledger's payroll tab is not for managers.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requirePermission(PERMISSIONS.growthManage);
+  const { session, error } = await requirePermission(PERMISSIONS.growthView);
   if (error) return error;
 
   return NextResponse.json({ overview: await growthOverviewForSession(session) });

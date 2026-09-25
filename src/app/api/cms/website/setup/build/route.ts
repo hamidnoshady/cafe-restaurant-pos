@@ -20,7 +20,7 @@ import { buildWebsite } from "@/lib/website/setup-service";
  * strongest of the four website keys rather than plain `website.manage`.
  */
 export const POST = withTenantScope(async () => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteConfigure);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsConfigure);
   if (error) return error;
 
   const result = await buildWebsite(session.businessId);

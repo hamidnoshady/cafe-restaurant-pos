@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { validateReportConfig, type ReportConfig } from "@/lib/reports";
 import { runCustomReportQuery } from "@/lib/reports-service";
 
 /** Runs an ad-hoc custom report config (the report builder's "preview" / final run). */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsExport);
   if (error) return error;
 
   let config: ReportConfig;

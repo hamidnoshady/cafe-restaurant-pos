@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { redeemGiftCard } from "@/lib/promotions-service";
 
 /** Redeems (spends) part or all of a gift card, debiting its liability. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyManage);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

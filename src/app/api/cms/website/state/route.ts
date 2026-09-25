@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { cmsWebsiteState } from "@/lib/cms/website-service";
 
@@ -8,7 +8,7 @@ import { cmsWebsiteState } from "@/lib/cms/website-service";
  * which CMS site is it (masked — the browser never sees the key).
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsView);
   if (error) return error;
 
   const connection = await cmsWebsiteState(session.businessId);

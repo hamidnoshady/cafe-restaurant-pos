@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { validateReportConfig, type ReportConfig } from "@/lib/reports";
 import { createSavedReport, ensureStandardSavedReports, listSavedReports } from "@/lib/reports-service";
 
 /** Saved reports (standard + custom), for the "پیام‌های ذخیره‌شده" list and dashboard-widget picker. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsView);
   if (error) return error;
 
   await ensureStandardSavedReports(session.businessId);
@@ -15,7 +16,7 @@ export const GET = withTenantScope(async () => {
 
 /** Saves a custom report built in the report builder. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsExport);
   if (error) return error;
 
   let body: { name?: string; config?: ReportConfig };

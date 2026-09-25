@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { connectCmsWebsite, type WebsiteConnectInput } from "@/lib/cms/website-service";
 
@@ -10,7 +10,7 @@ import { connectCmsWebsite, type WebsiteConnectInput } from "@/lib/cms/website-s
  * key — rotation without a migration.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteConfigure);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsConfigure);
   if (error) return error;
 
   let body: Partial<WebsiteConnectInput>;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
+import { type SessionPayload, withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { getPool } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -17,7 +18,7 @@ async function ownedItem(session: SessionPayload, id: string) {
 
 /** Receives one batch of a batch-tracked item, rolling item_stock forward as the sum of its batches. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "cosmetics");
   if (industryError) return industryError;

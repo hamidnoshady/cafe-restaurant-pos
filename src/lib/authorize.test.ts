@@ -175,7 +175,7 @@ describe("the database is the authority, not the token", () => {
 
 describe("anyPermission", () => {
   it("allows when the member holds one of the listed keys", async () => {
-    stub({ member: membership({ role: "viewer" }) });
+    stub({ member: membership({ role: "cashier", permissions: { granted: ["team.view"] } }) });
     const decision = await authorize(SESSION, {
       anyPermission: [PERMISSIONS.teamView, PERMISSIONS.teamManage],
     });

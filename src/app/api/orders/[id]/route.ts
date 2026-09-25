@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { recomputeOrderTotals } from "@/lib/order-totals";
 import { getOrderDetail } from "@/lib/order-read-service";
@@ -14,7 +15,7 @@ import { tomanText } from "@/lib/ai-labels";
 import { toPersianDigits } from "@/lib/digits";
 
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ordersView);
   if (error) return error;
   const { id } = await context.params;
 
@@ -36,7 +37,7 @@ interface PatchBody {
 
 /** Update note/discount, or void the whole order — only while status = 'open'. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.ordersCreate);
   if (error) return error;
   const { id } = await context.params;
 

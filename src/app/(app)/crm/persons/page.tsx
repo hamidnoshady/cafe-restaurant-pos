@@ -18,7 +18,7 @@ export default async function CrmCustomerIndexPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canViewCrmSection(permissions, "persons")) redirect(crmFallbackHref(permissions));
 
   return (

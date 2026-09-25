@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { createCmsPost, type CmsPostInput } from "@/lib/cms/website-service";
 
 /** `POST /api/cms/website/posts` — create a post on the connected CMS site. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteManage);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsContentManage);
   if (error) return error;
 
   let body: Partial<CmsPostInput>;

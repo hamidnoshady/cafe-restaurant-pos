@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { testWebsiteConnection } from "@/lib/website/connection-service";
 
 /** Re-run the connection test on the stored credential; records last_checked_at / last_error. */
 export const POST = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   const result = await testWebsiteConnection(session.businessId);

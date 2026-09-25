@@ -130,6 +130,8 @@ export type AccessDecision = AccessAllowed | AccessDenied;
 export interface AuthorizeRequest {
   /** The capability being exercised. The normal case. */
   permission?: Permission;
+  /** Every listed capability is required. */
+  allPermissions?: readonly Permission[];
   /**
    * Any one of these permissions is enough. For endpoints that serve both a
    * reader and an editor — `team.view` OR `team.manage` — where demanding the
@@ -192,9 +194,11 @@ interface MembershipRow extends Record<string, unknown> {
   role: Role;
   permissions: unknown;
   is_active: boolean;
+  membership_status: string | null;
   location_id: string | null;
   location_scope: unknown;
   business_status: string;
+  custom_role_permissions: string[] | null;
 }
 
 /**
@@ -217,11 +221,14 @@ export async function loadMembership(
         `SELECT u.role,
                 u.permissions,
                 u.is_active,
+                u.membership_status::text AS membership_status,
                 u.location_id,
                 u.location_scope::text AS location_scope,
-                b.status::text          AS business_status
+                b.status::text          AS business_status,
+                CASE WHEN tr.is_active THEN ARRAY(SELECT jsonb_array_elements_text(tr.permissions)) ELSE NULL END AS custom_role_permissions
            FROM users u
            JOIN businesses b ON b.id = u.business_id
+           LEFT JOIN tenant_roles tr ON tr.id = u.custom_role_id AND tr.business_id = u.business_id
           WHERE u.id = $1 AND u.business_id = $2`,
         [session.sub, session.businessId],
       ),
@@ -231,14 +238,15 @@ export async function loadMembership(
     if (!row) return null;
 
     const overrides = parseOverrides(row.permissions);
+    const active = row.is_active && (row.membership_status == null || row.membership_status === "active");
     return {
       userId: session.sub,
       businessId: session.businessId,
       role: row.role,
-      isActive: row.is_active,
+      isActive: active,
       businessStatus: row.business_status,
       overrides,
-      permissions: effectivePermissions(row.role, overrides),
+      permissions: effectivePermissions(row.role, overrides, row.custom_role_permissions),
       locationScope: isLocationScope(row.location_scope) ? row.location_scope : "home",
       homeLocationId: row.location_id,
       assignedLocationIds: () => loadAssignedLocations(session.sub, session.businessId),
@@ -277,7 +285,8 @@ async function loadAssignedLocations(userId: string, businessId: string): Promis
  * revocation is the `employee_sessions` row, re-checked in `getSession()`.
  */
 async function platformIdentityRevoked(session: SessionPayload): Promise<boolean> {
-  if (!session.platformUserId || !session.tokenVersion) return false;
+  if (!session.platformUserId) return false;
+  if (!session.tokenVersion) return true;
   const { rows } = await withoutTenantScope("authorization-membership", () =>
     query<{ token_version: number }>(
       `SELECT token_version FROM platform_users WHERE id = $1`,
@@ -341,6 +350,17 @@ export async function authorize(
       status: 403,
     };
   }
+  if (request.allPermissions && request.allPermissions.length > 0) {
+    const missing = request.allPermissions.find((p) => !membership.permissions.has(p));
+    if (missing) {
+      return {
+        ok: false,
+        code: isOwnerOnlyPermission(missing) ? "OWNER_ONLY" : "MISSING_PERMISSION",
+        permission: missing,
+        status: 403,
+      };
+    }
+  }
   if (request.anyPermission && request.anyPermission.length > 0) {
     const held = request.anyPermission.some((p) => membership.permissions.has(p));
     if (!held) {
@@ -389,7 +409,7 @@ export async function canActInLocation(
     defaultLocationId: membership.homeLocationId,
     assignedLocationIds:
       membership.locationScope === "selected" ? await membership.assignedLocationIds() : [],
-    scope: membership.locationScope,
+    locationScope: membership.locationScope,
   };
   return accessibleLocationIds(ctx, [locationId]).includes(locationId);
 }

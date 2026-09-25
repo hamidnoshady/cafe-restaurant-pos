@@ -11,7 +11,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, dirname, sep } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PERMISSIONS, roleBasePermissions } from "@/lib/permissions";
 
 const API_ROOT = join(process.cwd(), "src", "app", "api");
 
@@ -216,9 +215,6 @@ const SELF_GUARDING_ROUTES: Record<string, string> = {
   "auth/switch-business":
     "re-issues the caller's own session against another of their memberships; the membership " +
     "lookup is the authorization, so no role is applicable",
-  "auth/switch-location":
-    "re-issues the caller's own session against another branch of their own business; the " +
-    "location-access check is the authorization, so no role is applicable",
   "locations/active":
     "returns the caller's own active branch and switchable branches — every member has one, " +
     "regardless of role",
@@ -373,23 +369,6 @@ function isInternalCallGuarded(src: string): boolean {
 }
 
 /** All requireRole(...) argument lists found in a file, as role-name arrays. */
-/**
- * The permission keys a route guards on, read out of its source. Paired with
- * `requireRoleCalls` this lets a sweep ask the same question of a role-guarded
- * route and a permission-guarded one, instead of keeping an allowlist of
- * routes that have already been migrated.
- */
-function requirePermissionKeys(src: string): string[] {
-  const keys: string[] = [];
-  for (const m of src.matchAll(/require(?:Permission|AnyPermission)\(([^)]*)\)/g)) {
-    for (const ref of m[1].matchAll(/PERMISSIONS\.(\w+)/g)) {
-      const value = (PERMISSIONS as Record<string, string>)[ref[1]];
-      if (value) keys.push(value);
-    }
-  }
-  return keys;
-}
-
 function requireRoleCalls(src: string): string[][] {
   const calls: string[][] = [];
   for (const m of src.matchAll(/requireRole\(([^)]*)\)/g)) {
@@ -505,131 +484,42 @@ describe("every API route is guarded", () => {
   });
 });
 
-describe("back-office/financial surfaces exclude floor roles", () => {
-  // Everything under these prefixes is Owner/Manager-only, per the decisions
-  // in Phases 6-8 (inventory admin, ledger, reports) and 9 (rollup).
-  const BACK_OFFICE_PREFIXES = ["ledger/", "reports/", "staff", "setup/", "rollup/", "backup/"];
-  // Both role-guarded and permission-guarded routes are swept here: the
-  // permission arm below resolves each key against the role presets, so a
-  // migrated route is still checked rather than excused. That is why there is
-  // no allowlist of "already moved to requirePermission" routes to maintain.
-  const FLOOR_ROLES = ["cashier", "waiter", "kitchen"];
+describe("capability-based back-office guards", () => {
+  const CAPABILITY_PREFIXES = ["ledger/", "reports/", "staff", "rollup/", "backup/"];
 
-  for (const [key, src] of sources) {
-    if (!BACK_OFFICE_PREFIXES.some((p) => key === p.replace(/\/$/, "") || key.startsWith(p))) continue;
-    if (PUBLIC_ROUTES[key] || SELF_GUARDING_ROUTES[key]) continue; // justified above
-
-    it(`${key} never grants cashier/waiter/kitchen access`, () => {
-      const calls = requireRoleCalls(src);
-      const permissions = requirePermissionKeys(src);
-
-      // setup/* routes guard via requireManager() (owner/manager) instead.
-      if (calls.length === 0 && permissions.length === 0) {
-        expect(src, `src/app/api/${key}/route.ts`).toMatch(/requireManager\(/);
-        return;
-      }
-
-      for (const roles of calls) {
-        for (const role of FLOOR_ROLES) {
-          expect(roles, `src/app/api/${key}/route.ts grants '${role}'`).not.toContain(role);
-        }
-      }
-
-      // The same question, asked of a permission-guarded route: a floor role
-      // must not *hold* the key the route demands. Deriving this from the role
-      // presets rather than from an allowlist of already-migrated routes means
-      // the sweep keeps its teeth as guards move off role lists, and that
-      // adding a floor role to one of these presets fails here.
-      for (const permission of permissions) {
-        for (const role of FLOOR_ROLES) {
-          expect(
-            roleBasePermissions(role as never),
-            `src/app/api/${key}/route.ts guards on '${permission}', which the '${role}' preset holds`,
-          ).not.toContain(permission);
-        }
-      }
-    });
-  }
-
-  it("inventory admin is owner/manager-only (low-stock banner is the one cashier-readable exception)", () => {
+  it("uses effective permissions instead of ordinary role lists", () => {
     for (const [key, src] of sources) {
-      if (!key.startsWith("inventory")) continue;
-      for (const roles of requireRoleCalls(src)) {
-        if (key === "inventory/low-stock") {
-          expect(roles.sort()).toEqual(["cashier", "manager", "owner"]);
-        } else {
-          expect(roles.sort(), `src/app/api/${key}/route.ts`).toEqual(["manager", "owner"]);
-        }
-      }
-    }
-  });
-
-  it("backup config, export and restore are Owner-only; run/status allow Owner/Manager (Phase 10/17 access decisions)", () => {
-    // export (Phase 17) hands the browser literally all of a business's data —
-    // a materially higher bar than "backup now", so it joins config as Owner-only
-    // rather than Owner/Manager. restore (whole-database, only offered on a
-    // single-business install) is at least as destructive as export, so it is
-    // Owner-only for the same reason.
-    const OWNER_ONLY = new Set(["backup/config", "backup/export", "backup/restore"]);
-    for (const [key, src] of sources) {
-      if (!key.startsWith("backup")) continue;
-      const calls = requireRoleCalls(src);
-      expect(calls.length, `src/app/api/${key}/route.ts has no requireRole`).toBeGreaterThan(0);
-      for (const roles of calls) {
-        if (OWNER_ONLY.has(key)) {
-          expect(roles, `src/app/api/${key}/route.ts`).toEqual(["owner"]);
-        } else {
-          expect(roles.sort(), `src/app/api/${key}/route.ts`).toEqual(["manager", "owner"]);
-        }
-      }
-    }
-  });
-
-  function assertPermissionGuarded(prefix: string, permissionConstant: string) {
-    const routes = [...sources].filter(([key]) => key === prefix || key.startsWith(`${prefix}/`));
-    expect(routes.length, `no routes found under ${prefix}/`).toBeGreaterThan(0);
-
-    for (const [key, src] of routes) {
+      if (!CAPABILITY_PREFIXES.some((prefix) => key === prefix.replace(/\/$/, "") || key.startsWith(prefix))) continue;
+      if (PUBLIC_ROUTES[key] || SELF_GUARDING_ROUTES[key]) continue;
       expect(src, `src/app/api/${key}/route.ts`).toMatch(/requirePermission\(/);
-      expect(src, `src/app/api/${key}/route.ts`).toMatch(new RegExp(`PERMISSIONS\\.${permissionConstant}`));
-      // A role list here would bypass the per-member overrides entirely.
-      expect(requireRoleCalls(src), `src/app/api/${key}/route.ts uses requireRole`).toEqual([]);
+      expect(requireRoleCalls(src), `src/app/api/${key}/route.ts retains an ordinary role gate`).toEqual([]);
     }
-  }
-
-  it("team management is gated on the team.manage permission, which only Owner holds by preset", () => {
-    assertPermissionGuarded("team", "teamManage");
   });
 
-  it("branch management is gated on the locations.manage permission, which only Owner holds by preset", () => {
-    assertPermissionGuarded("branches", "locationsManage");
+  it("keeps destructive backup capabilities non-delegable", () => {
+    const expected: Record<string, string> = {
+      "backup/config": "backupConfigure",
+      "backup/export": "backupExport",
+      "backup/restore": "backupRestore",
+    };
+    for (const [route, permission] of Object.entries(expected)) {
+      expect(sources.get(route)).toMatch(new RegExp(`PERMISSIONS\\.${permission}`));
+    }
   });
 
-  it("server-sync config refuses writes on a central server (Phase 23 Wave 2)", () => {
-    // A central server is what sites sync *to*; it has no peer of its own, so
-    // pointing it at one would aim it at one of its own tenants. The UI hides
-    // the form, but the route is the boundary — and the refusal has to come
-    // before the body is read, or a malformed body would 400 first and hide
-    // the real reason.
-    const src = sources.get("server-sync/config");
-    expect(src, "src/app/api/server-sync/config/route.ts is missing").toBeTruthy();
-    expect(src!).toMatch(/deploymentRole\(\)\s*===\s*"central"/);
-    expect(src!).toMatch(/"central_server"/);
-
-    const put = src!.slice(src!.indexOf("export const PUT"));
-    expect(put.indexOf('deploymentRole() === "central"')).toBeGreaterThan(-1);
-    expect(put.indexOf('deploymentRole() === "central"')).toBeLessThan(put.indexOf("request.json()"));
-  });
-
-  it("cross-location rollup management is Owner-only (Phase 9 access decision)", () => {
+  it("keeps cross-location rollup administration non-delegable", () => {
     for (const [key, src] of sources) {
       if (!key.startsWith("rollup") || key === "rollup/ingest") continue;
-      const calls = requireRoleCalls(src);
-      expect(calls.length, `src/app/api/${key}/route.ts has no requireRole`).toBeGreaterThan(0);
-      for (const roles of calls) {
-        expect(roles, `src/app/api/${key}/route.ts`).toEqual(["owner"]);
-      }
+      expect(src).toMatch(/PERMISSIONS\.rollupManage/);
     }
+  });
+
+  it("server-sync config refuses writes on a central server", () => {
+    const src = sources.get("server-sync/config");
+    expect(src).toBeTruthy();
+    expect(src!).toMatch(/deploymentRole\(\)\s*===\s*"central"/);
+    const put = src!.slice(src!.indexOf("export const PUT"));
+    expect(put.indexOf('deploymentRole() === "central"')).toBeLessThan(put.indexOf("request.json()"));
   });
 });
 

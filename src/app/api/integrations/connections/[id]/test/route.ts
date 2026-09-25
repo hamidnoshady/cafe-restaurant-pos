@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection, testConnection } from "@/lib/integrations/connections-service";
 import { testHolooConnection } from "@/lib/integrations/holoo/connection-service";
 import { isHoloo } from "@/lib/integrations/provider-registry";
 
 export const POST = withTenantScope(async (_request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   const { id } = await context.params;
 

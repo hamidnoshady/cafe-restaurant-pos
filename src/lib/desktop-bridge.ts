@@ -66,6 +66,8 @@ export interface DesktopPrintingBridge {
   discoverNetworkPrinters(): Promise<{ ok: boolean; printers?: DesktopDiscoveredPrinter[]; error?: string; detail?: string }>;
   probe(target: PrinterTarget): Promise<{ ok: boolean; reachable?: boolean; detail?: string; error?: string }>;
   sendRaw(target: PrinterTarget, dataBase64: string): Promise<{ ok: boolean; error?: string; detail?: string }>;
+  /** Silent page print of a PNG through the Windows driver. Absent on older desktop builds. */
+  sendPage?(printerName: string, dataBase64: string): Promise<{ ok: boolean; error?: string; detail?: string }>;
 }
 
 export interface DesktopFolderSpaceCheck {

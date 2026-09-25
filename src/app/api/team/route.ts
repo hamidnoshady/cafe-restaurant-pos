@@ -17,7 +17,6 @@ import { canonicalMemberPhone } from "@/lib/phone-otp";
 import { ASSIGNABLE_ROLES } from "@/lib/roles";
 import type { Role } from "@/lib/auth";
 
-
 /**
  * The business's members, with their effective permissions resolved, and the
  * business's branches — the team screen assigns members to branches, and it

@@ -14,7 +14,6 @@ import { query } from "@/lib/db";
 import { ASSIGNABLE_ROLES } from "@/lib/roles";
 import type { Role } from "@/lib/auth";
 
-
 function errorResponse(err: unknown): NextResponse {
   if (err instanceof TeamError) {
     // The lockout refusal carries a Persian explanation; the UI shows it as-is.
@@ -37,8 +36,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     isActive?: boolean;
     locationIds?: string[];
     defaultLocationId?: string | null;
-    /** 'all' | 'selected' | 'home' — the explicit branch policy (migration 0170). */
-    locationScope?: string;
+    locationScope?: "all" | "selected" | "home" | "none";
     permissions?: unknown;
     /** Phase 42 — set (or, with "", clear) the member's login phone. Stored unverified. */
     phone?: string;
@@ -52,21 +50,13 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   if (body.role !== undefined && !ASSIGNABLE_ROLES.includes(body.role)) {
     return NextResponse.json({ error: "invalid_role" }, { status: 400 });
   }
-  // Refused rather than ignored: silently dropping an unrecognised scope would
-  // leave the member on a policy the caller did not ask for and believes they
-  // changed.
-  if (body.locationScope !== undefined && !isLocationScope(body.locationScope)) {
+  if (body.locationScope !== undefined && !["all", "selected", "home", "none"].includes(body.locationScope)) {
     return NextResponse.json({ error: "invalid_location_scope" }, { status: 400 });
   }
+  if (body.locationScope === "selected" && (!body.locationIds || body.locationIds.length === 0)) {
+    return NextResponse.json({ error: "selected_locations_required" }, { status: 400 });
+  }
 
-  // Changing WHAT somebody may do is a different act from administering them,
-  // and needs the key carved out for it. `team.manage` alone covers creating
-  // staff, renaming them, moving them between branches, suspending them and
-  // resetting their credentials; handing out capability is how a delegated
-  // team administrator would escalate their own access, so it is gated
-  // separately. Only the fields that actually change access are affected —
-  // a suspend, a rename or a branch move still needs nothing more than
-  // `team.manage`, so nobody's existing workflow breaks.
   const changesAccess = body.role !== undefined || body.permissions !== undefined;
   if (changesAccess) {
     const escalation = await requirePermission(PERMISSIONS.teamPermissionsManage);
@@ -153,7 +143,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       isActive: body.isActive,
       locationIds: body.locationIds,
       defaultLocationId: body.defaultLocationId,
-      locationScope: isLocationScope(body.locationScope) ? body.locationScope : undefined,
+      locationScope: body.locationScope,
       overrides: body.permissions === undefined ? undefined : sanitizeOverrides(body.permissions),
     });
     /*

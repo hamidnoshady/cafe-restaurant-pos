@@ -1,90 +1,44 @@
 /**
- * Which branches a member may act in.
+ * Phase 14 — which branches a member may act in.
  *
  * Framework-free and pure (unit-tested in location-access.test.ts); the
  * DB-touching resolution that uses this lives in setup-state.ts, per the repo
  * convention that framework-free decision logic and its data lookup are
  * separate files.
  *
- * ## The rule used to be a fall-through, and the last case was a hole
- *
- * Before the authorization refactor this file resolved access by falling
- * through four cases, of which the fourth was "no `user_locations` rows and no
- * default `location_id` → every branch of the business". That made the
- * *absence of a decision* grant the *widest possible access*: any member
- * created by a path that did not set a home branch — an invitation accepted
- * without one, a form field left blank, an API-created member — silently
- * roamed every shop in the business, and no screen ever said so.
- *
- * ## It is now an explicit, stored policy
- *
- * `users.location_scope` (migration 0170) records the decision instead of
- * inferring it from missing data:
- *
- *   'all'      — every branch, now and in the future.
- *   'selected' — exactly the branches assigned in `user_locations`.
- *   'home'     — only the member's `location_id`.
- *
- * The column defaults to the NARROWEST value ('home'), and there is no
- * widening fallback left anywhere below: a member whose policy cannot be
- * satisfied reaches no branches rather than all of them. Deny by default.
- *
- * Existing members were backfilled to whatever reproduces the access they
- * already had (see 0170's header), so the deploy neither locks anyone out nor
- * escalates anyone; it only makes the policy visible and editable.
- *
- * `owner` remains whole-business by definition: ownership is not a branch
- * assignment, and restricting an owner to a subset of their own shops is not a
- * case worth modelling.
+ * The rule, in order:
+ *   1. `owner` always reaches every branch of their business. Ownership is
+ *      whole-business by definition — restricting an owner to a subset of
+ *      their own branches isn't a real-world case worth modelling.
+ *   2. An explicit `user_locations` assignment is the access set, full stop.
+ *      This is what lets an owner give one manager two of five branches.
+ *   3. No assignment but a default `location_id` (the shape every cashier,
+ *      waiter and kitchen member has always had) restricts to that one
+ *      branch — unchanged from pre-Phase-14 behaviour.
+ *   4. No assignment and no default (`location_id` NULL, the pre-Phase-14
+ *      "roaming manager") reaches every branch. This is also what makes a
+ *      single-location business behave exactly as before: one location, no
+ *      assignments, everyone reaches the only branch there is.
  */
 import type { Role } from "./auth-edge";
 
-/**
- * How broadly a member may move around the business's branches. Stored
- * explicitly on `users.location_scope` rather than inferred — see the header.
- */
-export type LocationScope = "all" | "selected" | "home";
+export type LocationScope = "all" | "selected" | "home" | "none";
 
-export const LOCATION_SCOPES: readonly LocationScope[] = ["all", "selected", "home"];
+export const LOCATION_SCOPES = ["all", "selected", "home", "none"] as const;
 
 export function isLocationScope(value: unknown): value is LocationScope {
   return typeof value === "string" && (LOCATION_SCOPES as readonly string[]).includes(value);
 }
 
+
 export interface LocationAccessContext {
   role: Role;
+  /** Explicit policy persisted on users.location_scope. */
+  locationScope?: LocationScope;
   /** users.location_id — the member's default/home branch, if any. */
   defaultLocationId: string | null;
-  /** user_locations rows for this member. Meaningful only when scope is 'selected'. */
+  /** user_locations rows for this member. */
   assignedLocationIds: string[];
-  /**
-   * users.location_scope. Optional so that a caller which has not yet been
-   * migrated to select the column still behaves predictably; when it is absent
-   * the scope is *derived* from the shape of the other two fields using the
-   * same mapping migration 0170's backfill applies. That derivation is a
-   * compatibility shim for reads, never a widening: it reproduces the stored
-   * value the backfill would have written for this row.
-   */
-  scope?: LocationScope;
-}
-
-/**
- * The scope to use when a caller did not supply one, mirroring 0170's backfill
- * exactly so that a not-yet-migrated read and a migrated one agree.
- */
-export function derivedLocationScope(
-  ctx: Pick<LocationAccessContext, "role" | "defaultLocationId" | "assignedLocationIds">,
-): LocationScope {
-  if (ctx.role === "owner") return "all";
-  if (ctx.assignedLocationIds.length > 0) return "selected";
-  if (ctx.defaultLocationId) return "home";
-  return "all";
-}
-
-/** The member's effective scope: what is stored, or what 0170 would have stored. */
-export function effectiveLocationScope(ctx: LocationAccessContext): LocationScope {
-  if (ctx.role === "owner") return "all";
-  return ctx.scope ?? derivedLocationScope(ctx);
 }
 
 /**
@@ -95,27 +49,26 @@ export function accessibleLocationIds(
   ctx: LocationAccessContext,
   businessLocationIds: string[],
 ): string[] {
-  switch (effectiveLocationScope(ctx)) {
-    case "all":
-      return businessLocationIds;
+  if (ctx.role === "owner") return businessLocationIds;
 
-    case "selected": {
-      // Intersected with the business's own branches, never trusted as-is:
-      // `assignedLocationIds` is a set of ids from `user_locations`, and the
-      // intersection is what stops a stale or cross-tenant row from granting
-      // anything. Callers pass only this business's active locations.
-      const assigned = new Set(ctx.assignedLocationIds);
-      return businessLocationIds.filter((id) => assigned.has(id));
-    }
-
-    case "home":
-      // No home branch recorded means no branch — NOT every branch. This is
-      // the fall-through that used to widen access; closing it is the point of
-      // the explicit scope.
-      return ctx.defaultLocationId && businessLocationIds.includes(ctx.defaultLocationId)
-        ? [ctx.defaultLocationId]
-        : [];
+  // Compatibility inference is only for callers/fixtures predating migration
+  // 0170. Persisted production memberships always carry an explicit policy.
+  const scope: LocationScope = ctx.locationScope ?? (
+    ctx.assignedLocationIds.length > 0
+      ? "selected"
+      : ctx.defaultLocationId
+        ? "home"
+        : "all"
+  );
+  if (scope === "all") return businessLocationIds;
+  if (scope === "none") return [];
+  if (scope === "selected") {
+    const assigned = new Set(ctx.assignedLocationIds);
+    return businessLocationIds.filter((id) => assigned.has(id));
   }
+  return ctx.defaultLocationId && businessLocationIds.includes(ctx.defaultLocationId)
+    ? [ctx.defaultLocationId]
+    : [];
 }
 
 export function canAccessLocation(

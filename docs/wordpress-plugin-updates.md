@@ -145,7 +145,7 @@ want the release notes in the details modal; otherwise tagging is enough.
 - New version in «افزونه‌ها ← به‌روزرسانی‌های موجود» with the standard
   «مشاهدهٔ جزئیات نسخهٔ …» modal (notes as the changelog) and one-click install.
   Auto-update toggles and `wp plugin update` work.
-- The plugin's settings screen («ووکامرس ← اتصال حسابداری») shows the installed
+- The plugin's «به‌روزرسانی» tab (top-level «اشوبه» admin menu) shows the installed
   version, the update **source** (your server or GitHub), the newest found version,
   the last check time, and a «بررسی به‌روزرسانی» button — the one user-initiated
   check. `wp pos-connector check-update` is its WP-CLI twin.

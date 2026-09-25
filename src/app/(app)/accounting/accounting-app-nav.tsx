@@ -54,7 +54,7 @@ export function AccountingAppNav({
   navItems = [],
   onNavigate,
 }: AppShellNavProps) {
-  const groups = accountingWorkspaceGroups({ permissions, navItems });
+  const groups = accountingWorkspaceGroups({ permissions: new Set(permissions), navItems });
 
   const inLedger = groups
     .find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY)

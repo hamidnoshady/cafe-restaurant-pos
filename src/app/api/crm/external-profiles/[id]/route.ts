@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveExternalProfile } from "@/lib/crm-external-identity";
 import { isUuid } from "@/lib/uuid";
 
@@ -28,7 +29,7 @@ type Action = (typeof ACTIONS)[number];
 
 export const POST = withTenantScope(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.crmManage);
     if (error) return error;
 
     const { id } = await context.params;

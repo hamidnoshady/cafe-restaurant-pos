@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { updateCmsSiteDomain } from "@/lib/cms/website-service";
 
@@ -10,7 +10,7 @@ import { updateCmsSiteDomain } from "@/lib/cms/website-service";
  * its admin) before the site serves on it.
  */
 export const PATCH = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteConfigure);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsConfigure);
   if (error) return error;
 
   let body: { domain?: unknown };

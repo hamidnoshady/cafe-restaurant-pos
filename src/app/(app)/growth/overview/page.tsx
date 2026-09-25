@@ -18,11 +18,9 @@ import { canViewGrowthSection, growthFallbackHref } from "../growth-routes";
 export default async function GrowthOverviewPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  // The member's live effective permissions — the same set the API enforces,
-  // so the page and the fetches inside it can never disagree about access.
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canViewGrowthSection(permissions, "overview")) redirect(growthFallbackHref(permissions));
 
-  return <GrowthSection section="overview" role={session.role} />;
+  return <GrowthSection section="overview" permissions={[...permissions]} />;
 }

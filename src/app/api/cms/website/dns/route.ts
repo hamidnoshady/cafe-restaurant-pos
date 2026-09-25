@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { cmsWebsiteDns } from "@/lib/cms/website-service";
 
@@ -10,7 +10,7 @@ import { cmsWebsiteDns } from "@/lib/cms/website-service";
  * (descriptor `domainVerified`).
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsView);
   if (error) return error;
 
   const result = await cmsWebsiteDns(session.businessId);

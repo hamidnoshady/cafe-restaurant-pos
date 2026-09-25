@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getRollupConfig, getRollupSyncState, setRollupConfig } from "@/lib/rollup-service";
 
 /** Local side: this location's push target (central URL + token) and current sync status. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.rollupManage);
   if (error) return error;
 
   const [config, syncState] = await Promise.all([
@@ -15,7 +16,7 @@ export const GET = withTenantScope(async () => {
 });
 
 export const PUT = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.rollupManage);
   if (error) return error;
 
   let body: { centralUrl?: string; token?: string; enabled?: boolean };

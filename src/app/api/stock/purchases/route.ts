@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { receiveItemPurchase, RetailStockError } from "@/lib/retail-stock-service";
@@ -7,7 +8,7 @@ import { enqueueHolooPurchase } from "@/lib/integrations/holoo/outbox-producer";
 
 /** This branch's item purchases plus its suppliers, for the purchase form. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -45,7 +46,7 @@ export const GET = withTenantScope(async () => {
 
 /** Receives one purchase: writes the document, receives stock, posts the AP entry. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.purchasesManage);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

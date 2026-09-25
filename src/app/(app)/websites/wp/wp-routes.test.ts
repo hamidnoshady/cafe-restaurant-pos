@@ -1,26 +1,18 @@
 /**
- * The WP Manager's section gate.
- *
- * Was `["owner", "manager"].includes(role)` for every section alike, while the
- * routes behind those sections enforced `website.*` capability keys. The gate
- * asks the routes' question now, and these tests pin two things: that each
- * built-in preset reaches exactly what it reached before, and that the one
- * section which *acts* on the live shop is separated from the ones that only
- * read it.
+ * The WP Manager's section gate asks for woocommerce.view, the same capability
+ * the manager's read routes enforce.
  */
 import { describe, expect, it } from "vitest";
-import { WP_SECTION_KEYS, canViewWpSection, type WpSectionKey } from "./wp-routes";
-import { roleBasePermissions } from "@/lib/permissions";
+import { WP_SECTION_KEYS, canViewWpSection } from "./wp-routes";
+import { roleBasePermissions, type Permission } from "@/lib/permissions";
 import type { Role } from "@/lib/auth";
 
-function of(role: Role | "none"): ReadonlySet<string> {
-  return new Set<string>(role === "none" ? [] : roleBasePermissions(role));
+function of(role: Role | "none"): ReadonlySet<Permission> {
+  return new Set<Permission>(role === "none" ? [] : roleBasePermissions(role));
 }
 
-const READ_ONLY_SECTIONS: readonly WpSectionKey[] = WP_SECTION_KEYS.filter((k) => k !== "queue");
-
 describe("canViewWpSection", () => {
-  it("gives owner and manager the whole manager, as before", () => {
+  it("gives owner, admin and manager the whole manager", () => {
     for (const role of ["owner", "admin", "manager"] as const) {
       for (const key of WP_SECTION_KEYS) {
         expect(canViewWpSection(of(role), key), `${role}/${key}`).toBe(true);
@@ -28,9 +20,7 @@ describe("canViewWpSection", () => {
     }
   });
 
-  it("still refuses the floor and the books entirely", () => {
-    // The manager writes to a live shopfront and reads every customer record;
-    // nothing in the till or ledger presets should reach it.
+  it("refuses roles that do not hold woocommerce.view", () => {
     for (const role of ["cashier", "waiter", "kitchen", "accountant", "none"] as const) {
       for (const key of WP_SECTION_KEYS) {
         expect(canViewWpSection(of(role), key), `${role}/${key}`).toBe(false);
@@ -38,32 +28,19 @@ describe("canViewWpSection", () => {
     }
   });
 
-  it("lets a read-only viewer look without handing them the sync queue", () => {
-    // The split this migration introduced. Being refused the whole manager
-    // because one of its eight sections is a control panel is the kind of
-    // all-or-nothing gate the permission model exists to replace.
-    for (const key of READ_ONLY_SECTIONS) {
-      expect(canViewWpSection(of("viewer"), key), key).toBe(true);
-    }
-    expect(canViewWpSection(of("viewer"), "queue")).toBe(false);
-  });
-
-  it("follows an override rather than the preset it came from", () => {
-    const cashierPlusRead = new Set([...of("cashier"), "website.view"]);
+  it("follows a woocommerce.view grant rather than the preset it came from", () => {
+    const cashierPlusRead = new Set<Permission>([...of("cashier"), "woocommerce.view"]);
     expect(canViewWpSection(cashierPlusRead, "products")).toBe(true);
-    expect(canViewWpSection(cashierPlusRead, "queue")).toBe(false);
+    expect(canViewWpSection(cashierPlusRead, "queue")).toBe(true);
 
-    const managerMinusManage = new Set(
-      [...of("manager")].filter((p) => p !== "website.manage"),
+    const managerMinusView = new Set<Permission>(
+      [...of("manager")].filter((p) => p !== "woocommerce.view" && p !== "woocommerce.manage"),
     );
-    expect(canViewWpSection(managerMinusManage, "queue")).toBe(false);
-    expect(canViewWpSection(managerMinusManage, "overview")).toBe(true);
+    // manage implies view, so stripping both is what closes the door.
+    expect(canViewWpSection(managerMinusView, "overview")).toBe(false);
   });
 
-  it("has a decision for every section, so a new one cannot default to open", () => {
-    // A section added to WP_SECTION_KEYS without an entry in the permission map
-    // would look up `undefined` and — if the map were a plain lookup with a
-    // fallback — be reachable by anyone. It must be reachable by no one.
+  it("stays closed with an empty permission set", () => {
     for (const key of WP_SECTION_KEYS) {
       expect(canViewWpSection(new Set(), key), key).toBe(false);
     }

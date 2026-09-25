@@ -16,7 +16,7 @@
 
 import type { AppShellNavProps } from "@/app/dashboard/app-shell-nav";
 import { AppSectionNav } from "@/app/dashboard/app-section-nav";
-import { crmNavItemsFor } from "./crm-nav";
+import { crmNavItemsForPermissions } from "./crm-nav";
 import { crmSectionHref, isCrmSectionPathname, type CrmSectionKey } from "./crm-routes";
 
 export function CrmAppNav({ shell, permissions, pathname, onNavigate }: AppShellNavProps) {
@@ -25,7 +25,7 @@ export function CrmAppNav({ shell, permissions, pathname, onNavigate }: AppShell
       ariaLabel="بخش‌های ارتباط با مشتری"
       title={shell.label}
       description={shell.description}
-      items={crmNavItemsFor(permissions)}
+      items={crmNavItemsForPermissions(new Set(permissions as import("@/lib/permissions").Permission[]))}
       hrefFor={crmSectionHref}
       isActive={(key) => isCrmSectionPathname(pathname, key)}
       onNavigate={onNavigate}

@@ -9,8 +9,8 @@ export default async function CrmDuplicatesPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canViewCrmSection(permissions, "duplicates")) redirect(crmFallbackHref(permissions));
 
-  return <CrmSection section="duplicates" role={session.role} />;
+  return <CrmSection section="duplicates" role={access?.role ?? session.role} permissions={[...permissions]} />;
 }

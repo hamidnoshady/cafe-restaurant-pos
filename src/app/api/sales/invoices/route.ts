@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool, query } from "@/lib/db";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { industryProfile } from "@/lib/industry-profile";
@@ -47,7 +48,7 @@ async function requireRetailIndustry(businessId: string) {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.ordersCreate);
   if (error) return error;
   const { industry, error: industryError } = await requireRetailIndustry(session.businessId);
   if (industryError) return industryError;
@@ -187,7 +188,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
  * must not download every historical invoice just to show page one.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ordersCreate);
   if (error) return error;
   const { error: industryError } = await requireRetailIndustry(session.businessId);
   if (industryError) return industryError;

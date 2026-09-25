@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { isHoloo } from "@/lib/integrations/provider-registry";
 import { runHolooReconciliation } from "@/lib/integrations/holoo/reconciliation-service";
@@ -7,7 +8,7 @@ import { runReconciliation } from "@/lib/integrations/reconciliation-service";
 
 /** Reconcile a period, dispatching on provider (WooCommerce or Holoo). */
 export const POST = withTenantScope(async (request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   const { id } = await context.params;
 

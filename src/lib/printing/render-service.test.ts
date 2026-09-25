@@ -22,7 +22,7 @@ import { PNG } from "pngjs";
 import { buildDrawerKickJob, buildPrintJob, packMonochromeRaster } from "../escpos";
 import * as chromium from "./chromium";
 import { decodePngToGrayscale } from "./raster";
-import { buildDraftTestBytes, buildJobBytes, printerRefusal, type StoredPrinter } from "./render-service";
+import { buildDraftTestBytes, buildJobBytes, preparePrint, printerRefusal, type StoredPrinter } from "./render-service";
 import type { ReceiptData } from "../receipt-template";
 import type { KitchenTicketData } from "../kitchen-ticket-template";
 import type { LabelData } from "../label-template";
@@ -152,25 +152,29 @@ describe("job rendering", () => {
     expect(bytes).toEqual(expectedJobFor(png));
   });
 
-  it("refuses a sheet document — sheets print through the browser dialog, not the thermal pipeline", async () => {
+  it("refuses to raster a sheet — pages are a driver image, not ESC/POS", async () => {
     await expect(
       buildJobBytes(printer({ type: "windows", systemName: "HP LaserJet" }), {
         type: "document",
         html: "<html><body>x</body></html>",
         paper: "a4",
       }),
-    ).rejects.toThrow("sheet_documents_print_in_the_browser");
+    ).rejects.toThrow("sheet_documents_print_as_pages");
     expect(chromium.renderHtmlToPng).not.toHaveBeenCalled();
   });
 });
 
 describe("cash drawer", () => {
-  it("kicks the drawer exactly when the printer is configured to", async () => {
-    const withKick = await buildJobBytes(printer({ type: "network", ip: "x", openDrawer: true }), { type: "receipt", receipt: RECEIPT });
-    expect(withKick).toEqual(expectedJobFor(png, { kickDrawer: true }));
+  it("never kicks because a printer has a drawer — only an explicit cash pulse does", async () => {
+    const configured = await buildJobBytes(printer({ type: "network", ip: "x", openDrawer: true }), { type: "receipt", receipt: RECEIPT });
+    expect(configured).toEqual(expectedJobFor(png));
 
-    const withoutKick = await buildJobBytes(printer({ type: "network", ip: "x", openDrawer: false }), { type: "receipt", receipt: RECEIPT });
-    expect(withoutKick).toEqual(expectedJobFor(png));
+    const pulsed = await buildJobBytes(printer({ type: "network", ip: "x", openDrawer: true }), {
+      type: "receipt",
+      receipt: RECEIPT,
+      kickDrawer: true,
+    });
+    expect(pulsed).toEqual(expectedJobFor(png, { kickDrawer: true }));
   });
 
   it("a drawer-kick job is the bare kick command", async () => {

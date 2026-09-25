@@ -9,8 +9,8 @@ export default async function CrmSegmentsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canViewCrmSection(permissions, "segments")) redirect(crmFallbackHref(permissions));
 
-  return <CrmSection section="segments" role={session.role} />;
+  return <CrmSection section="segments" role={access?.role ?? session.role} permissions={[...permissions]} />;
 }

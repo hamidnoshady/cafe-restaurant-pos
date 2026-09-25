@@ -120,7 +120,8 @@ type Draft = Omit<PermissionMetadata, "ownerOnly" | "delegatable"> &
 
 const DRAFTS: Draft[] = [
   // --- Sales & orders ------------------------------------------------------
-  { key: P.ordersCreate, group: "orders", label: "ثبت سفارش", description: "ایجاد سفارش جدید و افزودن اقلام به آن.", risk: "low", audit: false, implies: [P.menuView] },
+  { key: P.ordersView, group: "orders", label: "مشاهده سفارش‌ها", description: "دیدن سفارش‌های باز و بسته‌شده بدون تغییر آن‌ها.", risk: "low", audit: false },
+  { key: P.ordersCreate, group: "orders", label: "ثبت سفارش", description: "ایجاد سفارش جدید و افزودن اقلام به آن.", risk: "low", audit: false, implies: [P.menuView, P.ordersView] },
   { key: P.ordersDiscount, group: "orders", label: "اعمال تخفیف", description: "کاهش مبلغ سفارش پیش از تسویه.", risk: "medium", audit: true, implies: [P.ordersCreate] },
   { key: P.ordersVoid, group: "orders", label: "ابطال سفارش باز", description: "حذف سفارشی که هنوز تسویه نشده است.", risk: "medium", audit: true },
   { key: P.ordersAmendClosed, group: "orders", label: "اصلاح سفارش بسته", description: "تغییر یا حذف سفارشی که پرداخت شده است؛ درآمد، مالیات، بهای تمام‌شده و موجودی را برمی‌گرداند.", risk: "high", audit: true, implies: [P.ordersVoid] },
@@ -131,10 +132,12 @@ const DRAFTS: Draft[] = [
 
   // --- Floor ---------------------------------------------------------------
   { key: P.tablesManage, group: "floor", label: "مدیریت میزها", description: "باز و بسته کردن میز و جابه‌جایی سفارش بین میزها.", risk: "low", audit: false },
+  { key: P.tablesEdit, group: "floor", label: "ویرایش نقشه سالن", description: "تغییر نام، جایگاه، اندازه و وضعیت میزها. جدا از نشاندن مهمان.", risk: "medium", audit: true },
   { key: P.reservationsView, group: "floor", label: "مشاهده رزروها", description: "دیدن دفتر رزرو و رزروهای امروز.", risk: "low", audit: false },
   { key: P.reservationsManage, group: "floor", label: "مدیریت رزرو", description: "ثبت، تغییر و لغو رزرو.", risk: "low", audit: false, implies: [P.reservationsView] },
   { key: P.kitchenView, group: "floor", label: "نمایشگر آشپزخانه", description: "مشاهده و به‌روزرسانی وضعیت اقلام در آشپزخانه.", risk: "low", audit: false },
   { key: P.deliveryManage, group: "floor", label: "مدیریت ارسال", description: "تخصیص پیک و پیگیری وضعیت ارسال.", risk: "low", audit: false },
+  { key: P.deliveryConfigure, group: "floor", label: "پیکربندی ارسال", description: "نگهداری فهرست پیک‌ها و تنظیمات ارسال.", risk: "medium", audit: true, implies: [P.deliveryManage] },
 
   // --- Catalogue -----------------------------------------------------------
   { key: P.menuView, group: "menu", label: "مشاهده منو", description: "دیدن کالاها، دسته‌ها و قیمت‌ها.", risk: "low", audit: false },
@@ -195,15 +198,31 @@ const DRAFTS: Draft[] = [
 
   // --- Growth --------------------------------------------------------------
   { key: P.growthView, group: "growth", label: "مشاهده رشد", description: "صفحه مشتریان و گزارش‌های حسابداری رشد.", risk: "low", audit: false },
-  { key: P.growthManage, group: "growth", label: "مدیریت رشد", description: "داشبورد رشد، اجرای کمپین، ارسال پیامک، پورسانت و تنظیمات برنامه.", risk: "high", audit: true, implies: [P.growthView] },
+  { key: P.campaignsView, group: "growth", label: "مشاهده کمپین‌ها", description: "دیدن کمپین‌ها، کارت هدیه و مخاطبان بدون اجرای آن‌ها.", risk: "low", audit: false, implies: [P.growthView] },
+  { key: P.campaignsManage, group: "growth", label: "اجرای کمپین", description: "ساخت و ارسال کمپین، کارت هدیه و پیام.", risk: "high", audit: true, implies: [P.campaignsView, P.growthView] },
   { key: P.loyaltyView, group: "growth", label: "مشاهده باشگاه مشتریان", description: "مشاهده برنامه‌های وفاداری، امتیاز مشتری و یادآوری خرید مجدد.", risk: "low", audit: false },
-  { key: P.loyaltyManage, group: "growth", label: "مدیریت باشگاه مشتریان", description: "تعریف برنامه وفاداری، استفاده از امتیاز و اعطای اعتبار فروشگاهی.", risk: "high", audit: true, implies: [P.loyaltyView] },
+  { key: P.loyaltyManage, group: "growth", label: "مدیریت باشگاه مشتریان", description: "تعریف برنامه وفاداری، استفاده از امتیاز و اعطای اعتبار فروشگاهی.", risk: "high", audit: true, implies: [P.loyaltyView, P.growthView] },
+  { key: P.marketingConfigure, group: "growth", label: "تنظیمات بازاریابی", description: "پیکربندی برنامه رشد، جدا از اجرای یک کمپین.", risk: "high", audit: true, implies: [P.growthView] },
 
   // --- Website -------------------------------------------------------------
-  { key: P.websiteView, group: "website", label: "مشاهده وب‌سایت", description: "دیدن وضعیت سایت، محتوا، محصولات و سفارش‌های آنلاین.", risk: "low", audit: false },
-  { key: P.websiteManage, group: "website", label: "مدیریت محتوای وب‌سایت", description: "ویرایش پیش‌نویس‌ها، نوشته‌ها، محصولات، رسانه و سفارش‌ها.", risk: "medium", audit: false, implies: [P.websiteView] },
-  { key: P.websitePublish, group: "website", label: "انتشار در وب‌سایت", description: "منتشر کردن پیش‌نویس روی سایت عمومی. بلافاصله برای همه قابل مشاهده می‌شود.", risk: "high", audit: true, implies: [P.websiteManage] },
-  { key: P.websiteConfigure, group: "website", label: "پیکربندی وب‌سایت", description: "دامنه، DNS، CDN و راه‌اندازی سایت. می‌تواند سایت را از دسترس خارج کند.", risk: "critical", audit: true, implies: [P.websiteView] },
+  { key: P.websiteView, group: "website", label: "مشاهده وب‌سایت", description: "باز کردن مدیریت وب‌سایت و دیدن وضعیت کلی آن.", risk: "low", audit: false },
+  { key: P.websiteManage, group: "website", label: "مدیریت وب‌سایت", description: "کارهای وب‌سایت که نه محتوای CMS هستند و نه فروشگاه ووکامرس.", risk: "medium", audit: false, implies: [P.websiteView] },
+  { key: P.websiteSettingsManage, group: "website", label: "تنظیمات وب‌سایت", description: "تنظیمات سطح وب‌سایت، جدا از محتوا و فروشگاه.", risk: "medium", audit: true, implies: [P.websiteView] },
+  { key: P.cmsView, group: "website", label: "مشاهده محتوای سایت", description: "دیدن محتوا، محصولات و پیش‌نویس‌های سایت‌ساز.", risk: "low", audit: false },
+  { key: P.cmsContentManage, group: "website", label: "ویرایش محتوای سایت", description: "ویرایش پیش‌نویس‌ها، نوشته‌ها، محصولات و رسانه.", risk: "medium", audit: false, implies: [P.cmsView] },
+  { key: P.cmsPublish, group: "website", label: "انتشار در سایت", description: "منتشر کردن پیش‌نویس روی سایت عمومی. بلافاصله برای همه قابل مشاهده می‌شود.", risk: "high", audit: true, implies: [P.cmsView] },
+  { key: P.cmsConfigure, group: "website", label: "پیکربندی سایت", description: "دامنه، DNS، CDN و راه‌اندازی سایت. می‌تواند سایت را از دسترس خارج کند.", risk: "critical", audit: true, implies: [P.cmsView] },
+  { key: P.woocommerceView, group: "website", label: "مشاهده ووکامرس", description: "دیدن سفارش‌ها، محصولات و صف همگام‌سازی فروشگاه.", risk: "low", audit: false },
+  { key: P.woocommerceManage, group: "website", label: "مدیریت ووکامرس", description: "ویرایش محتوای فروشگاه و سفارش‌های ووکامرس.", risk: "medium", audit: true, implies: [P.woocommerceView] },
+  { key: P.woocommerceSync, group: "website", label: "همگام‌سازی ووکامرس", description: "تلاش مجدد و مدیریت صف ارسال قیمت و موجودی به فروشگاه.", risk: "medium", audit: true, implies: [P.woocommerceView] },
+  { key: P.woocommerceConfigure, group: "website", label: "پیکربندی ووکامرس", description: "تنظیم اتصال فروشگاه ووکامرس.", risk: "high", audit: true, implies: [P.woocommerceView] },
+  { key: P.integrationsView, group: "website", label: "مشاهده اتصال‌ها", description: "دیدن اتصال‌های بیرونی کسب‌وکار.", risk: "low", audit: false },
+  { key: P.integrationsManage, group: "website", label: "مدیریت اتصال‌ها", description: "ایجاد و تغییر اتصال‌های بیرونی.", risk: "high", audit: true, implies: [P.integrationsView] },
+  { key: P.mediaView, group: "website", label: "مشاهده رسانه", description: "دیدن کتابخانه رسانه.", risk: "low", audit: false },
+  { key: P.mediaManage, group: "website", label: "مدیریت رسانه", description: "بارگذاری و ویرایش فایل‌های رسانه.", risk: "medium", audit: false, implies: [P.mediaView] },
+  { key: P.printingExecute, group: "settings", label: "چاپ عملیاتی", description: "ارسال سند به چاپگر طبق قواعد ذخیره‌شده.", risk: "low", audit: false },
+  { key: P.billingView, group: "settings", label: "مشاهده اشتراک", description: "دیدن طرح، صورتحساب و وضعیت اشتراک.", risk: "low", audit: false },
+  { key: P.billingManage, group: "settings", label: "مدیریت اشتراک", description: "تغییر طرح و پرداخت اشتراک.", risk: "high", audit: true, implies: [P.billingView] },
 
   // --- Data transfer -------------------------------------------------------
   { key: P.dataImport, group: "data", label: "ورود داده انبوه", description: "بارگذاری فایل برای ایجاد یا به‌روزرسانی انبوه رکوردها. همیشه با مجوز خودِ آن بخش ترکیب می‌شود.", risk: "high", audit: true },
@@ -217,7 +236,11 @@ const DRAFTS: Draft[] = [
   // --- Settings & branches -------------------------------------------------
   { key: P.settingsManage, group: "settings", label: "مدیریت تنظیمات", description: "تنظیمات کسب‌وکار، مالیات، چاپ و پیکربندی عمومی.", risk: "medium", audit: true },
   { key: P.locationsManage, group: "settings", label: "مدیریت شعب", description: "ایجاد، ویرایش و غیرفعال کردن شعبه.", risk: "high", audit: true },
-  { key: P.backupManage, group: "settings", label: "پشتیبان‌گیری و بازیابی", description: "گرفتن پشتیبان و بازگرداندن آن. بازیابی، داده‌های فعلی را جایگزین می‌کند.", risk: "critical", audit: true },
+  { key: P.backupManage, group: "settings", label: "اجرای پشتیبان", description: "گرفتن پشتیبان و دیدن وضعیت آن.", risk: "high", audit: true },
+  { key: P.backupConfigure, group: "settings", label: "پیکربندی پشتیبان", description: "تنظیم مقصد و زمان‌بندی پشتیبان. مخصوص مالک.", risk: "critical", audit: true },
+  { key: P.backupExport, group: "settings", label: "خروجی کل داده‌ها", description: "تحویل کل داده کسب‌وکار. مخصوص مالک.", risk: "critical", audit: true },
+  { key: P.backupRestore, group: "settings", label: "بازیابی پشتیبان", description: "جایگزین کردن داده‌های فعلی با یک پشتیبان. مخصوص مالک.", risk: "critical", audit: true },
+  { key: P.rollupManage, group: "settings", label: "تجمیع شعب", description: "اجرای گزارش تجمیعی بین شعب. مخصوص مالک.", risk: "critical", audit: true },
 
   // --- Security ------------------------------------------------------------
   { key: P.apiManage, group: "security", label: "مدیریت کلیدهای API", description: "ساخت و ابطال اعتبارنامه‌های بلندمدت برای سامانه‌های بیرونی.", risk: "critical", audit: true },

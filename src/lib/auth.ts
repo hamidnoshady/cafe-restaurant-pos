@@ -236,6 +236,10 @@ export function withTenantScope<Args extends unknown[]>(
   };
 }
 
+type GuardResult =
+  | { session: SessionPayload; error: null; membership: import("./authorize").MembershipContext }
+  | { session: null; error: NextResponse; membership?: never };
+
 /**
  * Session guard with no role restriction — any signed-in member of a business.
  *
@@ -249,9 +253,7 @@ export function withTenantScope<Args extends unknown[]>(
  * The handler is still responsible for scoping every query to
  * `session.sub`; this guard proves who is asking, not what they may touch.
  */
-export async function requireMember(): Promise<
-  { session: SessionPayload; error: null } | { session: null; error: NextResponse }
-> {
+export async function requireMember(): Promise<GuardResult> {
   // Goes through `authorize()` with no capability requirement so that "any
   // signed-in member" still means an *active* member of an *active* business
   // holding a *non-revoked* identity. Before the consolidation it meant only
@@ -259,7 +261,7 @@ export async function requireMember(): Promise<
   // their notification rules and reading their own inbox.
   const decision = await authorize(await getSession());
   if (!decision.ok) return { session: null, error: denialResponse(decision) };
-  return { session: decision.session, error: null };
+  return { session: decision.session, membership: decision.membership, error: null };
 }
 
 /**
@@ -285,32 +287,32 @@ export async function requireMember(): Promise<
  * that is genuinely semantic, and for the legacy endpoints not yet migrated;
  * both are inventoried in docs/authorization/ARCHITECTURE.md.
  */
-export async function requireRole(
-  ...roles: Role[]
-): Promise<{ session: SessionPayload; error: null } | { session: null; error: NextResponse }> {
+export async function requireRole(...roles: Role[]): Promise<GuardResult> {
   const decision = await authorize(await getSession(), { roles });
   if (!decision.ok) return { session: null, error: denialResponse(decision) };
-  return { session: decision.session, error: null };
+  return { session: decision.session, membership: decision.membership, error: null };
 }
 
 /**
  * Fine-grained guard: does this member hold `permission` right now?
  *
- * The preferred guard for ordinary application authorization. Re-reads the
- * membership rather than trusting the token, so revoking a permission takes
- * effect on the member's next request rather than at their next login.
- *
- * Since the consolidation it additionally performs the `token_version` check
- * it used to lack — the password-reset kill switch previously worked on
- * `requireRole` endpoints but not on `requirePermission` ones.
+ * The preferred guard. It re-reads the membership through `authorize()`, so a
+ * revocation, a role change, a suspended tenant and a reset password all take
+ * effect on the next request.
  */
-export async function requirePermission(
-  permission: Permission,
-): Promise<{ session: SessionPayload; error: null } | { session: null; error: NextResponse }> {
+export async function requirePermission(permission: Permission): Promise<GuardResult> {
   const decision = await authorize(await getSession(), { permission });
   if (!decision.ok) return { session: null, error: denialResponse(decision) };
-  return { session: decision.session, error: null };
+  return { session: decision.session, membership: decision.membership, error: null };
 }
+
+/** All listed capabilities are required; useful for bulk transfer boundaries. */
+export async function requirePermissions(...permissions: Permission[]): Promise<GuardResult> {
+  const decision = await authorize(await getSession(), { allPermissions: permissions });
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, membership: decision.membership, error: null };
+}
+
 
 /**
  * As `requirePermission`, but any one of `permissions` is enough.
@@ -319,12 +321,10 @@ export async function requirePermission(
  * `team.view`, but a member who holds only the broader `team.manage` must not
  * be locked out of the list they are allowed to edit.
  */
-export async function requireAnyPermission(
-  ...permissions: Permission[]
-): Promise<{ session: SessionPayload; error: null } | { session: null; error: NextResponse }> {
+export async function requireAnyPermission(...permissions: Permission[]): Promise<GuardResult> {
   const decision = await authorize(await getSession(), { anyPermission: permissions });
   if (!decision.ok) return { session: null, error: denialResponse(decision) };
-  return { session: decision.session, error: null };
+  return { session: decision.session, membership: decision.membership, error: null };
 }
 
 /**

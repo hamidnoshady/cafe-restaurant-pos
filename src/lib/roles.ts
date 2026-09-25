@@ -38,7 +38,6 @@ export const ALL_ROLES: readonly Role[] = [
   "cashier",
   "waiter",
   "kitchen",
-  "viewer",
 ];
 
 /**
@@ -50,7 +49,7 @@ export const ALL_ROLES: readonly Role[] = [
  * and a viewer is typically an external accountant or auditor, and neither is
  * a person standing at a shared till.
  */
-export const PASSWORD_ROLES: readonly Role[] = ["owner", "admin", "manager", "accountant", "viewer"];
+export const PASSWORD_ROLES: readonly Role[] = ["owner", "admin", "manager", "accountant"];
 export const PIN_ROLES: readonly Role[] = ["cashier", "waiter", "kitchen"];
 
 export function isPasswordRole(role: Role): boolean {

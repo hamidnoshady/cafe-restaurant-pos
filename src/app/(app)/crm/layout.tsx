@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { CrmAppShell } from "./crm-app-shell";
 import { memberAccessFor } from "@/lib/member-access";
+import { CrmAppShell } from "./crm-app-shell";
 import { canOpenCrm } from "./crm-routes";
 
 /**
@@ -23,7 +23,7 @@ export default async function CrmLayout({ children }: { children: React.ReactNod
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canOpenCrm(permissions)) redirect("/dashboard");
 
   return <CrmAppShell>{children}</CrmAppShell>;

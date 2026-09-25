@@ -63,6 +63,43 @@ describe("WordPress media browsing", () => {
   });
 });
 
+describe("adding media from a URL", () => {
+  const route = readFileSync(
+    resolve(DIR, "../../../../../src/app/api/integrations/wp-manager/media/route.ts"),
+    "utf8",
+  );
+
+  it("offers the add action only when the transport can perform it", () => {
+    // Capability-driven, not decorative: linkMode plugin + advertised media_create.
+    expect(media).toMatch(/pluginSupportsJobType\(selectedConnection\.pluginCapabilities \?\? null, "media_create"\)/);
+    expect(media).toMatch(/\{canAddMedia \? \(/);
+    expect(media).toContain("افزودن تصویر از نشانی");
+  });
+
+  it("queues through the canonical outbox with a stable operation id", () => {
+    expect(route).toContain("integration_outbox_events");
+    expect(route).toContain("'media_create'");
+    expect(route).toMatch(/wp-media:\$\{connectionId\}/);
+    expect(route).toContain('"content.media_create_queued"');
+  });
+
+  it("refuses transports that cannot sideload instead of pretending", () => {
+    expect(route).toContain("media_rest_unsupported");
+    expect(route).toContain("plugin_media_unsupported");
+    expect(route).toMatch(/pluginSupportsJobType\(connection\.plugin_capabilities, "media_create"\)/);
+  });
+
+  it("the plugin applies media_create idempotently and stamps the operation id", () => {
+    expect(plugin).toMatch(/apply_media_create/);
+    expect(plugin).toContain("operation_id_missing_for_non_idempotent_media_create");
+    expect(plugin).toMatch(/_pos_operation_id/);
+  });
+
+  it("clears the half-typed form when the store selector moves", () => {
+    expect(media).toMatch(/setAddOpen\(false\);\s*\n\s*setAddUrl\(""\);/);
+  });
+});
+
 describe("the shared connection picker", () => {
   it("uses a unique label target, shared input chrome and the chrome-free embedded form", () => {
     expect(picker).toMatch(/const id = useId\(\)/);
@@ -79,10 +116,11 @@ describe("the plugin keeps the media mirror current", () => {
     expect(plugin).toContain("'content.deleted'");
   });
 
-  it("requests historical content/media on the plugin's first handshake", () => {
-    expect(pluginService).toMatch(
-      /firstContact[\s\S]*enqueuePluginExport\(connection\.business_id, connection\.id, "content_export"\)/,
-    );
+  it("requests historical content/media on the plugin's first handshake, gated by its capabilities", () => {
+    expect(pluginService).toMatch(/firstContact[\s\S]*"content_export"[\s\S]*enqueuePluginExport\(connection\.business_id, connection\.id, exportType\)/);
+    // A plugin that never advertised an export type must not be handed a job
+    // its lease query will never return — that row would sit pending forever.
+    expect(pluginService).toMatch(/if \(!pluginSupportsJobType\(capabilities, exportType\)\) continue;/);
   });
 
   it("queues an ordered completion marker and the server advances its watermark", () => {

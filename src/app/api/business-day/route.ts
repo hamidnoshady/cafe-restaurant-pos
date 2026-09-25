@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { isValidStartMinutes, parseStartTime } from "@/lib/business-day";
 import {
   BusinessDayError,
@@ -23,12 +23,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * sits with `settings.manage` rather than with the till.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole(
-    "owner",
-    "manager",
-    "cashier",
-    "waiter",
-  );
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

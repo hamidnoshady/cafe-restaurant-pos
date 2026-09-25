@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import {
   audienceForDefinition,
@@ -26,7 +26,7 @@ import { validateSegmentDefinition } from "@/lib/segments";
  * the gap rather than silently showing a smaller number.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.growthManage);
+  const { session, error } = await requirePermission(PERMISSIONS.campaignsManage);
   if (error) return error;
 
   let body: { segmentId?: unknown; definition?: unknown; channel?: unknown; limit?: unknown };

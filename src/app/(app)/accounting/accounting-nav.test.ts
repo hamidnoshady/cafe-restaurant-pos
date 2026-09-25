@@ -93,7 +93,7 @@ describe("accountingSectionsFor", () => {
     // Including `viewer`, the read-only auditor role: being able to read the
     // books is the entire point of that role, and `ledger.view` is in its
     // preset deliberately.
-    for (const role of ["owner", "admin", "manager", "accountant", "viewer"] as const) {
+    for (const role of ["owner", "admin", "manager", "accountant"] as const) {
       expect(of(role).has(ACCOUNTING_DOOR_PERMISSION), role).toBe(true);
       expect(accountingSectionsFor(of(role)).length, role).toBeGreaterThan(0);
     }

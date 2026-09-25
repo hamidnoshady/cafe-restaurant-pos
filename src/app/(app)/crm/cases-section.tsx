@@ -15,9 +15,8 @@ import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
  * would make the whole indicator meaningless.
  */
 
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { PERMISSIONS } from "@/lib/permissions";
 import { useSearchParams } from "next/navigation";
 import { PlusIcon, RefreshCwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -64,8 +63,7 @@ interface ServiceCase {
   resolvedAt: string | null;
 }
 
-export function CasesSection({ permissions: permissionList }: { permissions?: readonly string[] }) {
-  const permissions = useMemo(() => new Set(permissionList ?? []), [permissionList]);
+export function CasesSection({ canDelete = false }: { canDelete?: boolean }) {
   const [cases, setCases] = useState<ServiceCase[] | null>(null);
   const [openOnly, setOpenOnly] = useState(true);
   const [error, setError] = useState("");
@@ -74,13 +72,8 @@ export function CasesSection({ permissions: permissionList }: { permissions?: re
   const deepLinkId = searchParams.get("case");
   const [deepLinkHandled, setDeepLinkHandled] = useState(false);
 
-  // Deleting a case is the one action here that is not floor work — the API
-  // itself gates it to owner/manager (see /api/crm/cases/[id]), so the button
-  // only exists for them.
-  // `crm.delete` — the key `DELETE /api/crm/cases/[id]` enforces. Deleting a
-  // case destroys its history, so it is deliberately not part of the
-  // `crm.manage` a cashier holds for logging calls.
-  const canDelete = permissions.has(PERMISSIONS.crmDelete);
+  // The server page derives this from the same effective crm.manage capability
+  // enforced by the mutation API; role names are irrelevant here.
 
   // Returns a cleanup so a toggle of «فقط بازها» cancels the superseded fetch
   // instead of letting two in-flight responses race each other into the list.

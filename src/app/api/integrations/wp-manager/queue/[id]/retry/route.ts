@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { retryWpQueueRow } from "@/lib/integrations/wp-manager-service";
 
 /** Put a failed or dead WP queue row (outbox or inbox) back in the queue, due now. */
 export const POST = withTenantScope(async (request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteManage);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceSync);
   if (error) return error;
 
   const { id } = await context.params;

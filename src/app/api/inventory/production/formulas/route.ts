@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { positiveQuantityText, rialText } from "@/lib/inventory-exact";
 import { createFormula, listFormulas, ProductionError } from "@/lib/production-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -14,7 +15,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * `withTenantScope`, so a business without either never reaches this handler.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -24,7 +25,7 @@ export const GET = withTenantScope(async () => {
 });
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
 
   let body: {

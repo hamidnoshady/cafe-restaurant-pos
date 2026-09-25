@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getWebsiteSetup, saveWebsiteSetup, type WebsiteSetupPatch } from "@/lib/website/setup-service";
 import { listWebsitePlans } from "@/lib/website/billing-service";
@@ -14,7 +14,7 @@ import { listWebsitePlans } from "@/lib/website/billing-service";
  * the same screen without a second source of truth to keep in step.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsView);
   if (error) return error;
   const [setup, plans] = await Promise.all([getWebsiteSetup(session.businessId), listWebsitePlans()]);
   const response = NextResponse.json({ setup, plans });
@@ -23,7 +23,7 @@ export const GET = withTenantScope(async () => {
 });
 
 export const PATCH = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteConfigure);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsConfigure);
   if (error) return error;
 
   let body: WebsiteSetupPatch;

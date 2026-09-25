@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection, wooClientFor } from "@/lib/integrations/connections-service";
 import {
@@ -19,7 +19,7 @@ import { isWpMediaKind, type WpMediaKind } from "@/lib/integrations/wp-media";
  * in REST mode it reads wp/v2 directly with the WooCommerce consumer keys.
  */
 export const GET = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceView);
   if (error) return error;
 
   const url = new URL(request.url);
@@ -67,7 +67,7 @@ export const GET = withTenantScope(async (request: Request) => {
 });
 
 export const POST = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteManage);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceManage);
   if (error) return error;
 
   let body: { connectionId?: string; action?: string };

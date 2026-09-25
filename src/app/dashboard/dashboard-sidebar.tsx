@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import {
@@ -39,8 +39,6 @@ import {
   workspaceSectionHref,
 } from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
-import { isPinRole } from "@/lib/roles";
-import type { Role } from "@/lib/auth-edge";
 import { appForModule, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, type AppShellDef } from "@/lib/app-shells";
@@ -59,6 +57,7 @@ import {
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
 import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
+import { PIN_ROLES } from "@/lib/roles";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import {
@@ -89,7 +88,6 @@ import { BranchSwitcher } from "./branch-switcher";
 import { LockButton } from "./lock-screen";
 import { PlatformUserMenu } from "./platform-user-menu";
 import { ShiftButton } from "./shift-panel";
-
 
 
 const SIDEBAR_PREFERENCE_KEY = "dashboard-sidebar-preference";
@@ -187,6 +185,7 @@ export interface NavItem {
    */
   children?: NavItem[];
   iconKey?: string;
+  roles?: string[];
   /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled and not lockable. */
   flag?: string;
   /**
@@ -211,11 +210,6 @@ export interface NavItem {
 interface SidebarProps {
   navItems: NavItem[];
   role: string;
-  /**
-   * The acting member's effective permission keys, resolved once by the server
-   * shell (`memberAccessFor`). Passed as an array because this crosses the
-   * server/client boundary, where a `Set` is not serialisable.
-   */
   permissions: readonly string[];
   fullName: string;
   /** From the business's industry profile — a jewellery shop is not «کافه و رستوران». */
@@ -553,10 +547,7 @@ function DashboardSidebarFooter({
   onSaveBottomNav: (hrefs: string[]) => void;
 }) {
   const { expandSidebar } = useSidebar();
-  // The lock screen, the shift button and biometric enrolment are
-  // floor-terminal conveniences, so they are for the roles that sign in with a
-  // PIN on a shared device.
-  const isPinMember = isPinRole(role as Role);
+  const isPinRole = (PIN_ROLES as readonly string[]).includes(role);
 
   return (
     <SidebarFooter className="border-border/80 bg-card group-data-[state=collapsed]/sidebar:p-2">
@@ -576,9 +567,9 @@ function DashboardSidebarFooter({
           current={bottomNavHrefs}
           onSave={onSaveBottomNav}
         />
-        {isPinMember && <ShiftButton />}
-        {isPinMember && <BiometricSettingsButton />}
-        {isPinMember && <LockButton />}
+        {isPinRole && <ShiftButton />}
+        {isPinRole && <BiometricSettingsButton />}
+        {isPinRole && <LockButton />}
       </div>
 
       {/*
@@ -665,7 +656,7 @@ function AppShellNavigation({
   nav: (props: AppShellNavProps) => React.ReactElement;
   shell: AppShellDef;
   role: string;
-  permissions: ReadonlySet<string>;
+  permissions: readonly string[];
   pathname: string;
   /** The business nav, for an app menu that arranges business pages (Accounting). */
   navItems: NavItem[];
@@ -991,9 +982,6 @@ export function DashboardSidebar({
   // Sub-sections included, so a pinned child page survives the "is this still
   // visible to me?" filter the bottom bar runs on every render.
   const availableHrefs = flattenNav(navItems).map((item) => item.href);
-  // Rebuilt from the serialised array once per render rather than on every
-  // lookup inside an app's menu.
-  const permissionSet = useMemo(() => new Set(permissions), [permissions]);
   // `/projects` is a legacy alias that middleware redirects before this shell
   // renders. The canonical Workspace prefix owns the contextual sidebar.
   const workspaceRoute = isWorkspacePathname(pathname);
@@ -1105,7 +1093,7 @@ export function DashboardSidebar({
             nav={appShell.nav}
             shell={appShell.shell}
             role={role}
-            permissions={permissionSet}
+            permissions={permissions}
             pathname={pathname}
             navItems={navItems}
           />

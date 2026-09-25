@@ -79,7 +79,7 @@ describe("risk classification", () => {
       PERMISSIONS.backupManage,
       PERMISSIONS.apiManage,
       PERMISSIONS.ledgerClosePeriod,
-      PERMISSIONS.websiteConfigure,
+      PERMISSIONS.cmsConfigure,
     ]) {
       expect(isDangerousPermission(key)).toBe(true);
     }
@@ -114,8 +114,8 @@ describe("dependencies", () => {
 
   it("resolves a chain transitively", () => {
     // amend_closed → void, and discount → create → menu.view.
-    expect(impliedPermissions([PERMISSIONS.websitePublish])).toEqual(
-      expect.arrayContaining(["website.manage", "website.view"]),
+    expect(impliedPermissions([PERMISSIONS.cmsPublish])).toEqual(
+      expect.arrayContaining(["cms.view"]),
     );
   });
 

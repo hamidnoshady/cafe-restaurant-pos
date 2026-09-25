@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { enqueuePluginExport } from "@/lib/integrations/plugin-service";
 import { syncCustomers } from "@/lib/integrations/sync-service";
 
 /** The customer twin of the products route — see it for why plugin mode queues rather than pulls. */
 export const POST = withTenantScope(async (_request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   const { id } = await context.params;
 

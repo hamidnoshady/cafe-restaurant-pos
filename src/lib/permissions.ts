@@ -21,6 +21,7 @@ import type { Role } from "./auth";
  */
 export const PERMISSIONS = {
   // Point of sale
+  ordersView: "orders.view",
   ordersCreate: "orders.create",
   ordersVoid: "orders.void",
   /**
@@ -36,19 +37,16 @@ export const PERMISSIONS = {
 
   // Floor
   tablesManage: "tables.manage",
+  tablesEdit: "tables.edit",
   /**
-   * Reading the reservation book versus writing in it.
-   *
-   * Split because the two audiences really did differ: `GET /api/reservations`
-   * was requireRole("owner","manager","cashier","waiter") while `POST` was
-   * requireRole("owner","manager","cashier"). A waiter checks tonight's book;
-   * taking the booking is the till's job. One `reservations.manage` covering
-   * both would have quietly handed the waiter the write.
+   * Reading the reservation book versus writing in it. A waiter checks
+   * tonight's book; taking the booking is a separate act.
    */
   reservationsView: "reservations.view",
   reservationsManage: "reservations.manage",
   kitchenView: "kitchen.view",
   deliveryManage: "delivery.manage",
+  deliveryConfigure: "delivery.configure",
 
   // Catalogue
   menuView: "menu.view",
@@ -114,15 +112,7 @@ export const PERMISSIONS = {
    * rename or deletion reshapes every historical report built on it.
    */
   crmConfigure: "crm.configure",
-  /**
-   * Delete a CRM record outright — a case, an activity — rather than close or
-   * archive it.
-   *
-   * Its own key because deletion is not the destructive end of `crm.manage`
-   * but a different act: `crm.manage` is floor work (logging that a customer
-   * called) and a cashier has it, whereas `DELETE /api/crm/cases/[id]` was
-   * requireRole("owner","manager") and destroys the record and its history.
-   */
+  /** Destroying a customer record together with its history. */
   crmDelete: "crm.delete",
 
   /**
@@ -156,41 +146,21 @@ export const PERMISSIONS = {
    */
   workspaceApprove: "workspace.approve",
 
-  // Accounting authority — the books themselves. These stay narrow: they are
-  // accounting *control*, not day-to-day business work, and the manager preset
-  // deliberately holds none of them.
+  // Accounting
   ledgerView: "ledger.view",
   ledgerPost: "ledger.post",
   ledgerApprove: "ledger.approve",
   ledgerClosePeriod: "ledger.close_period",
   accountsEdit: "accounts.edit",
   /**
-   * Drafting a manual journal entry — proposing, not posting.
-   *
-   * A draft has no effect on the ledger by itself; `/api/ledger/entries/drafts/
-   * [id]/approve` is gated on `ledger.approve` and that is where the entry
-   * actually lands. Separating "may propose" from "may post" is the entire
-   * point of the review queue, so collapsing this into `ledger.post` would
-   * make the queue decorative — and would take drafting away from the managers
-   * who have always had it.
+   * Drafting a manual journal. A draft has no ledger effect; approval stays
+   * on ledger.approve.
    */
   ledgerPropose: "ledger.propose",
 
   /**
-   * Operational finance — money moving in and out of the business as a
-   * consequence of ordinary trading, as opposed to accounting control.
-   *
-   * These exist because sixteen ledger write routes were using `role` as a
-   * proxy for two different capabilities at once. Paying a supplier or taking
-   * a customer receipt is work a manager legitimately performs; posting a
-   * manual journal, approving one, closing a period or editing the chart of
-   * accounts is accounting authority. Mapping the former onto `ledger.post`
-   * would have either removed access every manager already had, or widened
-   * `ledger.post` into something far broader than its name promises.
-   *
-   * They are named for the business action rather than the table that ends up
-   * being written: each of these does produce accounting entries downstream,
-   * but the user is recording a payment, not "posting to the ledger".
+   * Operational finance — money moving as a consequence of trading, distinct
+   * from accounting authority (ledger.post / approve / close_period).
    */
   financeExpensesManage: "finance.expenses_manage",
   financeReceivablesManage: "finance.receivables_manage",
@@ -200,14 +170,7 @@ export const PERMISSIONS = {
   financeReconciliationManage: "finance.reconciliation_manage",
   financeAssetsManage: "finance.assets_manage",
 
-  /**
-   * Payroll is its own realm: salary figures are sensitive in a way the rest
-   * of the ledger is not, and the payroll routes were guarded
-   * `requireRole("owner", "accountant")` — a strictly narrower audience than
-   * the surrounding ledger surface. Without these keys the payroll reads would
-   * have to ride on `ledger.view`, which the manager and viewer presets hold,
-   * and every manager would suddenly see what everyone earns.
-   */
+  /** Salary data is narrower than the surrounding ledger. Owner and accountant only. */
   payrollView: "payroll.view",
   payrollManage: "payroll.manage",
 
@@ -240,97 +203,139 @@ export const PERMISSIONS = {
   dataImport: "data.import",
   dataExport: "data.export",
 
-  /**
-   * Website & CMS — «مدیریت وب‌سایت».
-   *
-   * Before these keys existed every `/api/cms/website/*` route gated on
-   * `requireRole("owner", "manager")`, which made "may edit a blog post" and
-   * "may re-point the business's DNS" the same act. They are not: the first is
-   * daily content work a business delegates to a junior marketer, the second
-   * can take the public site off the internet. Split by blast radius, the same
-   * way the CRM block above is:
-   */
-  /** Read the website state, overview, catalogue and drafts. */
-  websiteView: "website.view",
-  /** Day-to-day content work: drafts, posts, products, media, orders. */
-  websiteManage: "website.manage",
-  /**
-   * Push a draft live. Its own key because publishing is the only content act
-   * the public sees instantly and cannot be quietly undone before anyone
-   * notices.
-   */
-  websitePublish: "website.publish",
-  /**
-   * Structural website administration: domains, DNS, CDN, provisioning,
-   * connector settings. Whoever holds this can take the site offline.
-   */
-  websiteConfigure: "website.configure",
-
-  /**
-   * Growth — «رشد»: the marketing and customer-development app.
-   *
-   * Split into two pairs rather than one, because the app has two audiences
-   * that were never the same people. The management surfaces — the growth
-   * dashboard, campaigns, messaging, commission, the app's own settings — were
-   * `requireRole("owner", "manager")`. The loyalty lookups are till work: a
-   * cashier reads a customer's points and the programme list on every shift,
-   * and `requireRole("owner", "manager", "cashier")` is what said so.
-   *
-   * One `growth.view` covering both would have handed the cashier the
-   * management dashboard and the accountant the loyalty desk — a widening
-   * disguised as a refactor. Two pairs reproduce the four existing audiences
-   * exactly.
-   */
-  /** Read the growth dashboards and Growth's own customer screen. */
-  growthView: "growth.view",
-  /** Run campaigns, send messages, pay commission, configure the app. */
-  growthManage: "growth.manage",
-  /** Till-level loyalty reads: programmes, a customer's points, repurchase. */
-  loyaltyView: "loyalty.view",
-  /** Redeem points, grant store credit, define programmes. Moves value. */
-  loyaltyManage: "loyalty.manage",
-
   // Administration
-  /**
-   * Read the team list and a member's access profile without being able to
-   * change it. Carved out of `team.manage` so an auditor or a shift lead can
-   * answer "who works here and what can they do" without also being able to
-   * hand out permissions.
-   */
+  /** Reading the team list. Narrower than administering it. */
   teamView: "team.view",
   teamManage: "team.manage",
   /**
-   * Change a member's role or permission overrides. Separate from
-   * `team.manage` (which covers creating staff, resetting a PIN, suspending)
-   * because granting permissions is how a delegated team administrator would
-   * escalate their own access.
+   * Handing out capability. Separate from suspend/rename so a delegated
+   * administrator cannot quietly widen their own grants.
    */
   teamPermissionsManage: "team.permissions_manage",
   settingsManage: "settings.manage",
   locationsManage: "locations.manage",
   backupManage: "backup.manage",
+  backupConfigure: "backup.configure",
+  backupExport: "backup.export",
+  backupRestore: "backup.restore",
+  rollupManage: "rollup.manage",
   // Phase 19: long-lived third-party credentials remain owner-only in V1.
   apiManage: "api.manage",
+
+  // Website, growth and integration applications
+  websiteView: "website.view",
+  websiteManage: "website.manage",
+  websiteSettingsManage: "website.settings_manage",
+  cmsView: "cms.view",
+  cmsContentManage: "cms.content_manage",
+  cmsPublish: "cms.publish",
+  cmsConfigure: "cms.configure",
+  woocommerceView: "woocommerce.view",
+  woocommerceManage: "woocommerce.manage",
+  woocommerceSync: "woocommerce.sync",
+  woocommerceConfigure: "woocommerce.configure",
+  growthView: "growth.view",
+  campaignsView: "campaigns.view",
+  campaignsManage: "campaigns.manage",
+  loyaltyView: "loyalty.view",
+  loyaltyManage: "loyalty.manage",
+  marketingConfigure: "marketing.configure",
+  integrationsView: "integrations.view",
+  integrationsManage: "integrations.manage",
+  mediaView: "media.view",
+  mediaManage: "media.manage",
+  printingExecute: "printing.execute",
+  billingView: "billing.view",
+  billingManage: "billing.manage",
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 export const ALL_PERMISSIONS: Permission[] = Object.values(PERMISSIONS);
 
+export type PermissionRisk = "low" | "medium" | "high" | "critical";
+export interface PermissionMetadata {
+  key: Permission;
+  group: string;
+  label: string;
+  description: string;
+  risk: PermissionRisk;
+  delegatable: boolean;
+  ownerOnly: boolean;
+  requiresReason: boolean;
+  audit: boolean;
+}
+
+const HIGH_RISK = new Set<Permission>([
+  PERMISSIONS.ordersAmendClosed,
+  PERMISSIONS.paymentsRefund,
+  PERMISSIONS.crmMerge,
+  PERMISSIONS.crmExport,
+  PERMISSIONS.ledgerApprove,
+  PERMISSIONS.ledgerClosePeriod,
+  PERMISSIONS.reportsExport,
+  PERMISSIONS.dataExport,
+  PERMISSIONS.teamManage,
+  PERMISSIONS.backupManage,
+]);
+const REASON_REQUIRED = new Set<Permission>([
+  PERMISSIONS.ordersAmendClosed,
+  PERMISSIONS.paymentsRefund,
+  PERMISSIONS.crmMerge,
+  PERMISSIONS.ledgerClosePeriod,
+]);
+
+/**
+ * Canonical permission catalogue consumed by guards and access-management UI.
+ * Labels deliberately default to stable keys until translated product copy is
+ * supplied; metadata must never be independently recreated by a feature.
+ */
+export const PERMISSION_DEFINITIONS: readonly PermissionMetadata[] = ALL_PERMISSIONS.map((key) => {
+  const ownerOnly = new Set<Permission>([
+    PERMISSIONS.apiManage,
+    PERMISSIONS.backupConfigure,
+    PERMISSIONS.backupExport,
+    PERMISSIONS.backupRestore,
+    PERMISSIONS.rollupManage,
+  ]).has(key);
+  const risk: PermissionRisk = ownerOnly ? "critical" : HIGH_RISK.has(key) ? "high" : "medium";
+  return {
+    key,
+    group: key.split(".")[0],
+    label: key,
+    description: key,
+    risk,
+    delegatable: !ownerOnly,
+    ownerOnly,
+    requiresReason: REASON_REQUIRED.has(key),
+    audit: risk === "high" || risk === "critical",
+  };
+});
+
+export const PERMISSION_METADATA: ReadonlyMap<Permission, PermissionMetadata> = new Map(
+  PERMISSION_DEFINITIONS.map((definition) => [definition.key, definition]),
+);
+
 /**
  * Permissions that must never be delegated through member overrides. A leaked
  * API credential has a larger and more durable blast radius than ordinary
  * back-office access, so V1 keeps its lifecycle exclusively with the owner.
  */
-export const OWNER_ONLY_PERMISSIONS: readonly Permission[] = [PERMISSIONS.apiManage];
+export const OWNER_ONLY_PERMISSIONS: readonly Permission[] = [
+  PERMISSIONS.apiManage,
+  PERMISSIONS.backupConfigure,
+  PERMISSIONS.backupExport,
+  PERMISSIONS.backupRestore,
+  PERMISSIONS.rollupManage,
+];
 
 export function isOwnerOnlyPermission(permission: Permission): boolean {
   return OWNER_ONLY_PERMISSIONS.includes(permission);
 }
 
 const {
-  ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
-  tablesManage, reservationsView, reservationsManage, kitchenView, deliveryManage,
+  ordersView, ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
+  tablesManage, tablesEdit, reservationsView, reservationsManage, kitchenView, deliveryManage, deliveryConfigure,
   menuView, menuEdit,
   inventoryView, inventoryAdjust, purchasesManage,
   partiesView, partiesManage,
@@ -342,10 +347,12 @@ const {
   payrollView, payrollManage,
   reportsView, reportsExport,
   dataImport, dataExport,
-  websiteView, websiteManage, websitePublish, websiteConfigure,
-  growthView, growthManage, loyaltyView, loyaltyManage,
-  teamView, teamManage, teamPermissionsManage,
-  settingsManage, locationsManage, backupManage,
+  teamView, teamManage, teamPermissionsManage, settingsManage, locationsManage, backupManage,
+  websiteView, websiteManage, websiteSettingsManage,
+  cmsView, cmsContentManage, cmsPublish, cmsConfigure,
+  woocommerceView, woocommerceManage, woocommerceSync, woocommerceConfigure,
+  growthView, campaignsView, campaignsManage, loyaltyView, loyaltyManage, marketingConfigure,
+  integrationsView, integrationsManage, mediaView, mediaManage, printingExecute, billingView, billingManage,
 } = PERMISSIONS;
 
 /**
@@ -355,10 +362,13 @@ const {
  * `roleBasePermissions`). Giving the owner an enumerated set would mean every
  * new permission added later silently excludes them.
  */
-const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
+const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
+  // Tenant administrator: every delegatable operational capability, but never
+  // ownership, destructive recovery, master API or cross-location trust keys.
+  admin: ALL_PERMISSIONS.filter((permission) => !isOwnerOnlyPermission(permission)),
   manager: [
-    ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
-    tablesManage, reservationsView, reservationsManage, kitchenView, deliveryManage,
+    ordersView, ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
+    tablesManage, tablesEdit, reservationsView, reservationsManage, kitchenView, deliveryManage, deliveryConfigure,
     menuView, menuEdit,
     inventoryView, inventoryAdjust, purchasesManage,
     partiesView, partiesManage,
@@ -376,16 +386,8 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
     // business that wants a narrower manager revokes the individual keys.
     workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
     ledgerView, reportsView, reportsExport,
-    // Phase L. Sixteen ledger write routes gated on
-    // requireRole("owner","manager","accountant"), so the manager already did
-    // every one of these jobs: recording expenses, taking receipts, paying
-    // suppliers, handling cheques and instalments, reconciling a bank
-    // statement, maintaining the fixed-asset register. Splitting that role
-    // gate into named capabilities must not be the thing that takes the work
-    // away, so the preset grants all seven — and, by the same rule, drafting a
-    // manual journal for an accountant to approve. What the manager still does
-    // NOT get is accounting authority: no ledger.post, approve, close_period
-    // or accounts.edit, and no payroll.
+    // Operational finance the manager already did under a role gate. Not
+    // accounting authority, and not payroll.
     financeExpensesManage, financeReceivablesManage, financePayablesManage, financeChequesManage,
     financeInstallmentsManage, financeReconciliationManage, financeAssetsManage,
     ledgerPropose,
@@ -395,38 +397,13 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
     // the access they had rather than handing them a new capability. The
     // engine still intersects them with each entity's own permission.
     dataImport, dataExport,
-    // Website & Growth: every `/api/cms/website/*` and `/api/growth|loyalty/*`
-    // route gated on requireRole("owner","manager") before these keys existed,
-    // so the manager preset grants what the manager already reached. The one
-    // `websiteConfigure` is included even though it is the highest-risk key of
-    // the four: the manager could already reach the DNS, CDN, domain and
-    // provisioning routes, and splitting a role-only gate into graded keys must
-    // not be the thing that takes access away. The split's value is that the
-    // capability is now *separable* — an owner can revoke it from one manager,
-    // or grant website content work to a marketer who is not a manager at all.
-    // The one website route that was owner-only (purchasing a domain, a
-    // financial commitment) stays owner-only as a role gate.
-    websiteView, websiteManage, websitePublish, websiteConfigure,
-    growthView, growthManage, loyaltyView, loyaltyManage,
     settingsManage, backupManage,
+    websiteView, websiteManage, websiteSettingsManage,
+    cmsView, cmsContentManage, cmsPublish, cmsConfigure,
+    woocommerceView, woocommerceManage, woocommerceSync, woocommerceConfigure,
+    growthView, campaignsView, campaignsManage, loyaltyView, loyaltyManage, marketingConfigure,
+    integrationsView, integrationsManage, mediaView, mediaManage, printingExecute, billingView, billingManage,
   ],
-  /**
-   * Phase A — the tenant administrator, introduced by this refactor.
-   *
-   * Admin exists because `manager` had been doing two unrelated jobs: running
-   * the business (orders, stock, the floor) and administering the tenant
-   * (staff, branches, integrations). Bundling them meant a shift manager who
-   * needed to void an order also got the ability to reconfigure the business.
-   *
-   * Admin is defined as a *rule* rather than a list, like the owner: every
-   * capability except the ones the owner may not delegate. That way a
-   * permission added in a later release does not silently exclude the role
-   * whose entire purpose is "everything short of ownership".
-   *
-   * No existing tenant has an admin, so this preset cannot regress anybody.
-   *
-   * Computed in `roleBasePermissions`, not listed here.
-   */
   // Phase 16's role: the books, and only the books. No till, no floor. Manages
   // the «اشخاص» file inside the Accounting app (its own customers, suppliers
   // and staff view with the ledger's columns) — the CRM app itself stays
@@ -437,8 +414,6 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
     inventoryView,
     partiesView, partiesManage,
     ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit, ledgerPropose,
-    // The accountant reached all sixteen operational-finance routes too, and
-    // payroll was theirs alone alongside the owner.
     financeExpensesManage, financeReceivablesManage, financePayablesManage, financeChequesManage,
     financeInstallmentsManage, financeReconciliationManage, financeAssetsManage,
     payrollView, payrollManage,
@@ -449,20 +424,17 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
     // for. Which entities they may actually move is still decided by the
     // entity permissions above — no crm.export here, so no customer dump.
     dataImport, dataExport,
-    // `/api/growth/accounting` and `/api/growth/customers` were
-    // requireRole("owner","manager","accountant"), so the accountant keeps the
-    // read they had. No growth.manage and no loyalty.*: running a campaign and
-    // working the loyalty desk were never theirs.
-    growthView,
     // A project is a cost centre the books post against (journal_entries
     // .project_id), so the accountant must be able to read the workspace and
     // the contracts whose values they are accruing. Read only: recording a
     // cost is accounting work, committing the business to a new contractor is
     // not.
     workspaceView,
+    // Growth accounting and customer reads were open to the accountant.
+    growthView,
   ],
   cashier: [
-    ordersCreate, ordersDiscount, paymentsTake,
+    ordersView, ordersCreate, ordersDiscount, paymentsTake,
     tablesManage, reservationsView, reservationsManage,
     menuView, deliveryManage,
     inventoryView,
@@ -472,69 +444,25 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
     // crmView: the 360° file, segments and pipeline are not. No merge, no
     // consent, no export.
     crmManage,
+    // Till staff historically earned/redeemed loyalty and gift-card value.
+    growthView, loyaltyView, loyaltyManage, campaignsView, printingExecute,
     // Sees the projects they are a member of and works the tasks on them —
     // the floor-staff case the workspace is for. No contracts, no approvals.
     workspaceView, workspaceManage,
-    // The loyalty lookups the till needs — a customer's points, the programme
-    // list, the repurchase prompt — were requireRole("owner","manager",
-    // "cashier"). Read only: redeeming points and granting store credit were
-    // owner/manager routes and are now loyalty.manage. No growth.view either:
-    // the growth dashboard and Growth's customer screen were never a cashier's.
-    loyaltyView,
   ],
   waiter: [
-    ordersCreate,
-    // Reads tonight's book; taking the booking is the till's job, which is why
-    // this is `reservationsView` and not `reservationsManage`.
-    tablesManage, reservationsView,
+    ordersView, ordersCreate,
+    tablesManage, reservationsView, reservationsManage,
     menuView,
     // Read-only: a waiter may be a contributor on a project (a refit, an
     // event) and needs to see the tasks assigned to them.
-    workspaceView,
+    workspaceView, printingExecute,
   ],
   kitchen: [
-    kitchenView,
+    kitchenView, printingExecute,
     menuView,
-  ],
-  /**
-   * Phase A — the read-only auditor, introduced by this refactor.
-   *
-   * Broad sight, no mutation: every `*.view`-shaped capability and nothing
-   * else. Deliberately WITHOUT `reports.export`, `crm.export` and
-   * `data.export` — being allowed to read a figure on screen and being allowed
-   * to walk out with the dataset behind it are different acts, and an external
-   * accountant or a due-diligence reviewer is exactly the case where the
-   * difference matters. A tenant that wants an exporting auditor grants the
-   * export keys to that member individually.
-   */
-  viewer: [
-    menuView,
-    inventoryView,
-    partiesView,
-    crmView,
-    reservationsView,
-    workspaceView,
-    ledgerView,
-    reportsView,
-    kitchenView,
-    websiteView,
-    growthView,
-    loyaltyView,
-    teamView,
   ],
 };
-
-/**
- * Roles whose permission set is a rule rather than a list, and what that rule
- * is. Keeping these out of ROLE_PRESETS is the point: a permission added in a
- * later release must be picked up automatically instead of silently excluding
- * the two roles defined as "everything (short of ownership)".
- */
-function absolutePresetFor(role: Role): Permission[] | null {
-  if (role === "owner") return [...ALL_PERMISSIONS];
-  if (role === "admin") return ALL_PERMISSIONS.filter((p) => !isOwnerOnlyPermission(p));
-  return null;
-}
 
 /** Per-member adjustments layered on top of the role preset. */
 export interface PermissionOverrides {
@@ -547,24 +475,13 @@ export function isAbsoluteRole(role: Role): role is "owner" {
   return role === "owner";
 }
 
-/**
- * Every role the preset system resolves a set for: the two rule-derived
- * absolute-ish roles plus each role with a written preset.
- *
- * Exported so `roles.test.ts` can assert the catalogue and the permission
- * model agree. A role in one but not the other is a real defect — unassignable
- * in one direction, or a member who can sign in and do nothing in the other,
- * because `roleBasePermissions` falls back to an empty list.
- */
-export const ROLE_PRESET_ROLES: readonly Role[] = [
-  "owner",
-  "admin",
-  ...(Object.keys(ROLE_PRESETS) as (keyof typeof ROLE_PRESETS)[]),
-];
+/** Built-in roles that resolve to a preset. Kept in step with `roles.ts`. */
+export const ROLE_PRESET_ROLES: readonly Role[] = ["owner", ...(Object.keys(ROLE_PRESETS) as Exclude<Role, "owner">[])];
 
 /** The preset for a role, before any per-member overrides. */
 export function roleBasePermissions(role: Role): Permission[] {
-  return absolutePresetFor(role) ?? [...(ROLE_PRESETS[role as keyof typeof ROLE_PRESETS] ?? [])];
+  if (isAbsoluteRole(role)) return [...ALL_PERMISSIONS];
+  return [...(ROLE_PRESETS[role] ?? [])];
 }
 
 function isPermission(value: string): value is Permission {
@@ -582,18 +499,87 @@ function isPermission(value: string): value is Permission {
  * `team.manage` on its only owner would be permanently locked out of itself,
  * so overrides are simply not applied to an absolute role.
  */
+const PERMISSION_DEPENDENCIES: Partial<Record<Permission, readonly Permission[]>> = {
+  [PERMISSIONS.crmManage]: [PERMISSIONS.crmView],
+  [PERMISSIONS.crmMerge]: [PERMISSIONS.crmView],
+  [PERMISSIONS.crmConsentManage]: [PERMISSIONS.crmView],
+  [PERMISSIONS.crmConfigure]: [PERMISSIONS.crmView],
+  [PERMISSIONS.crmDelete]: [PERMISSIONS.crmView],
+  [PERMISSIONS.inventoryAdjust]: [PERMISSIONS.inventoryView],
+  [PERMISSIONS.purchasesManage]: [PERMISSIONS.inventoryView],
+  [PERMISSIONS.menuEdit]: [PERMISSIONS.menuView],
+  [PERMISSIONS.ledgerPost]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.ledgerPropose]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeExpensesManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeReceivablesManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financePayablesManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeChequesManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeInstallmentsManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeReconciliationManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeAssetsManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.payrollManage]: [PERMISSIONS.payrollView],
+  [PERMISSIONS.ledgerApprove]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.accountsEdit]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.reportsExport]: [PERMISSIONS.reportsView],
+  [PERMISSIONS.reservationsManage]: [PERMISSIONS.reservationsView],
+  [PERMISSIONS.teamManage]: [PERMISSIONS.teamView],
+  [PERMISSIONS.teamPermissionsManage]: [PERMISSIONS.teamView],
+  [PERMISSIONS.woocommerceManage]: [PERMISSIONS.woocommerceView],
+  [PERMISSIONS.woocommerceSync]: [PERMISSIONS.woocommerceView],
+  [PERMISSIONS.woocommerceConfigure]: [PERMISSIONS.woocommerceView],
+  [PERMISSIONS.websiteManage]: [PERMISSIONS.websiteView],
+  [PERMISSIONS.websiteSettingsManage]: [PERMISSIONS.websiteView],
+  [PERMISSIONS.cmsContentManage]: [PERMISSIONS.cmsView],
+  [PERMISSIONS.cmsPublish]: [PERMISSIONS.cmsView],
+  [PERMISSIONS.cmsConfigure]: [PERMISSIONS.cmsView],
+  [PERMISSIONS.campaignsManage]: [PERMISSIONS.campaignsView, PERMISSIONS.growthView],
+  [PERMISSIONS.loyaltyManage]: [PERMISSIONS.loyaltyView, PERMISSIONS.growthView],
+  [PERMISSIONS.integrationsManage]: [PERMISSIONS.integrationsView],
+  [PERMISSIONS.mediaManage]: [PERMISSIONS.mediaView],
+  [PERMISSIONS.billingManage]: [PERMISSIONS.billingView],
+};
+
 export function effectivePermissions(
   role: Role,
   overrides: PermissionOverrides | null | undefined,
+  customRolePermissions?: readonly string[] | null,
 ): Set<Permission> {
-  const base = new Set(roleBasePermissions(role));
-  if (isAbsoluteRole(role) || !overrides) return base;
+  const base = new Set<Permission>(
+    role === "owner" || customRolePermissions == null
+      ? roleBasePermissions(role)
+      : customRolePermissions.filter(isPermission).filter((permission) => !isOwnerOnlyPermission(permission)),
+  );
+  if (isAbsoluteRole(role)) return base;
 
-  for (const key of overrides.granted ?? []) {
+  for (const key of overrides?.granted ?? []) {
     if (isPermission(key) && !isOwnerOnlyPermission(key)) base.add(key);
   }
-  for (const key of overrides.revoked ?? []) {
+
+  // Convenience grants include their read prerequisites. Explicit revocation
+  // is applied afterwards and therefore remains authoritative.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const permission of [...base]) {
+      for (const dependency of PERMISSION_DEPENDENCIES[permission] ?? []) {
+        if (!base.has(dependency)) { base.add(dependency); changed = true; }
+      }
+    }
+  }
+  for (const key of overrides?.revoked ?? []) {
     if (isPermission(key)) base.delete(key);
+  }
+
+  // A revoked prerequisite also disables dependent mutation capabilities.
+  changed = true;
+  while (changed) {
+    changed = false;
+    for (const permission of [...base]) {
+      if ((PERMISSION_DEPENDENCIES[permission] ?? []).some((dependency) => !base.has(dependency))) {
+        base.delete(permission);
+        changed = true;
+      }
+    }
   }
   return base;
 }
@@ -603,9 +589,10 @@ export function hasPermission(
   role: Role,
   overrides: PermissionOverrides | null | undefined,
   permission: Permission,
+  customRolePermissions?: readonly string[] | null,
 ): boolean {
   if (isAbsoluteRole(role)) return true;
-  return effectivePermissions(role, overrides).has(permission);
+  return effectivePermissions(role, overrides, customRolePermissions).has(permission);
 }
 
 /**

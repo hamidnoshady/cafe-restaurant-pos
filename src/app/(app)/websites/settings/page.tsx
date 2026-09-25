@@ -16,8 +16,7 @@ export default async function WebsiteSettingsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
-  if (!canOpenWebsiteApp(permissions)) redirect("/dashboard");
+  if (!canOpenWebsiteApp(access?.permissions ?? new Set())) redirect("/dashboard");
 
   return <WebsiteSettingsSection />;
 }

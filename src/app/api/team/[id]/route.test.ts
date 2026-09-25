@@ -112,7 +112,7 @@ describe("PATCH /api/team/[id] — request validation", () => {
   it("accepts every role the catalogue does define, including the two new ones", async () => {
     // `admin` and `viewer` arrived with the authorization refactor. A route
     // that still carried the old six-role list would make them unassignable.
-    for (const role of ["owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen", "viewer"]) {
+    for (const role of ["owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen"]) {
       vi.clearAllMocks();
       actingWith(TEAM_ADMIN);
       membershipRow({ actorRole: "owner", targetRole: "cashier" });
@@ -131,13 +131,19 @@ describe("PATCH /api/team/[id] — request validation", () => {
     expect(teamService.updateMembership).not.toHaveBeenCalled();
   });
 
-  it("accepts the three scopes migration 0170 defines", async () => {
-    for (const locationScope of ["all", "selected", "home"]) {
+  it("accepts the four scopes migration 0170 defines", async () => {
+    const cases = [
+      { locationScope: "all" },
+      { locationScope: "none" },
+      { locationScope: "selected", locationIds: ["loc-1"] },
+      { locationScope: "home", defaultLocationId: "loc-1" },
+    ] as const;
+    for (const body of cases) {
       vi.mocked(teamService.updateMembership).mockClear();
-      const res = await patch({ locationScope });
-      expect(res.status, locationScope).toBe(200);
+      const res = await patch(body);
+      expect(res.status, body.locationScope).toBe(200);
       expect(teamService.updateMembership).toHaveBeenCalledWith(
-        expect.objectContaining({ locationScope }),
+        expect.objectContaining({ locationScope: body.locationScope }),
       );
     }
   });

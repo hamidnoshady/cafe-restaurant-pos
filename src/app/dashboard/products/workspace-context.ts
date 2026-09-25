@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import {
   isProductWorkspaceIndustry,
@@ -20,7 +21,8 @@ export async function requireProductWorkspace(): Promise<{
 }> {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/accounting/overview");
+  const access = await memberAccessFor(session);
+  if (!access?.permissions.has("inventory.view")) redirect("/accounting/overview");
   const industry = await getBusinessIndustry(session.businessId);
   if (!isProductWorkspaceIndustry(industry)) redirect("/accounting/overview");
   const draftLocation = session.activeLocationId ?? session.locationId ?? "default-location";

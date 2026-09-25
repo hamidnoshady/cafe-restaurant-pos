@@ -162,6 +162,20 @@ if (!gotSingleInstanceLock) {
       if (result.ok && result.reachable === false) logger.info("Printer probe unreachable", { target, detail: result.detail });
       return result;
     });
+    ipcMain.handle("desktop:print-send-page", async (_event, payload) => {
+      const printerName = typeof payload?.printerName === "string" ? payload.printerName : "";
+      const dataBase64 = typeof payload?.dataBase64 === "string" ? payload.dataBase64 : "";
+      let bytes;
+      try {
+        bytes = Buffer.from(dataBase64, "base64");
+      } catch {
+        return { ok: false, error: "invalid_printer", detail: "Print data is invalid." };
+      }
+      const result = await nativePrinting.sendPageToWindowsPrinter(printerName, bytes);
+      if (result.ok) logger.info("Native page print handed off", { printerName, bytes: bytes.length });
+      else logger.warn("Native page print failed", { printerName, error: result.error, detail: result.detail });
+      return result;
+    });
     ipcMain.handle("desktop:print-send-raw", async (_event, payload) => {
       const target = payload?.target;
       const dataBase64 = typeof payload?.dataBase64 === "string" ? payload.dataBase64 : "";

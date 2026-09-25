@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { updateWebsiteSyncSettings } from "@/lib/website/connection-service";
 
 /**
@@ -7,7 +8,7 @@ import { updateWebsiteSyncSettings } from "@/lib/website/connection-service";
  * and which branch the site mirrors.
  */
 export const PATCH = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   let body: { pushPrices?: unknown; pushStock?: unknown; productScope?: unknown; syncLocationId?: unknown };

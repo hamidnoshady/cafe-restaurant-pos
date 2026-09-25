@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { draftWebsitePost, listWebsitePostsTool, websiteStatusFor } from "@/lib/website/content-service";
 import { markdownToLexical } from "@/lib/website/providers/payload-content";
 
 /** Adapter-backed post list for the CMS content screen — no credential reaches it. */
 export const GET = withTenantScope(async (_request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsView);
   if (error) return error;
   const result = await listWebsitePostsTool(session.businessId, { limit: 20 });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: websiteStatusFor(result.error) });
@@ -30,7 +30,7 @@ export const GET = withTenantScope(async (_request: NextRequest) => {
  * always a draft — nothing here can publish.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteManage);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsContentManage);
   if (error) return error;
 
   let body: { title?: unknown; body?: unknown; slug?: unknown; excerpt?: unknown; featuredImageId?: unknown };

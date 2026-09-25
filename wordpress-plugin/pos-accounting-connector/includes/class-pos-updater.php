@@ -721,10 +721,12 @@ class POS_Connector_Updater {
 			$notice = 'up_to_date';
 		}
 
+		// Back to the «به‌روزرسانی» tab the button lives on, not the dashboard —
+		// the notice belongs next to the version card it is about.
 		wp_safe_redirect(
 			add_query_arg(
 				array(
-					'page'       => POS_Connector_Settings::PAGE_SLUG,
+					'page'       => POS_Connector_Admin::MENU_SLUG . '-updates',
 					'pos_notice' => rawurlencode( $notice ),
 				),
 				admin_url( 'admin.php' )

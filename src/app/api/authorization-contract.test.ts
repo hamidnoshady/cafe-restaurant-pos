@@ -50,8 +50,6 @@ const JUSTIFIED_ROLE_CHECKS: Record<string, string> = {
   "ai/chat/route.ts":
     "selects the narrow read-only floor assistant for till roles; the role IS the product " +
     "decision about which assistant a person is given, not a permission they hold",
-  "setup/state/route.ts":
-    "the first-run wizard, which runs before the tenant has a permission model to consult",
   "platform/ai/gateway/route.ts":
     "tenant-owner authority over the shared AI gateway credential, matching api.manage's owner-only rule",
 };
@@ -116,7 +114,7 @@ describe("families migrated off role-only gating stay migrated", () => {
         expect(source).toMatch(/requireRole\("owner"\)/);
         continue;
       }
-      expect(source, relative).toMatch(/PERMISSIONS\.website(View|Manage|Publish|Configure)/);
+      expect(source, relative).toMatch(/PERMISSIONS\.(website|cms)\w+/);
       expect(source, relative).not.toMatch(/requireRole\(/);
     }
   });
@@ -126,7 +124,7 @@ describe("families migrated off role-only gating stay migrated", () => {
     expect(routes.length).toBeGreaterThan(8);
     for (const relative of routes) {
       const source = read(relative);
-      expect(source, relative).toMatch(/PERMISSIONS\.(growth|loyalty)(View|Manage)/);
+      expect(source, relative).toMatch(/PERMISSIONS\.(growth|loyalty|campaigns|marketing)\w+/);
       expect(source, relative).not.toMatch(/requireRole\(/);
     }
   });

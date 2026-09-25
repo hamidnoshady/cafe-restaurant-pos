@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { exportTenantData, tenantDataToSql, tenantDataToXlsxBuffer } from "@/lib/tenant-export";
 import { getBackupConfig } from "@/lib/backup-service";
 import { backupPassphrase, encryptBackup } from "@/lib/backup";
@@ -11,7 +12,7 @@ import { backupPassphrase, encryptBackup } from "@/lib/backup";
  * now" (Owner/Manager) or even config (Owner-only, but scoped to settings).
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.backupExport);
   if (error) return error;
 
   const format = request.nextUrl.searchParams.get("format");

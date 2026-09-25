@@ -40,15 +40,7 @@ const REALM = "tenant";
  * read-only auditor. Both are additive: no existing membership holds either,
  * so no tenant's behaviour changes until somebody assigns one.
  */
-export type Role =
-  | "owner"
-  | "admin"
-  | "manager"
-  | "accountant"
-  | "cashier"
-  | "waiter"
-  | "kitchen"
-  | "viewer";
+export type Role = "owner" | "admin" | "manager" | "accountant" | "cashier" | "waiter" | "kitchen";
 
 export interface SessionPayload {
   /** users.id — the *membership* acting, not the person. See migration 0020. */

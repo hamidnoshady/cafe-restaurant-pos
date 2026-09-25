@@ -14,7 +14,6 @@ import { BCRYPT_COST } from "@/lib/password-hashing";
 import type { PoolClient } from "pg";
 import { getPool, query, withoutTenantScope } from "./db";
 import type { Role } from "./auth-edge";
-import { derivedLocationScope, isLocationScope, type LocationScope } from "./location-access";
 import {
   effectivePermissions,
   parseOverrides,
@@ -52,6 +51,8 @@ export interface TeamMember {
   fullName: string;
   email: string | null;
   isActive: boolean;
+  status: "invited" | "active" | "suspended" | "locked" | "inactive" | "offboarded";
+  locationScope: "all" | "selected" | "home" | "none";
   hasPin: boolean;
   /** Whether this membership can sign in with a password (has a global identity). */
   hasLogin: boolean;
@@ -65,12 +66,6 @@ export interface TeamMember {
   phoneVerified: boolean;
   locationIds: string[];
   defaultLocationId: string | null;
-  /**
-   * The member's explicit branch policy (migration 0170). The team UI renders
-   * this rather than inferring «همه شعبه‌ها» from an empty assignment list, which
-   * is what made the old roaming case invisible.
-   */
-  locationScope: LocationScope;
   overrides: PermissionOverrides;
   effectivePermissions: string[];
   createdAt: string;
@@ -82,12 +77,13 @@ interface MemberRow extends Record<string, unknown> {
   full_name: string;
   email: string | null;
   is_active: boolean;
+  membership_status: TeamMember["status"];
+  location_scope: TeamMember["locationScope"];
   has_pin: boolean;
   has_login: boolean;
   phone_e164: string | null;
   phone_verified_at: Date | null;
   default_location_id: string | null;
-  location_scope: string;
   permissions: unknown;
   location_ids: string[] | null;
   created_at: Date;
@@ -101,13 +97,14 @@ function toMember(row: MemberRow): TeamMember {
     fullName: row.full_name,
     email: row.email,
     isActive: row.is_active,
+    status: row.membership_status,
+    locationScope: row.location_scope,
     hasPin: row.has_pin,
     hasLogin: row.has_login,
     phone: row.phone_e164,
     phoneVerified: row.phone_verified_at !== null,
     locationIds: row.location_ids ?? [],
     defaultLocationId: row.default_location_id,
-    locationScope: isLocationScope(row.location_scope) ? row.location_scope : "home",
     overrides,
     effectivePermissions: [...effectivePermissions(row.role, overrides)].sort(),
     createdAt: row.created_at.toISOString(),
@@ -118,11 +115,11 @@ function toMember(row: MemberRow): TeamMember {
 export async function listMembers(businessId: string): Promise<TeamMember[]> {
   const { rows } = await query<MemberRow>(
     `SELECT u.id, u.role, u.full_name, u.email, u.is_active,
+            u.membership_status, u.location_scope,
             (u.pin_hash IS NOT NULL) AS has_pin,
             (u.platform_user_id IS NOT NULL) AS has_login,
             u.phone_e164, u.phone_verified_at,
             u.location_id AS default_location_id,
-            u.location_scope::text AS location_scope,
             u.permissions, u.created_at,
             coalesce(
               (SELECT array_agg(ul.location_id) FROM user_locations ul WHERE ul.user_id = u.id),
@@ -210,14 +207,7 @@ export interface CreateMembershipInput {
   phoneE164?: string | null;
   locationIds?: string[];
   defaultLocationId?: string | null;
-  /**
-   * The branch policy to store. Omitted means "derive it from the assignment
-   * shape", which reproduces exactly what migration 0170's backfill would have
-   * written — so a caller that predates the column still produces a coherent
-   * row rather than a member silently left on the narrow default after being
-   * handed a list of branches.
-   */
-  locationScope?: LocationScope;
+  locationScope?: "all" | "selected" | "home" | "none";
   overrides?: PermissionOverrides;
   actorId: string | null;
 }
@@ -310,7 +300,12 @@ export async function createMembership(
       `INSERT INTO users
          (business_id, platform_user_id, role, full_name, email, pin_hash,
           phone_e164, location_id, permissions, location_scope)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::location_scope) RETURNING id`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+               CASE WHEN $3::user_role = 'owner'::user_role THEN 'all'::location_scope
+                    WHEN $11::text IS NOT NULL THEN $11::location_scope
+                    WHEN cardinality($10::uuid[]) > 0 THEN 'selected'::location_scope
+                    WHEN $8::uuid IS NOT NULL THEN 'home'::location_scope
+                    ELSE 'all'::location_scope END) RETURNING id`,
       [
         input.businessId,
         platformUserId,
@@ -321,17 +316,8 @@ export async function createMembership(
         input.phoneE164 ?? null,
         locations.defaultLocationId,
         JSON.stringify(input.overrides ?? {}),
-        // Owners are whole-business by definition; everybody else gets the
-        // policy the caller asked for, or the one their assignment shape
-        // implies. Never a silent "all" for a member created with neither.
-        input.role === "owner"
-          ? "all"
-          : (input.locationScope ??
-            derivedLocationScope({
-              role: input.role,
-              defaultLocationId: locations.defaultLocationId,
-              assignedLocationIds: locations.locationIds,
-            })),
+        locations.locationIds,
+        input.locationScope ?? null,
       ],
     );
     const userId = created[0].id;
@@ -419,14 +405,7 @@ export interface UpdateMembershipInput {
   overrides?: PermissionOverrides;
   locationIds?: string[];
   defaultLocationId?: string | null;
-  /**
-   * The branch policy to store. Omitted means "derive it from the assignment
-   * shape", which reproduces exactly what migration 0170's backfill would have
-   * written — so a caller that predates the column still produces a coherent
-   * row rather than silently leaving the narrow default in place after being
-   * handed a list of branches.
-   */
-  locationScope?: LocationScope;
+  locationScope?: "all" | "selected" | "home" | "none";
 }
 
 /**
@@ -486,8 +465,7 @@ export async function updateMembership(
     await client.query("BEGIN");
 
     const { rows: beforeRows } = await client.query(
-      `SELECT role, full_name, email, is_active, permissions, location_id,
-              location_scope::text AS location_scope
+      `SELECT role, full_name, email, is_active, permissions, location_id
          FROM users WHERE id = $1 AND business_id = $2`,
       [input.userId, input.businessId],
     );
@@ -528,9 +506,20 @@ export async function updateMembership(
           SET role        = coalesce($3, role),
               full_name   = coalesce($4, full_name),
               is_active   = coalesce($5, is_active),
+              membership_status = CASE WHEN $5::boolean IS TRUE THEN 'active'::membership_status
+                                       WHEN $5::boolean IS FALSE THEN 'suspended'::membership_status
+                                       ELSE membership_status END,
               permissions = coalesce($6, permissions),
               location_id = CASE WHEN $7::boolean THEN $8::uuid ELSE location_id END,
-              location_scope = coalesce($9::location_scope, location_scope),
+              location_scope = CASE
+                WHEN coalesce($3::user_role, role) = 'owner'::user_role THEN 'all'::location_scope
+                WHEN $11::text IS NOT NULL THEN $11::location_scope
+                WHEN $9::boolean THEN CASE WHEN cardinality($10::uuid[]) > 0
+                                           THEN 'selected'::location_scope
+                                           WHEN coalesce($8::uuid, location_id) IS NOT NULL
+                                           THEN 'home'::location_scope
+                                           ELSE 'all'::location_scope END
+                ELSE location_scope END,
               updated_at  = now()
         WHERE id = $1 AND business_id = $2`,
       [
@@ -542,20 +531,9 @@ export async function updateMembership(
         input.overrides ? JSON.stringify(input.overrides) : null,
         defaultLocationId !== undefined,
         defaultLocationId ?? null,
-        // An explicit scope wins. Otherwise, a write that *replaces* the branch
-        // assignment also re-derives the policy — leaving a member on 'home'
-        // after being handed three branches would silently ignore the edit —
-        // while a write that touches neither leaves the stored policy alone.
-        input.locationScope ??
-          (input.role === "owner"
-            ? "all"
-            : locationIds !== null
-              ? derivedLocationScope({
-                  role: input.role ?? before.role,
-                  defaultLocationId: defaultLocationId ?? before.location_id,
-                  assignedLocationIds: locationIds,
-                })
-              : null),
+        locationIds !== null,
+        locationIds ?? [],
+        input.locationScope ?? null,
       ],
     );
 
@@ -639,7 +617,8 @@ export async function removeMembership(
 
     await client.query(
       `UPDATE users
-          SET is_active = false, pin_hash = NULL, password_hash = NULL,
+          SET is_active = false, membership_status = 'offboarded',
+              location_scope = 'none', pin_hash = NULL, password_hash = NULL,
               platform_user_id = NULL, updated_at = now()
         WHERE id = $1 AND business_id = $2`,
       [userId, businessId],
@@ -1169,8 +1148,12 @@ export async function acceptInvitation(
     const defaultLocationId = invitation.location_ids[0] ?? null;
     const { rows: member } = await client.query<{ id: string }>(
       `INSERT INTO users
-         (business_id, platform_user_id, role, full_name, email, location_id, permissions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+         (business_id, platform_user_id, role, full_name, email, location_id, permissions, location_scope)
+       VALUES ($1, $2, $3, $4, $5, $6, $7,
+               CASE WHEN $3::user_role = 'owner'::user_role THEN 'all'::location_scope
+                    WHEN cardinality($8::uuid[]) > 0 THEN 'selected'::location_scope
+                    WHEN $6::uuid IS NOT NULL THEN 'home'::location_scope
+                    ELSE 'all'::location_scope END) RETURNING id`,
       [
         invitation.business_id,
         platformUserId,
@@ -1179,6 +1162,7 @@ export async function acceptInvitation(
         invitation.email,
         defaultLocationId,
         JSON.stringify(invitation.permissions ?? {}),
+        invitation.location_ids ?? [],
       ],
     );
     const userId = member[0].id;

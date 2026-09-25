@@ -108,7 +108,7 @@ describe("connector health", () => {
     expect(result.ok).toBe(false);
     expect(result.unreachable).toBe(true);
     expect(result.error).toBe("connector_not_installed");
-    expect(printerErrorMessage(result.error)).toContain("رابط چاپ");
+    expect(printerErrorMessage(result.error)).toContain("سرویس چاپ اشوبه");
   });
 });
 
@@ -172,6 +172,7 @@ describe("hardware jobs are printerId-scoped", () => {
     expect(render).toBeDefined();
     expect(JSON.parse(String(render!.init!.body))).toEqual({
       printerId: "printer-1",
+      documentType: "receipt",
       job: { type: "receipt", receipt: RECEIPT },
     });
     // No hardware target ever travels to the app server.
@@ -327,20 +328,20 @@ describe("the desktop app's native printing bridge (no loopback connector at all
 });
 
 describe("the browser-dialog fallback", () => {
-  it("a label with no configured printer never touches a backend", async () => {
-    const { calls } = mockFetch({});
-    // No DOM in this environment → the iframe path reports not_in_browser,
-    // which is exactly the assertion: no fetch was attempted at all.
+  it("a label with no printer id asks the server to resolve one", async () => {
+    const { calls } = mockFetch({
+      "/api/printing/print": () => respondJson({ ok: false, error: "printer_not_configured" }, 409),
+    });
     const result = await printLabel(null, { businessName: "کافه", itemName: "قهوه", code: "123", fields: [] });
     expect(result.ok).toBe(false);
-    expect(result.error).toBe("not_in_browser");
-    expect(calls).toHaveLength(0);
+    expect(result.error).toBe("printer_not_configured");
+    expect(calls.some((call) => call.url === "/api/printing/print")).toBe(true);
   });
 
-  it("a sheet document with no printer takes the same dialog path", async () => {
+  it("a sheet document with no printer does not open a browser dialog", async () => {
     const { calls } = mockFetch({});
     const result = await printDocument(null, "<html></html>", "a4");
-    expect(result.error).toBe("not_in_browser");
+    expect(result.error).toBe("printer_not_configured");
     expect(calls).toHaveLength(0);
   });
 });

@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import { getPool, query, type PoolClient } from "./db";
 import { broadcast } from "./realtime";
 import type { Role } from "./auth";
+import { effectivePermissions, parseOverrides, type Permission } from "./permissions";
 import type { CartItemInput } from "./order-cart";
 import { addItemsToOrder, createOrder } from "./order-mutations";
 import type { DiscountInput } from "./orders";
@@ -316,13 +317,13 @@ async function eventScope(
   locationId: string,
   actor: { userId: string; role: Role },
   siteDeviceId: string | null,
-): Promise<{ businessId: string; error: string | null }> {
+): Promise<{ businessId: string; error: string | null; permissions: Set<Permission> }> {
   const location = await client.query<{ business_id: string }>(
     "SELECT business_id FROM locations WHERE id=$1",
     [locationId],
   );
   const businessId = location.rows[0]?.business_id;
-  if (!businessId) return { businessId: "", error: "unknown_location" };
+  if (!businessId) return { businessId: "", error: "unknown_location", permissions: new Set() };
 
   if (siteDeviceId) {
     const device = await client.query(
@@ -331,19 +332,29 @@ async function eventScope(
           AND status='active' AND revoked_at IS NULL`,
       [siteDeviceId, businessId, locationId],
     );
-    if (device.rowCount !== 1) return { businessId, error: "site_identity_mismatch" };
+    if (device.rowCount !== 1) return { businessId, error: "site_identity_mismatch", permissions: new Set() };
   }
 
-  const user = await client.query<{ role: Role }>(
-    `SELECT u.role::text AS role
+  const user = await client.query<{ role: Role; permissions: unknown }>(
+    `SELECT u.role::text AS role, u.permissions
        FROM users u
       WHERE u.id=$1::uuid AND u.business_id=$2 AND u.is_active
-        AND (u.location_id IS NULL OR u.location_id=$3
-             OR EXISTS (SELECT 1 FROM user_locations ul WHERE ul.user_id=u.id AND ul.location_id=$3))`,
+        AND u.membership_status = 'active'
+        AND (u.role = 'owner' OR u.location_scope = 'all'
+             OR (u.location_scope = 'home' AND u.location_id=$3)
+             OR (u.location_scope = 'selected' AND EXISTS
+                 (SELECT 1 FROM user_locations ul WHERE ul.user_id=u.id AND ul.location_id=$3)))`,
     [actor.userId, businessId, locationId],
   );
-  if (!user.rows[0] || user.rows[0].role !== actor.role) return { businessId, error: "actor_identity_mismatch" };
-  return { businessId, error: null };
+  const membership = user.rows[0];
+  if (!membership || membership.role !== actor.role) {
+    return { businessId, error: "actor_identity_mismatch", permissions: new Set() };
+  }
+  return {
+    businessId,
+    error: null,
+    permissions: effectivePermissions(membership.role, parseOverrides(membership.permissions)),
+  };
 }
 
 async function recordDeadLetter(
@@ -465,7 +476,7 @@ async function applyTransactionalSyncEvent(
       return { clientEventId: event.clientEventId, ok: false, deadLettered: true, error };
     }
 
-    if (scope.error || !definition.roles.includes(actor.role)) {
+    if (scope.error || !scope.permissions.has(definition.permission)) {
       const error = scope.error ?? "forbidden";
       await recordDeadLetter(client, {
         businessId: scope.businessId,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { createItem, listWeightItems, setWeightAttributes } from "@/lib/items-service";
@@ -10,7 +11,7 @@ import { recordItemEvent } from "@/lib/item-audit-service";
   // means listing what is in stock, exactly as /api/menu's GET is readable by
   // every floor role. The write handlers below stay owner/manager.
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "jewelry");
   if (industryError) return industryError;
@@ -24,7 +25,7 @@ export const GET = withTenantScope(async () => {
 
 /** Creates a `tracking: 'weight'` jewelry piece and its weight/purity attributes together. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "jewelry");
   if (industryError) return industryError;

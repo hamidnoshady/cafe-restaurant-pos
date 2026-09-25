@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { listConsentEvents, setConsent } from "@/lib/crm-service";
 import { CONSENT_CHANNELS, CONSENT_SOURCES, type ConsentChannel, type ConsentSource } from "@/lib/crm-shared";
 
@@ -20,7 +21,7 @@ import { CONSENT_CHANNELS, CONSENT_SOURCES, type ConsentChannel, type ConsentSou
  */
 export const GET = withTenantScope(
   async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.crmView);
     if (error) return error;
 
     const { id } = await params;
@@ -38,7 +39,7 @@ interface ConsentBody {
 
 export const POST = withTenantScope(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.crmConsentManage);
     if (error) return error;
 
     let body: ConsentBody;

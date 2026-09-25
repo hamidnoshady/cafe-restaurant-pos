@@ -5,6 +5,7 @@ import {
   effectivePermissions,
   hasPermission,
   isAbsoluteRole,
+  isOwnerOnlyPermission,
   parseOverrides,
   roleBasePermissions,
 } from "./permissions";
@@ -59,6 +60,13 @@ describe("role presets", () => {
 });
 
 describe("per-member overrides", () => {
+  it("adds read prerequisites and lets prerequisite revocation disable mutation", () => {
+    expect(hasPermission("cashier", null, PERMISSIONS.crmView)).toBe(true);
+    const permissions = effectivePermissions("manager", { revoked: [PERMISSIONS.inventoryView] });
+    expect(permissions.has(PERMISSIONS.inventoryView)).toBe(false);
+    expect(permissions.has(PERMISSIONS.inventoryAdjust)).toBe(false);
+  });
+
   it("grants a capability the role preset does not include", () => {
     expect(hasPermission("manager", null, PERMISSIONS.ledgerPost)).toBe(false);
     expect(
@@ -134,6 +142,26 @@ describe("parseOverrides", () => {
 
 
 describe("owner-only permissions", () => {
+  it("gives Admin every delegatable capability but no owner-only capability", () => {
+    for (const permission of ALL_PERMISSIONS) {
+      expect(hasPermission("admin", null, permission)).toBe(!isOwnerOnlyPermission(permission));
+    }
+  });
+
+  it("does not let overrides delegate destructive security capabilities", () => {
+    for (const permission of [
+      PERMISSIONS.apiManage,
+      PERMISSIONS.backupConfigure,
+      PERMISSIONS.backupExport,
+      PERMISSIONS.backupRestore,
+      PERMISSIONS.rollupManage,
+    ]) {
+      expect(hasPermission("manager", { granted: [permission] }, permission)).toBe(false);
+      expect(hasPermission("admin", { granted: [permission] }, permission)).toBe(false);
+      expect(hasPermission("owner", { revoked: [permission] }, permission)).toBe(true);
+    }
+  });
+
   it("does not let overrides delegate API credential management", () => {
     expect(hasPermission("owner", null, PERMISSIONS.apiManage)).toBe(true);
     for (const role of ["manager", "accountant", "cashier", "waiter", "kitchen"] as const) {

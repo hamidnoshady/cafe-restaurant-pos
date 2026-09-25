@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { websiteManagersState } from "@/lib/website/managers-service";
 
 /**
@@ -12,7 +13,7 @@ import { websiteManagersState } from "@/lib/website/managers-service";
  * must not empty the app's own menu.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
   if (error) return error;
   const managers = await websiteManagersState(session.businessId);
   const response = NextResponse.json({ managers });

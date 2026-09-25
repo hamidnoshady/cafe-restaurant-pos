@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { createSegment, listSegmentsWithCounts } from "@/lib/crm-segments-service";
 import { validateSegmentDefinition } from "@/lib/segments";
 
@@ -16,7 +17,7 @@ import { validateSegmentDefinition } from "@/lib/segments";
  * round trips, and the numbers would arrive at nine slightly different moments.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.crmView);
   if (error) return error;
 
   const segments = await listSegmentsWithCounts(session.businessId);
@@ -30,7 +31,7 @@ interface CreateBody {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.crmConfigure);
   if (error) return error;
 
   let body: CreateBody;

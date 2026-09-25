@@ -221,7 +221,7 @@ async function reachFor(businessId: string, memberId: string): Promise<string[]>
         role: row.role as never,
         defaultLocationId: row.location_id,
         assignedLocationIds: assigned.rows.map((r) => r.location_id),
-        scope: row.location_scope as never,
+        locationScope: row.location_scope as never,
       },
       branches.rows.map((r) => r.id),
     );
@@ -434,14 +434,12 @@ describe("effective permissions resolve from the row as stored", () => {
 });
 
 describe("the new roles are storable and resolve to their presets", () => {
-  it("accepts admin and viewer as membership roles", async () => {
-    for (const role of ["admin", "viewer"] as const) {
-      const member = await seedMember(alpha.businessId, role);
-      const { rows } = await db.query<{ role: string }>("SELECT role FROM users WHERE id = $1", [
-        member,
-      ]);
-      expect(rows[0].role).toBe(role);
-    }
+  it("accepts admin as a membership role", async () => {
+    const member = await seedMember(alpha.businessId, "admin");
+    const { rows } = await db.query<{ role: string }>("SELECT role FROM users WHERE id = $1", [
+      member,
+    ]);
+    expect(rows[0].role).toBe("admin");
   });
 
   it("resolves admin to everything except the owner-only keys", async () => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import {
   archiveSegment,
   getSegment,
@@ -26,7 +27,7 @@ export const GET = withTenantScope(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> },
   ) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.crmView);
     if (error) return error;
 
     const { id } = await params;
@@ -69,7 +70,7 @@ export const PATCH = withTenantScope(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> },
   ) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.crmConfigure);
     if (error) return error;
 
     let body: UpdateBody;
@@ -122,7 +123,7 @@ export const DELETE = withTenantScope(
     _request: NextRequest,
     { params }: { params: Promise<{ id: string }> },
   ) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.crmConfigure);
     if (error) return error;
 
     const { id } = await params;

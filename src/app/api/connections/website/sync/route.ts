@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { syncWebsiteForBusiness } from "@/lib/website/sync-service";
 
 /** «همگام‌سازی اکنون» — the same fill-then-drain the tick runs, on demand. */
 export const POST = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   const result = await syncWebsiteForBusiness(session.businessId);

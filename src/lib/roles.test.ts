@@ -54,9 +54,7 @@ describe("the role catalogue", () => {
     // accountant or auditor. Neither is a person at a shared till, so neither
     // gets a PIN — and both therefore need a platform identity.
     expect(isPasswordRole("admin")).toBe(true);
-    expect(isPasswordRole("viewer")).toBe(true);
     expect(isPinRole("admin")).toBe(false);
-    expect(isPinRole("viewer")).toBe(false);
   });
 
   it("offers every role in the catalogue for assignment", () => {
@@ -72,7 +70,6 @@ describe("the role catalogue", () => {
     // hand-written list this replaces.
     expect([...INVITABLE_ROLES].sort()).toEqual([...PASSWORD_ROLES].sort());
     expect(INVITABLE_ROLES).toContain("admin");
-    expect(INVITABLE_ROLES).toContain("viewer");
   });
 });
 

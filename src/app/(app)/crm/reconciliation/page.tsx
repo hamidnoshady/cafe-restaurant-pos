@@ -13,8 +13,8 @@ export default async function CrmReconciliationPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canViewCrmSection(permissions, "reconciliation")) redirect(crmFallbackHref(permissions));
 
-  return <CrmSection section="reconciliation" role={session.role} />;
+  return <CrmSection section="reconciliation" role={access?.role ?? session.role} permissions={[...permissions]} />;
 }

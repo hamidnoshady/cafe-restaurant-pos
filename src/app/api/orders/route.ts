@@ -1,7 +1,7 @@
 import { memberAccessFor } from "@/lib/member-access";
-import { PERMISSIONS } from "@/lib/permissions";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
 import { listOrders, listSettledOrdersInWindow } from "@/lib/order-read-service";
@@ -45,8 +45,9 @@ import { broadcast } from "@/lib/realtime";
  * to the default window instead of reaching another branch's shift.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
-  if (error) return error;
+  const guard = await requirePermission(PERMISSIONS.ordersView);
+  if (guard.error) return guard.error;
+  const { session } = guard;
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ orders: [] });
@@ -108,7 +109,7 @@ interface CreateOrderBody {
 
 /** Builds the cart, computes totals, and creates Orders + OrderItems (+ modifiers) atomically. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.ordersCreate);
   if (error) return error;
 
   let body: CreateOrderBody;

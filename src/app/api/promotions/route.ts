@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import {
   listPromotionCatalogue,
   setPromotionActive,
@@ -14,14 +15,14 @@ import {
  * `listPromotions` server-side and never through this route.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyView);
   if (error) return error;
   return NextResponse.json({ promotions: await listPromotionCatalogue(session.businessId) });
 });
 
 /** Creates or edits one promotion. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyManage);
   if (error) return error;
 
   let body: PromotionInput;
@@ -53,7 +54,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
  * validation on the way back in. One boolean in, one boolean written.
  */
 export const PATCH = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyManage);
   if (error) return error;
 
   let body: { id?: unknown; isActive?: unknown };

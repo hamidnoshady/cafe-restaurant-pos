@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { listCurrentGoldPrices, recordGoldPrice } from "@/lib/gold-prices-service";
 
@@ -7,7 +8,7 @@ import { listCurrentGoldPrices, recordGoldPrice } from "@/lib/gold-prices-servic
   // Cashier reads only: the invoice screen prices a piece from the day's
   // rate, so it has to be able to see it. Recording a rate stays owner/manager.
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "jewelry");
   if (industryError) return industryError;
@@ -18,7 +19,7 @@ export const GET = withTenantScope(async () => {
 
 /** Records (or replaces) today's price/gram for one purity -- manual entry; no external feed is wired up yet. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "jewelry");
   if (industryError) return industryError;

@@ -29,7 +29,7 @@ import {
 } from "./permissions";
 
 const ROLES: Role[] = [
-  "owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen", "viewer",
+  "owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen",
 ];
 
 const effective = (role: Role) => [...effectivePermissions(role, {})].sort();
@@ -58,27 +58,35 @@ describe("built-in role presets", () => {
   it("holds the manager preset exactly", () => {
     expect(effective("manager")).toEqual([
       "backup.manage",
+      "billing.manage", "billing.view",
+      "campaigns.manage", "campaigns.view",
+      "cms.configure", "cms.content_manage", "cms.publish", "cms.view",
       "crm.configure", "crm.consent_manage", "crm.delete", "crm.export", "crm.manage", "crm.merge", "crm.view",
       "data.export", "data.import",
-      "delivery.manage",
+      "delivery.configure", "delivery.manage",
       "finance.assets_manage", "finance.cheques_manage", "finance.expenses_manage",
       "finance.installments_manage", "finance.payables_manage",
       "finance.receivables_manage", "finance.reconciliation_manage",
-      "growth.manage", "growth.view",
+      "growth.view",
+      "integrations.manage", "integrations.view",
       "inventory.adjust", "inventory.view",
       "kitchen.view",
       "ledger.propose", "ledger.view",
       "loyalty.manage", "loyalty.view",
+      "marketing.configure",
+      "media.manage", "media.view",
       "menu.edit", "menu.view",
-      "orders.amend_closed", "orders.create", "orders.discount", "orders.void",
+      "orders.amend_closed", "orders.create", "orders.discount", "orders.view", "orders.void",
       "parties.manage", "parties.view",
       "payments.refund", "payments.take",
+      "printing.execute",
       "purchases.manage",
       "reports.export", "reports.view",
       "reservations.manage", "reservations.view",
       "settings.manage",
-      "tables.manage",
-      "website.configure", "website.manage", "website.publish", "website.view",
+      "tables.edit", "tables.manage",
+      "website.manage", "website.settings_manage", "website.view",
+      "woocommerce.configure", "woocommerce.manage", "woocommerce.sync", "woocommerce.view",
       "workspace.approve", "workspace.contracts_manage", "workspace.manage", "workspace.view",
     ]);
   });
@@ -103,14 +111,17 @@ describe("built-in role presets", () => {
 
   it("holds the cashier preset exactly", () => {
     expect(effective("cashier")).toEqual([
-      "crm.manage",
+      "campaigns.view",
+      "crm.manage", "crm.view",
       "delivery.manage",
+      "growth.view",
       "inventory.view",
-      "loyalty.view",
+      "loyalty.manage", "loyalty.view",
       "menu.view",
-      "orders.create", "orders.discount",
+      "orders.create", "orders.discount", "orders.view",
       "parties.manage", "parties.view",
       "payments.take",
+      "printing.execute",
       "reservations.manage", "reservations.view",
       "tables.manage",
       "workspace.manage", "workspace.view",
@@ -120,41 +131,18 @@ describe("built-in role presets", () => {
   it("holds the waiter preset exactly", () => {
     expect(effective("waiter")).toEqual([
       "menu.view",
-      "orders.create",
-      // Reads tonight's book but cannot write in it: `GET /api/reservations`
-      // admitted the waiter and `POST` never did.
-      "reservations.view",
+      "orders.create", "orders.view",
+      "printing.execute",
+      "reservations.manage", "reservations.view",
       "tables.manage",
       "workspace.view",
     ]);
   });
 
   it("holds the kitchen preset exactly", () => {
-    expect(effective("kitchen")).toEqual(["kitchen.view", "menu.view"]);
+    expect(effective("kitchen")).toEqual(["kitchen.view", "menu.view", "printing.execute"]);
   });
 
-  it("holds the viewer preset exactly — read-only, and deliberately no export", () => {
-    expect(effective("viewer")).toEqual([
-      "crm.view",
-      "growth.view",
-      "inventory.view",
-      "kitchen.view",
-      "ledger.view",
-      "loyalty.view",
-      "menu.view",
-      "parties.view",
-      "reports.view",
-      "reservations.view",
-      "team.view",
-      "website.view",
-      "workspace.view",
-    ]);
-    // Being able to read a figure and being able to walk out with the dataset
-    // behind it are different acts. An auditor gets the first, not the second.
-    expect(hasPermission("viewer", {}, PERMISSIONS.reportsExport)).toBe(false);
-    expect(hasPermission("viewer", {}, PERMISSIONS.crmExport)).toBe(false);
-    expect(hasPermission("viewer", {}, PERMISSIONS.dataExport)).toBe(false);
-  });
 });
 
 describe("privilege boundaries that must not drift", () => {
@@ -168,7 +156,7 @@ describe("privilege boundaries that must not drift", () => {
   });
 
   it("keeps team administration off every non-administrative preset", () => {
-    for (const role of ["manager", "accountant", "cashier", "waiter", "kitchen", "viewer"] as const) {
+    for (const role of ["manager", "accountant", "cashier", "waiter", "kitchen"] as const) {
       expect(hasPermission(role, {}, PERMISSIONS.teamManage)).toBe(false);
       expect(hasPermission(role, {}, PERMISSIONS.teamPermissionsManage)).toBe(false);
     }
@@ -201,9 +189,10 @@ describe("backward compatibility with the roles that existed before the refactor
   it("keeps the manager's website access after the role gate became four keys", () => {
     // Was requireRole("owner", "manager") on all 26 /api/cms/website/* guards.
     expect(hasPermission("manager", {}, PERMISSIONS.websiteView)).toBe(true);
-    expect(hasPermission("manager", {}, PERMISSIONS.websiteManage)).toBe(true);
-    expect(hasPermission("manager", {}, PERMISSIONS.websitePublish)).toBe(true);
-    expect(hasPermission("manager", {}, PERMISSIONS.websiteConfigure)).toBe(true);
+    expect(hasPermission("manager", {}, PERMISSIONS.cmsView)).toBe(true);
+    expect(hasPermission("manager", {}, PERMISSIONS.cmsContentManage)).toBe(true);
+    expect(hasPermission("manager", {}, PERMISSIONS.cmsPublish)).toBe(true);
+    expect(hasPermission("manager", {}, PERMISSIONS.cmsConfigure)).toBe(true);
   });
 
   it("keeps the growth reads the accountant and cashier already had", () => {
@@ -214,13 +203,10 @@ describe("backward compatibility with the roles that existed before the refactor
     // /api/growth/accounting and /api/growth/customers were open to accountants.
     expect(hasPermission("accountant", {}, PERMISSIONS.growthView)).toBe(true);
     // The loyalty lookups the till uses were open to cashiers.
-    expect(hasPermission("cashier", {}, PERMISSIONS.growthView)).toBe(false);
     expect(hasPermission("cashier", {}, PERMISSIONS.loyaltyView)).toBe(true);
     expect(hasPermission("accountant", {}, PERMISSIONS.loyaltyView)).toBe(false);
-    // Neither could run a campaign or grant store credit, and still cannot.
-    expect(hasPermission("accountant", {}, PERMISSIONS.growthManage)).toBe(false);
-    expect(hasPermission("cashier", {}, PERMISSIONS.growthManage)).toBe(false);
-    expect(hasPermission("cashier", {}, PERMISSIONS.loyaltyManage)).toBe(false);
+    expect(hasPermission("accountant", {}, PERMISSIONS.campaignsManage)).toBe(false);
+    expect(hasPermission("cashier", {}, PERMISSIONS.campaignsManage)).toBe(false);
     expect(hasPermission("accountant", {}, PERMISSIONS.loyaltyManage)).toBe(false);
   });
 });

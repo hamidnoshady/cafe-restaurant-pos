@@ -40,7 +40,6 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from "../ui";
-import { firstPrinter, usePrinters } from "../use-printers";
 import { cardClass } from "../page-chrome";
 import { safeRandomId } from "@/lib/client-id";
 import { SearchIcon } from "lucide-react";
@@ -109,7 +108,6 @@ export function TableOrderPanel({
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
-  const printers = usePrinters();
   // Minted once for the first "send to kitchen" attempt that opens a new
   // order for this table, and reused across a manual resubmit after a failed
   // attempt (a lost response, a proxy retry) so the server's idempotency
@@ -320,27 +318,34 @@ export function TableOrderPanel({
     // the offline queue's own clientEventId owns retrying a queued one from
     // here, so the next "send to kitchen" is a new attempt and needs a fresh id.
     clientRequestIdRef.current = null;
+    const kitchenRequestId = `kitchen:${table.id}:${crypto.randomUUID()}`;
+    {
+      const ticket: KitchenTicketData = {
+        label: table.name,
+        orderTypeLabel: "حضوری",
+        sentAt: new Date().toISOString(),
+        lines: cart.map((l) => ({
+          name: l.name,
+          quantity: l.quantity,
+          modifiersLabel: modifierNamesLabel(l.modifiers) || null,
+          note: l.note || null,
+        })),
+      };
+      void printKitchenTicket(null, ticket, { requestId: kitchenRequestId, entityId: table.id }).then((result) => {
+        if (!result.ok && result.error !== "printer_not_configured") {
+          toast.warning("سفارش ثبت شد اما ارسال به چاپگر آشپزخانه ناموفق بود.", {
+            duration: Infinity,
+            action: { label: "تلاش دوباره", onClick: () => void printKitchenTicket(null, ticket, { requestId: `${kitchenRequestId}:retry`, entityId: table.id }) },
+          });
+        }
+      });
+    }
     if (res.queued) {
       setInfo(
         "اتصال قطع است — این ارسال ذخیره شد و پس از اتصال مجدد به آشپزخانه ارسال می‌شود.",
       );
     } else {
       toast.success("سفارش به آشپزخانه ارسال شد");
-      const kitchenPrinter = firstPrinter(printers, "kitchen");
-      if (kitchenPrinter) {
-        const ticket: KitchenTicketData = {
-          label: table.name,
-          orderTypeLabel: "حضوری",
-          sentAt: new Date().toISOString(),
-          lines: cart.map((l) => ({
-            name: l.name,
-            quantity: l.quantity,
-            modifiersLabel: modifierNamesLabel(l.modifiers) || null,
-            note: l.note || null,
-          })),
-        };
-        void printKitchenTicket(kitchenPrinter.id, ticket);
-      }
       onChanged();
       loadOrder();
     }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { validateMenuItemCreate } from "@/lib/menu-validation";
 import { createMenuItem } from "@/lib/menu-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -14,7 +15,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * reopen and re-edit just to attach a photo.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
 
   let body: unknown;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { upsertWebsiteProduct, websiteStatusFor } from "@/lib/website/content-service";
 
@@ -8,7 +8,7 @@ import { upsertWebsiteProduct, websiteStatusFor } from "@/lib/website/content-se
  * human. Price is integer Rial; the adapter converts to the site's unit.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
+  const { session, error } = await requirePermission(PERMISSIONS.cmsContentManage);
   if (error) return error;
 
   let body: { remoteId?: unknown; title?: unknown; sku?: unknown; summary?: unknown; priceRial?: unknown; stock?: unknown };

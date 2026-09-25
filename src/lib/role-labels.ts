@@ -17,13 +17,12 @@ import type { Role } from "./auth-edge";
 /** What each system role is called in the UI. */
 export const ROLE_LABELS: Record<Role, string> = {
   owner: "مالک",
-  admin: "مدیر ارشد",
+  admin: "مدیر سامانه",
   manager: "مدیر",
   accountant: "حسابدار",
   cashier: "صندوق‌دار",
   waiter: "گارسون",
   kitchen: "آشپزخانه",
-  viewer: "بازبین",
 };
 
 /**

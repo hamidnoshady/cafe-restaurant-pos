@@ -1,7 +1,6 @@
-import { memberAccessFor } from "@/lib/member-access";
-import { PERMISSIONS } from "@/lib/permissions";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { resolveSectionId } from "@/lib/floor";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -15,7 +14,7 @@ import { broadcast } from "@/lib/realtime";
  * cashiers/waiters may drive those without full edit rights.
  */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
   const { id } = await context.params;
 
@@ -57,21 +56,9 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     body.width !== undefined ||
     body.height !== undefined ||
     body.shape !== undefined;
-  // Seating a guest and redrawing the floor plan are different acts, and the
-  // guard on this route only covers the first. `tables.manage` is held by
-  // waiters and cashiers because they move parties between tables; changing a
-  // table's name, position, size or active state is configuration, so it takes
-  // `settings.manage` — which is exactly the owner/manager audience this line
-  // used to hard-code, read from the member's live permissions instead of from
-  // their token's role.
   if (isEdit) {
-    const editor = await memberAccessFor(session);
-    if (!editor?.permissions.has(PERMISSIONS.settingsManage)) {
-      return NextResponse.json(
-        { error: "forbidden", code: "MISSING_PERMISSION", permission: PERMISSIONS.settingsManage },
-        { status: 403 },
-      );
-    }
+    const editGuard = await requirePermission(PERMISSIONS.tablesEdit);
+    if (editGuard.error) return editGuard.error;
   }
 
   const fields: string[] = [];
@@ -145,7 +132,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
 /** Delete (deactivate) a table. Blocked while it holds an active session. */
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
   const { id } = await context.params;
 

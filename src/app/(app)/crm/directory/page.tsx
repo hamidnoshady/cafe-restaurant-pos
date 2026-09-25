@@ -16,7 +16,7 @@ export default async function CrmDirectoryPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canViewCrmSection(permissions, "directory")) redirect(crmFallbackHref(permissions));
 
   const member = await memberAccessFor(session);

@@ -8,7 +8,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
-    requireRole: vi.fn(),
+    requirePermission: vi.fn(),
     withTenantScope: (handler: (...args: never[]) => unknown) => handler,
   };
 });
@@ -22,7 +22,7 @@ const ITEM_ID = "11111111-1111-4111-8111-111111111111";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(auth.requireRole).mockResolvedValue({
+  vi.mocked(auth.requirePermission).mockResolvedValue({
     session: { businessId: "business-1" },
     error: null,
   } as never);

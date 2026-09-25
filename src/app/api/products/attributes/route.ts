@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireProductWorkspaceForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import {
@@ -9,7 +10,7 @@ import {
 
 /** The attribute master («ویژگی محصول»): every definition with its options. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuView);
   if (error) return error;
   const industryError = await requireProductWorkspaceForApi(session);
   if (industryError) return industryError;
@@ -23,7 +24,7 @@ export const GET = withTenantScope(async () => {
 
 /** Creates one attribute (رنگ، برند…) with its option values and status. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
   const industryError = await requireProductWorkspaceForApi(session);
   if (industryError) return industryError;

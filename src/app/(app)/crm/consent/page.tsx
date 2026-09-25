@@ -9,8 +9,8 @@ export default async function CrmConsentPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canViewCrmSection(permissions, "consent")) redirect(crmFallbackHref(permissions));
 
-  return <CrmSection section="consent" role={session.role} />;
+  return <CrmSection section="consent" role={access?.role ?? session.role} permissions={[...permissions]} />;
 }

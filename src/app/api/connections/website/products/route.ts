@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { getWebsiteConnectionRow } from "@/lib/website/connection-service";
 import { listWebsiteCatalog } from "@/lib/website/catalog-service";
@@ -18,7 +19,7 @@ async function locationFor(businessId: string, requested: string | null): Promis
 
 /** Every local product (menu items and retail items) with its sync mark. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
 
   const locationId = await locationFor(session.businessId, request.nextUrl.searchParams.get("locationId"));
@@ -39,7 +40,7 @@ interface MarkBody {
  * product vanishing because a checkbox moved is the wrong surprise).
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   let body: MarkBody;

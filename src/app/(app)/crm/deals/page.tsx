@@ -9,8 +9,8 @@ export default async function CrmDealsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canViewCrmSection(permissions, "deals")) redirect(crmFallbackHref(permissions));
 
-  return <CrmSection section="deals" role={session.role} />;
+  return <CrmSection section="deals" role={access?.role ?? session.role} permissions={[...permissions]} />;
 }

@@ -1,10 +1,11 @@
 import { NextRequest,NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";import { getPool } from "@/lib/db";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";import { getPool } from "@/lib/db";
 import { positiveQuantityText } from "@/lib/inventory-exact";
 import { createSupplierReturn } from "@/lib/supplier-return-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 export const POST = withTenantScope(async (request:NextRequest) => {
- const {session,error}=await requireRole("owner","manager");if(error)return error;
+ const {session,error}=await requirePermission(PERMISSIONS.purchasesManage);if(error)return error;
  const location=await resolveActiveLocation(session);if(!location)return NextResponse.json({error:"no_location"},{status:409});
  let body:{purchaseId?:string;settlementMethod?:"accounts_payable"|"cash"|"bank"|"supplier_receivable";
  reason?:string;idempotencyKey?:string;lines?:Array<{purchaseItemId?:string;inventoryLotId?:string|null;quantity?:string}>};

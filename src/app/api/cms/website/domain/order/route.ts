@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requireRole } from "@/lib/auth";
 import { purchaseWebsiteDomain, type DomainPurchaseInput } from "@/lib/website/domain-service";
 
 /**

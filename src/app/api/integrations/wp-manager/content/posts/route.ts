@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection, wooClientFor } from "@/lib/integrations/connections-service";
 import { query } from "@/lib/db";
 import { writeIntegrationAudit } from "@/lib/integrations/audit";
+import { pluginSupportsJobType } from "@/lib/integrations/plugin-capabilities";
 import {
   getWpContent,
   upsertWpContent,
@@ -17,7 +18,7 @@ import {
  * of that HTML merely to draw twenty titles.
  */
 export const GET = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceView);
   if (error) return error;
 
   const url = new URL(request.url);
@@ -64,7 +65,7 @@ const FIELD_LIMITS: Partial<Record<(typeof CONTENT_FIELDS)[number], number>> = {
 };
 
 export const POST = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.websiteManage);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceManage);
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -124,6 +125,12 @@ export const POST = withTenantScope(async (request: Request) => {
   }
 
   if (connection.link_mode === "plugin") {
+    // Same stranded-job rule as the media route: the lease query filters by
+    // the plugin's advertised job types, so queueing `post_upsert` past an
+    // older plugin would leave a row nothing ever picks up. Refuse honestly.
+    if (!pluginSupportsJobType(connection.plugin_capabilities, "post_upsert")) {
+      return NextResponse.json({ error: "plugin_content_unsupported" }, { status: 409 });
+    }
     const outboxRemoteId = remoteId ?? `new-${randomUUID()}`;
     const operationId = remoteId ? null : `wp-post:${connectionId}:${outboxRemoteId}`;
     const jobPayload = { ...patch, post_type: postType, ...(remoteId ? { id: remoteId } : {}), ...(operationId ? { __operationId: operationId } : {}) };

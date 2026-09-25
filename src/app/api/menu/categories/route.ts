@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { validateCategoryCreate } from "@/lib/menu-validation";
 import { createCategory } from "@/lib/menu-service";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
@@ -7,7 +8,7 @@ import { resolveActiveLocation, type TaxSetting } from "@/lib/setup-state";
 
 /** Create a menu category. Ongoing management, independent of the setup wizard. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
 
   let body: unknown;

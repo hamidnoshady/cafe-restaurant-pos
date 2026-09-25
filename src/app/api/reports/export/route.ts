@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { getPrimaryLocation } from "@/lib/setup-state";
@@ -50,7 +51,7 @@ function periodLabel(dateFrom?: string, dateTo?: string): string {
 
 /** Exports a report (custom or standard chart config, or P&L/Balance Sheet) as CSV, Excel, or PDF. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsExport);
   if (error) return error;
   const prefs = await getSetting<{ currencyDisplay?: "toman" | "rial" }>(session.businessId, SETTING_KEYS.businessPrefs);
   const unit = prefs?.currencyDisplay === "rial" ? "rial" : "toman";

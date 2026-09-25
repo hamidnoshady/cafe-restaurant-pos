@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { getHolooSettings, updateHolooSettings } from "@/lib/integrations/holoo/connection-service";
 import { holooHealth } from "@/lib/integrations/holoo/reconciliation-service";
@@ -9,7 +10,7 @@ import { isHoloo } from "@/lib/integrations/provider-registry";
 
 /** Safe (secret-free) Holoo settings for one connection. */
 export const GET = withTenantScope(async (_request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
   const { id } = await context.params;
 
@@ -22,7 +23,7 @@ export const GET = withTenantScope(async (_request: Request, context: { params: 
 });
 
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   const { id } = await context.params;
 

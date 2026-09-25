@@ -111,6 +111,6 @@ export const CRM_NAV_ITEMS: readonly CrmNavItem[] = [
  * section that becomes floor-safe changes the menu by changing that one
  * function rather than this list.
  */
-export function crmNavItemsFor(permissions: ReadonlySet<string>): CrmNavItem[] {
+export function crmNavItemsForPermissions(permissions: ReadonlySet<import("@/lib/permissions").Permission>): CrmNavItem[] {
   return CRM_NAV_ITEMS.filter((item) => canViewCrmSection(permissions, item.key));
 }

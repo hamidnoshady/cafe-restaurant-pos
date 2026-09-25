@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { rankKitchenQueue, type KitchenQueueEntry } from "@/lib/kitchen-priority";
@@ -11,7 +12,7 @@ import { rankKitchenQueue, type KitchenQueueEntry } from "@/lib/kitchen-priority
  * `order_id` (takeaway/delivery — no session to group by).
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "kitchen");
+  const { session, error } = await requirePermission(PERMISSIONS.kitchenView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

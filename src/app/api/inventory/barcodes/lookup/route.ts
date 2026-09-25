@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { lookupBarcode } from "@/lib/inventory-item-barcodes-service";
 
@@ -9,7 +10,7 @@ import { lookupBarcode } from "@/lib/inventory-item-barcodes-service";
  * lookup on (location_id, code) and nothing more.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const code = (request.nextUrl.searchParams.get("code") ?? "").trim();

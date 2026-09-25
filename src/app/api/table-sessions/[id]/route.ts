@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import {
@@ -11,7 +12,7 @@ import { broadcast } from "@/lib/realtime";
 
 /** Session detail: header, its tables, its orders, and the combined bill. */
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
   const { id } = await context.params;
 
@@ -72,7 +73,7 @@ interface PatchBody {
 
 /** Session lifecycle actions. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
   const { id } = await context.params;
 

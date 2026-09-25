@@ -22,17 +22,15 @@ export default async function GrowthCustomersPage({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  // The member's live effective permissions — the same set the API enforces,
-  // so the page and the fetches inside it can never disagree about access.
   const access = await memberAccessFor(session);
-  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  const permissions = access?.permissions ?? new Set();
   if (!canViewGrowthSection(permissions, "customers")) redirect(growthFallbackHref(permissions));
 
   const { customer, customerId } = await searchParams;
   return (
     <GrowthSection
       section="customers"
-      role={session.role}
+      permissions={[...permissions]}
       selectedCustomerId={customer ?? customerId}
     />
   );

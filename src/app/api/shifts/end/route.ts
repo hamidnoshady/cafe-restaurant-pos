@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { isValidCashFloat } from "@/lib/shift";
 import { ShiftError, closeOwnShift } from "@/lib/shift-service";
 
 /** Self-service clock-out (Phase 20 Wave 5) — ends the caller's own open shift. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("cashier", "waiter", "kitchen");
+  const { session, error } = await requirePermission(PERMISSIONS.ordersCreate);
   if (error) return error;
 
   let body: { closingFloat?: number };

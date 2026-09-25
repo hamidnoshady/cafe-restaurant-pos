@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { businessToday } from "@/lib/business-day-service";
 import { listCommissionRules } from "@/lib/commission-service";
@@ -19,7 +19,7 @@ import { listPromotionCatalogue } from "@/lib/promotions-service";
  * sender before following the clearly labelled link to that owner screen.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requirePermission(PERMISSIONS.growthManage);
+  const { session, error } = await requirePermission(PERMISSIONS.marketingConfigure);
   if (error) return error;
 
   const [today, programs, promotions, templates, messaging, commissionRules] = await Promise.all([

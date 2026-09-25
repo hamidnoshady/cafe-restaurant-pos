@@ -29,8 +29,6 @@
  * be read is data that should not be reachable.
  */
 
-import { PERMISSIONS, type Permission } from "@/lib/permissions";
-
 export const CRM_SECTION_KEYS = [
   "overview",
   "directory",
@@ -53,6 +51,8 @@ export const CRM_SECTION_KEYS = [
 ] as const;
 
 export type CrmSectionKey = (typeof CRM_SECTION_KEYS)[number];
+
+import type { Permission } from "@/lib/permissions";
 
 /** The route for a section. The overview is the app root; the rest nest under it. */
 export function crmSectionHref(key: CrmSectionKey): string {
@@ -78,70 +78,24 @@ export function crmDealOrderHref(orderId: string): string {
   return `/accounting/orders?order=${orderId}`;
 }
 
-/**
- * The capability each section needs — the same key its API enforces.
- *
- * This replaces a role test (`role === "cashier" ? floorSections : ["owner",
- * "manager"].includes(role)`) that asked a different question from the routes
- * behind it. The CRM's APIs are gated on `crm.*` and `parties.*` keys, so a
- * member granted `crm.view` individually got a working API behind an invisible
- * menu, and a manager who had `crm.consent_manage` revoked still saw the
- * consent screen with every write on it failing.
- *
- * The mapping preserves the previous audience exactly for the built-in
- * presets. `crm.manage` is the floor's share (the cashier preset carries it,
- * which is what the old `CASHIER_SECTIONS` list encoded), `crm.view` is the
- * management share, and the two structural screens keep their own keys.
- */
-const SECTION_PERMISSION: Record<CrmSectionKey, Permission> = {
-  // The floor's share: logging that a customer called is counter work.
-  directory: PERMISSIONS.crmManage,
-  persons: PERMISSIONS.crmManage,
-  activities: PERMISSIONS.crmManage,
-  cases: PERMISSIONS.crmManage,
-  // The management share: the 360° analysis, the pipeline, the segments.
-  overview: PERMISSIONS.crmView,
-  leads: PERMISSIONS.crmView,
-  segments: PERMISSIONS.crmView,
-  deals: PERMISSIONS.crmView,
-  duplicates: PERMISSIONS.crmView,
-  reconciliation: PERMISSIONS.crmView,
-  // Consent is a control, not a screen: the same key `POST /api/crm/consent`
-  // enforces.
-  consent: PERMISSIONS.crmConsentManage,
-  // Structural: a stage rename reshapes every historical report built on it.
-  settings: PERMISSIONS.crmConfigure,
+/** Canonical capability required to open each CRM section. */
+const CRM_SECTION_PERMISSIONS: Record<CrmSectionKey, readonly Permission[]> = {
+  overview: ["crm.export", "crm.configure"], directory: ["crm.view", "crm.manage"], persons: ["crm.view", "crm.manage"],
+  leads: ["crm.export", "crm.configure"], segments: ["crm.export", "crm.configure"], deals: ["crm.export", "crm.configure"], activities: ["crm.manage"],
+  cases: ["crm.manage"], duplicates: ["crm.merge"], reconciliation: ["crm.merge"],
+  consent: ["crm.consent_manage"], settings: ["crm.configure"],
 };
 
-/** The capability a section needs, for callers that want to state it themselves. */
-export function crmSectionPermission(key: CrmSectionKey): Permission {
-  return SECTION_PERMISSION[key];
+export function canViewCrmSection(permissions: ReadonlySet<Permission>, key: CrmSectionKey): boolean {
+  return CRM_SECTION_PERMISSIONS[key].some((permission) => permissions.has(permission));
 }
 
-/** Whether a member's effective permissions admit them to a section. */
-export function canViewCrmSection(permissions: ReadonlySet<string>, key: CrmSectionKey): boolean {
-  return permissions.has(SECTION_PERMISSION[key]);
-}
-
-/** Whether a member has at least one CRM surface — the layout's gate. */
-export function canOpenCrm(permissions: ReadonlySet<string>): boolean {
+export function canOpenCrm(permissions: ReadonlySet<Permission>): boolean {
   return CRM_SECTION_KEYS.some((key) => canViewCrmSection(permissions, key));
 }
 
-/**
- * Where to send someone who lands on a section they may not open. A cashier
- * following a bookmark to the pipeline gets the directory rather than being
- * thrown out of the app entirely — being bounced to `/dashboard` from a page
- * you were linked to reads as a bug, not as a permission.
- */
-export function crmFallbackHref(permissions: ReadonlySet<string>): string {
-  const first = CRM_SECTION_KEYS.find((key) => canViewCrmSection(permissions, key));
-  // Prefer the directory when they have it — it is the app's front door — and
-  // otherwise the first surface they can actually open, so that someone with
-  // only, say, the consent screen still lands inside the app rather than being
-  // bounced out of it.
-  if (canViewCrmSection(permissions, "directory")) return crmSectionHref("directory");
-  return first ? crmSectionHref(first) : "/dashboard";
+export function crmFallbackHref(permissions: ReadonlySet<Permission>): string {
+  return canViewCrmSection(permissions, "directory") ? crmSectionHref("directory") : "/dashboard";
 }
 
 /**

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireProductWorkspaceForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { createPriceList, listPriceEntries, listPriceLists } from "@/lib/price-lists-service";
 
 /** The list definitions plus every filled cell, so the matrix renders in one read. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuView);
   if (error) return error;
   const industryError = await requireProductWorkspaceForApi(session);
   if (industryError) return industryError;
@@ -23,7 +24,7 @@ export const GET = withTenantScope(async () => {
 
 /** Adds one named price list (عمده، همکار، …). */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
   const industryError = await requireProductWorkspaceForApi(session);
   if (industryError) return industryError;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { canKitchenBump, canMarkServed, type OrderItemStatus } from "@/lib/order-item-status";
@@ -12,7 +13,7 @@ import { recordCoworkerEvent } from "@/lib/ai-coworker-events";
  * quantity/void endpoint at /api/orders/[id]/items/[itemId].
  */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ itemId: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "kitchen", "waiter", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.kitchenView);
   if (error) return error;
   const { itemId } = await context.params;
 
