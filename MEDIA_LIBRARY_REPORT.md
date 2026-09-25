@@ -34,8 +34,9 @@ What actually changed, in the order it was built:
 3. **Deterministic transforms** (migration `0175`, this session): crop/rotate/resize as a
    free, local, non-AI tier (`sharp`), producing new `transformed` derived assets with
    `source_asset_id` provenance and `transform_ops` history, wired into
-   `POST /api/media/[id]/transform` and into the manager UI (rotate + resize; see Section
-   L for why crop has no UI entry point yet).
+   `POST /api/media/[id]/transform` and into the manager UI — rotate, resize, and (added
+   later this session, see Section L) a drag-to-select crop rectangle over the drawer's
+   preview image.
 4. **Storage orphan reconciliation** (this session): `scripts/media-reconcile-orphans.ts`,
    a real, runnable, tested maintenance script — not a placeholder — that finds bucket
    objects no row claims (the two documented crash windows in
@@ -254,11 +255,18 @@ mirror. None of that exists yet.
   modified) and `transform_ops` recording exactly which operation produced it — the
   same non-destructive parent/child shape as `enhance`. No wallet cost: this is local
   CPU work, not a provider call, and the route does not touch the wallet at all.
-  **UI reach is partial**: the manager's asset drawer has a "چرخش ۹۰° راست/چپ" (rotate)
-  pair of buttons and a width field with "تغییر اندازه به این عرض" (resize); there is
-  **no crop UI** — no interactive crop-rectangle selector was built, so `crop` is
-  reachable only by calling the route directly (it is fully implemented, validated, and
-  tested, just not wired to a click target). There is also no version-history UI showing
+  **UI reach**: the manager's asset drawer has a "چرخش ۹۰° راست/چپ" (rotate) pair of
+  buttons, a width field with "تغییر اندازه به این عرض" (resize), and — added later this
+  session — "برش تصویر" (crop): a drag-to-select rectangle drawn with native Pointer
+  Events directly over the drawer's preview `<img>`, converted from displayed CSS-pixel
+  coordinates to the image's `naturalWidth`/`naturalHeight` (the exact space
+  `applyMediaTransform`'s `sharp(...).rotate()` auto-orient measures server-side, so the
+  mapping is exact rather than approximate) before calling `transform("crop", ...)`; a
+  minimum drag size (12 CSS px) keeps an accidental click from arming "اعمال برش", and
+  "انصراف" discards the rectangle without a request. Covered by
+  `src/app/dashboard/media/media-manager.test.tsx` (button hidden for non-image assets,
+  sub-minimum drag stays disabled, a real drag produces the exact expected natural-pixel
+  request body, cancel never calls the API). There is still no version-history UI showing
   a transformed asset's lineage back to its source beyond what the asset drawer's
   existing "usage" panel exposes incidentally.
 - **AI generation**: unchanged — `ai_generated` provenance already existed before this
@@ -455,13 +463,24 @@ duplication to consolidate, not dead code to delete.
   rejected on update.
 - `src/app/api/api-guards.test.ts`: +1 documented exemption entry (the `media/[id]/file`
   usage-based-permission route, Section O.1) — a test-suite correction, not new coverage.
+- `src/app/dashboard/media/media-manager.test.tsx` **(new file, this session, jsdom +
+  Testing Library, following the same `@vitest-environment jsdom` / real-Pointer-Event
+  pattern as `hold-repeat-button.test.tsx`)**: 3 tests against the drawer's new crop UI —
+  the "برش تصویر" button is absent for non-image assets; a drag under the 12px minimum
+  leaves "اعمال برش" disabled while a real drag arms it and produces the exact expected
+  natural-pixel `{operation:"crop", params:{x,y,width,height}}` body against a stubbed
+  2×-downscaled image geometry; "انصراف" discards the rectangle and never calls the
+  transform endpoint. `AssetDrawer` and `AssetRow` were exported from `media-manager.tsx`
+  (previously module-local) solely so this test can render the drawer in isolation
+  without mounting the full library page and its data-fetching grid.
 
-No tests were skipped, stubbed, or marked as TODO anywhere in this program. No E2E,
-RTL-specific-to-media, mobile, or accessibility tests were added — that layer of the
-requested test pyramid was never attempted for Media (the repo's existing generic
-design/RTL/dark-mode lint suites, which run against every dashboard page including the
-media manager, were re-run and pass, but that is not the same as dedicated Media
-component/RTL/a11y coverage).
+No tests were skipped, stubbed, or marked as TODO anywhere in this program. This is now
+one dedicated Media *component* test (the crop interaction above) — a first, narrow
+instance of the RTL-component layer of the requested test pyramid for Media, not the
+full breadth of it. No E2E, mobile, or accessibility tests were added for Media; the
+repo's existing generic design/RTL/dark-mode lint suites, which run against every
+dashboard page including the media manager, were re-run and pass, but that remains
+distinct from dedicated Media E2E/mobile/a11y coverage.
 
 ## U. Verification results (commands actually run this session, in order)
 
@@ -517,12 +536,27 @@ component/RTL/a11y coverage).
     `usage`, etc.) passed `eslint` individually — this is a sandbox resource ceiling,
     not a code defect, but it is a real gap in this session's own verification chain and
     is reported as such rather than assumed away.
+11. **Follow-up session — crop UI**: closed the "crop is implemented but has no click
+    target" gap noted in Section L/V of the prior report. `npx tsc --noEmit` clean;
+    `npx eslint src/app/dashboard/media/media-manager.tsx
+    src/app/dashboard/media/media-manager.test.tsx --max-warnings=0` clean; the new
+    `media-manager.test.tsx` (3 tests) passes standalone and inside the full unit run;
+    the full unit suite was re-run afterward — **426/426 files, 5982/5982 tests
+    passed** (the file/test counts rose by 1 file / 3 tests from the previous report's
+    425/5979 — consistent with only the new crop test file being added, 0 regressions
+    elsewhere); both Media integration suites
+    (`media-library.integration.test.ts` 40/40, `media-reconcile-orphans.integration.test.ts`
+    6/6) were re-run against a freshly re-initialized local dev database (this sandbox
+    does not persist `node_modules` or the Postgres data directory across sessions —
+    `npm ci` and the numbered migrations in `migrations/` were re-applied from scratch,
+    all 216 including `0174`/`0175` applying cleanly) and passed.
 
-Net effect on the test suite across this whole program: **+21 unit tests
-(`media.test.ts` 19→34, `media-transform.test.ts` 0→6), +14 integration tests this
-session alone (3 transform + 6 orphan-reconciliation + 5 parties), plus the phase-2
-trash/collections/WordPress-mapping integration coverage from the middle of this
-program — 0 net regressions** at every checkpoint where the full suite was re-run.
+Net effect on the test suite across this whole program: **+24 unit tests
+(`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx` 0→3),
++14 integration tests from the prior session (3 transform + 6 orphan-reconciliation + 5
+parties), plus the phase-2 trash/collections/WordPress-mapping integration coverage from
+the middle of this program — 0 net regressions** at every checkpoint where the full
+suite was re-run.
 
 ## V. Second audit / genuine remaining work
 
@@ -539,9 +573,9 @@ full-suite re-run this session, after every change, was green.
   functions exist and are tested, but nothing pushes a canonical asset to a connected
   WordPress site through them yet, and the existing independent WordPress media mirror
   is untouched (Section K).
-- **Crop has no UI entry point** — implemented, validated, and tested at the
-  route/service layer, but only rotate and resize are reachable by a click in the
-  manager (Section L).
+- ~~**Crop has no UI entry point**~~ — closed in a follow-up session: a drag-to-select
+  crop rectangle is now wired into the manager's asset drawer, tested, and verified
+  (Section L, Section U item 11).
 - **AI tag review-workflow states** (`pending_review`/`confirmed`/`rejected`) — never
   implemented; tags apply directly with no human gate (Section H).
 - **Visual folder explorer / mobile drawer, rich filter-chip UI** — the manager still

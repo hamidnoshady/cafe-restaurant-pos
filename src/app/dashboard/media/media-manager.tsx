@@ -33,7 +33,7 @@ interface FolderRow {
   assetCount: number;
 }
 
-interface AssetRow {
+export interface AssetRow {
   id: string;
   folderId: string | null;
   kind: MediaKind;
@@ -998,7 +998,8 @@ export function MediaManager() {
   );
 }
 
-function AssetDrawer({
+/** Exported only for the crop-interaction test (media-manager.test.tsx) — not part of the page's public surface otherwise. */
+export function AssetDrawer({
   asset,
   folders,
   collections,
@@ -1164,7 +1165,7 @@ function AssetDrawer({
   // original this drawer is showing is never modified.
   const [resizeWidth, setResizeWidth] = useState("");
 
-  async function transform(operation: "rotate" | "resize", params: Record<string, unknown>) {
+  async function transform(operation: "crop" | "rotate" | "resize", params: Record<string, unknown>) {
     setBusy(true);
     setError("");
     setNotice("");
@@ -1180,6 +1181,86 @@ function AssetDrawer({
     setNotice("نسخهٔ جدید ساخته و به کتابخانه اضافه شد. آن را در فهرست ببینید.");
     onUpdated(asset);
   }
+
+  // Crop: a drag-to-select rectangle over the preview image, in the same
+  // "لایه‌سبک" spirit as the rotate/resize buttons — no canvas, no external
+  // library, just pointer events mapped from the displayed (CSS-pixel) image
+  // onto its real (natural-pixel) dimensions, which is all `/transform`'s
+  // crop operation needs. Coordinates are read from the SAME `<img>` the
+  // operator is looking at, which browsers already auto-orient from EXIF —
+  // the same auto-orientation `applyMediaTransform` (sharp `.rotate()`)
+  // applies server-side — so what is dragged is what gets cut.
+  const cropImgRef = useRef<HTMLImageElement>(null);
+  const [cropMode, setCropMode] = useState(false);
+  const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const cropDragRef = useRef<{ startX: number; startY: number } | null>(null);
+  const MIN_CROP_DISPLAY_PX = 12;
+
+  function clampToImage(value: number, max: number): number {
+    return Math.max(0, Math.min(max, value));
+  }
+
+  function pointFromEvent(event: React.PointerEvent<HTMLDivElement>): { x: number; y: number } | null {
+    const img = cropImgRef.current;
+    if (!img) return null;
+    const rect = img.getBoundingClientRect();
+    return {
+      x: clampToImage(event.clientX - rect.left, rect.width),
+      y: clampToImage(event.clientY - rect.top, rect.height),
+    };
+  }
+
+  function onCropPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (!cropMode) return;
+    const point = pointFromEvent(event);
+    if (!point) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    cropDragRef.current = { startX: point.x, startY: point.y };
+    setCropBox({ x: point.x, y: point.y, width: 0, height: 0 });
+  }
+
+  function onCropPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const start = cropDragRef.current;
+    if (!start) return;
+    const point = pointFromEvent(event);
+    if (!point) return;
+    const x = Math.min(start.startX, point.x);
+    const y = Math.min(start.startY, point.y);
+    const width = Math.abs(point.x - start.startX);
+    const height = Math.abs(point.y - start.startY);
+    setCropBox({ x, y, width, height });
+  }
+
+  function onCropPointerUp() {
+    cropDragRef.current = null;
+  }
+
+  const cropReady =
+    cropBox !== null && cropBox.width >= MIN_CROP_DISPLAY_PX && cropBox.height >= MIN_CROP_DISPLAY_PX;
+
+  async function applyCrop() {
+    const img = cropImgRef.current;
+    if (!img || !cropBox || !cropReady) return;
+    // The natural size is the exact thing `applyMediaTransform` measures
+    // server-side (post auto-orient), so this ratio is exact, not a guess.
+    const scaleX = img.naturalWidth / img.clientWidth;
+    const scaleY = img.naturalHeight / img.clientHeight;
+    const x = Math.round(cropBox.x * scaleX);
+    const y = Math.round(cropBox.y * scaleY);
+    const width = Math.max(1, Math.min(img.naturalWidth - x, Math.round(cropBox.width * scaleX)));
+    const height = Math.max(1, Math.min(img.naturalHeight - y, Math.round(cropBox.height * scaleY)));
+    await transform("crop", { x, y, width, height });
+    setCropMode(false);
+    setCropBox(null);
+  }
+
+  // Leaving crop mode on when the drawer switches to a different asset would
+  // draw the previous asset's rectangle over a new image — reset on asset change.
+  useEffect(() => {
+    setCropMode(false);
+    setCropBox(null);
+  }, [asset.id]);
+
 
   async function remove(force = false) {
     // A delete moves the asset to the trash (recoverable) rather than
@@ -1219,8 +1300,27 @@ function AssetDrawer({
 
         {asset.kind === "image" && asset.mimeType !== "image/svg+xml" ? (
           <div className="mb-4 overflow-hidden rounded-xl border border-border bg-muted">
-            { }
-            <img src={`/api/media/${asset.id}/file`} alt={asset.fileName} className="mx-auto max-h-72 object-contain" />
+            <div
+              className={`relative mx-auto w-fit ${cropMode ? "touch-none select-none" : ""}`}
+              onPointerDown={cropMode ? onCropPointerDown : undefined}
+              onPointerMove={cropMode ? onCropPointerMove : undefined}
+              onPointerUp={cropMode ? onCropPointerUp : undefined}
+              onPointerCancel={cropMode ? onCropPointerUp : undefined}
+            >
+              <img
+                ref={cropImgRef}
+                src={`/api/media/${asset.id}/file`}
+                alt={asset.fileName}
+                draggable={false}
+                className="mx-auto max-h-72 object-contain"
+              />
+              {cropMode && cropBox ? (
+                <div
+                  className="pointer-events-none absolute border-2 border-primary bg-primary/20"
+                  style={{ left: cropBox.x, top: cropBox.y, width: cropBox.width, height: cropBox.height }}
+                />
+              ) : null}
+            </div>
           </div>
         ) : (
           <div className="mb-4 rounded-xl border border-border bg-muted p-6 text-center text-sm text-muted-foreground">
@@ -1349,6 +1449,39 @@ function AssetDrawer({
             >
               تغییر اندازه به این عرض
             </Button>
+            {!cropMode ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  setCropBox(null);
+                  setCropMode(true);
+                }}
+              >
+                برش تصویر
+              </Button>
+            ) : (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  روی تصویر بکشید تا ناحیهٔ برش را انتخاب کنید.
+                </span>
+                <Button size="sm" disabled={busy || !cropReady} onClick={() => applyCrop()}>
+                  اعمال برش
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setCropMode(false);
+                    setCropBox(null);
+                  }}
+                >
+                  انصراف
+                </Button>
+              </>
+            )}
           </div>
         ) : null}
 
