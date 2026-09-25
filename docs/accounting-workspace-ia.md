@@ -64,14 +64,13 @@ Every group in this menu — plain or collapsible — is rendered by the shared
 [`src/app/dashboard/sidebar-nav-group.tsx`](../src/app/dashboard/sidebar-nav-group.tsx),
 so the sidebar has one spelling of a group instead of one per menu.
 
-- The ledger group's **disclosure header is a nav row**, not a caption with an
-  arrow: `min-h-12 rounded-xl px-3`, its own glyph, the label, and a chevron —
-  the same `APP_NAV_BUTTON_CLASS` amber hover/selection skin as the rows it
-  opens (docs/design-system.md §Rail navigation, §Colour roles). Before this it
-  was a bespoke 11px caption with a small chevron, the only control in the
-  menu that shared nothing with the menu.
-- Closed **over the page you are on**, the header keeps the selected skin, so
-  «you are here» survives collapsing.
+- The ledger group's **disclosure header matches every other group heading** —
+  `text-[11px] font-semibold tracking-wide text-muted-foreground`, a chevron,
+  and a touch-sized hit target (`NAV_COLLAPSIBLE_GROUP_TOGGLE_CLASS` in
+  `sidebar-nav-group.tsx`). It is not a second, always-bold nav row with its
+  own icon sitting between «اشخاص» and «گزارش و تحلیل». Closed **over the page
+  you are on**, the header keeps the amber selected skin so «you are here»
+  survives collapsing.
 - The group has **named sub-groups**, the way every other group has a heading:
 
   | sub-group | sections |

@@ -101,14 +101,13 @@ describe("the Accounting menu is written for RTL", () => {
     expect(GROUP_SOURCE).toMatch(/aria-current=\{active \? "page" : undefined\}/);
   });
 
-  it("draws the group toggle as a menu row, not a bespoke caption", () => {
-    // The bug this replaced: a 40px, 11px-bold heading with a small chevron —
-    // a control sharing nothing with the 48px amber rows it opened. It is a
-    // SidebarMenuButton in the shared nav skin now, so its size, radius,
-    // hover, selection and focus ring come from the design system.
-    expect(GROUP_SOURCE).toMatch(/<SidebarMenuButton[\s\S]{0,400}APP_NAV_BUTTON_CLASS/);
-    // No hand-rolled <button> skin left in the group component.
-    expect(GROUP_SOURCE).not.toMatch(/<button\b/);
+  it("draws the group toggle as a group heading with a chevron, not a nav row", () => {
+    // The bug: a 48px nav row with an icon and always-bold label — it read as a
+    // stray section between «اشخاص» and «گزارش و تحلیل» instead of another
+    // group heading. It is the same metadata type as `NavGroup` now, with a
+    // chevron and a touch-sized hit target.
+    expect(GROUP_SOURCE).toMatch(/NAV_COLLAPSIBLE_GROUP_TOGGLE_CLASS/);
+    expect(GROUP_SOURCE).not.toMatch(/<SidebarMenuButton[\s\S]{0,200}onClick=\{onToggle\}/);
   });
 
   it("keeps the group heading in the shared metadata type, not a new spelling", () => {
@@ -116,7 +115,7 @@ describe("the Accounting menu is written for RTL", () => {
   });
 
   it("keeps «you are here» on a group that is closed over the current page", () => {
-    expect(GROUP_SOURCE).toMatch(/isActive=\{holdsCurrentPage && !open\}/);
+    expect(GROUP_SOURCE).toMatch(/holdsCurrentPage &&[\s\S]{0,80}!open/);
   });
 
   it("hides labels, not entries, when the rail collapses to icons", () => {
