@@ -3,7 +3,7 @@ import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { parseCategory, parseTags } from "@/lib/media";
-import { deleteMediaAsset, getMediaAsset, getMediaConfig } from "@/lib/media-service";
+import { deleteMediaAsset, getMediaAsset, getMediaAssetUsage, getMediaConfig, mediaAssetUsageIsEmpty } from "@/lib/media-service";
 
 /**
  * One media asset: organize (PATCH) and delete (DELETE).
@@ -107,13 +107,28 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   return NextResponse.json({ asset: updated });
 });
 
-export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
+/**
+ * Permanent delete — the catalogue FK (`image_media_id`) is `ON DELETE SET
+ * NULL`, so the database itself never ends up with a dangling reference. The
+ * safety this route adds is at the UX layer: an operator asking to delete a
+ * photo that a menu/inventory item is actively showing gets the list of what
+ * would go blank FIRST (409 + usage), and must repeat the request with
+ * `?force=1` to actually remove it — "cancel or confirm", never a silent
+ * surprise on the selling screen a moment later.
+ */
+export const DELETE = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { session, error } = await requirePermission(PERMISSIONS.mediaManage);
   if (error) return error;
   const { id } = await context.params;
 
-  // An asset a catalogue item points at loses the pointer (FK SET NULL), so
-  // deletion is safe; the item simply shows no photo afterwards.
+  const force = request.nextUrl.searchParams.get("force") === "1";
+  if (!force) {
+    const usage = await getMediaAssetUsage(id);
+    if (!mediaAssetUsageIsEmpty(usage)) {
+      return NextResponse.json({ error: "asset_in_use", usage }, { status: 409 });
+    }
+  }
+
   const config = await getMediaConfig();
   const deleted = await deleteMediaAsset(session.businessId, id, config);
   if (!deleted) return NextResponse.json({ error: "asset_not_found" }, { status: 404 });

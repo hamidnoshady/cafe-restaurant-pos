@@ -353,3 +353,131 @@ export const MEDIA_KIND_LABELS: Record<MediaKind, string> = {
   video: "ویدیو",
   document: "سند",
 };
+
+// ---------------------------------------------------------------------------
+// Sorting — the grid's "newest / oldest / name / size" order
+// ---------------------------------------------------------------------------
+
+export const MEDIA_SORTS = [
+  "newest",
+  "oldest",
+  "name_asc",
+  "name_desc",
+  "largest",
+  "smallest",
+  "updated",
+] as const;
+export type MediaSort = (typeof MEDIA_SORTS)[number];
+
+export function isMediaSort(value: unknown): value is MediaSort {
+  return typeof value === "string" && (MEDIA_SORTS as readonly string[]).includes(value);
+}
+
+/** The `ORDER BY` column + direction for a sort key — one place, so the SQL and the UI agree. */
+export function mediaSortOrderBy(sort: MediaSort | undefined): string {
+  switch (sort) {
+    case "oldest":
+      return "created_at ASC";
+    case "name_asc":
+      return "file_name ASC";
+    case "name_desc":
+      return "file_name DESC";
+    case "largest":
+      return "byte_size DESC";
+    case "smallest":
+      return "byte_size ASC";
+    case "updated":
+      return "updated_at DESC";
+    case "newest":
+    default:
+      return "created_at DESC";
+  }
+}
+
+export const MEDIA_SORT_LABELS: Record<MediaSort, string> = {
+  newest: "جدیدترین",
+  oldest: "قدیمی‌ترین",
+  name_asc: "نام (الف تا ی)",
+  name_desc: "نام (ی تا الف)",
+  largest: "بزرگ‌ترین حجم",
+  smallest: "کوچک‌ترین حجم",
+  updated: "به‌روزرسانی اخیر",
+};
+
+// ---------------------------------------------------------------------------
+// Search normalization — mixed Persian/Arabic input, never mutating storage
+// ---------------------------------------------------------------------------
+
+/**
+ * A search term, cleaned for matching: trimmed, internal whitespace
+ * collapsed, capped at a sane length, and the common Arabic/Persian
+ * character variants folded together (ي→ی, ك→ک, ۀ→ه, ة→ه) so a term typed on
+ * an Arabic keyboard still finds a tag written with Persian letters. The
+ * ORIGINAL value stored on the asset is never touched — this only shapes the
+ * pattern the query matches against (see `mediaSearchExpression`).
+ */
+export function normalizeSearchTerm(input: string): string {
+  return input
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 120)
+    .replace(/[يى]/g, "ی")
+    .replace(/ك/g, "ک")
+    .replace(/[ةۀ]/g, "ه");
+}
+
+/** Wraps a SQL column reference with the same character-variant folding, so
+ * both sides of an ILIKE compare on equal footing without rewriting the
+ * stored value. */
+export function mediaSearchExpression(column: string): string {
+  return `translate(${column}, 'يىكةۀ', 'ییکهه')`;
+}
+
+// ---------------------------------------------------------------------------
+// Folder tree safety — cycle and depth checks shared by create/move
+// ---------------------------------------------------------------------------
+
+export interface FolderNode {
+  id: string;
+  parentId: string | null;
+}
+
+/**
+ * True when re-parenting `folderId` under `newParentId` would create a cycle:
+ * moving a folder into itself, or into one of its own descendants. Pure and
+ * total over any folder set — callers pass the business's own folders (RLS
+ * already guarantees they belong to one tenant), so cross-tenant parents are
+ * never representable here in the first place.
+ */
+export function folderMoveCreatesCycle(
+  folders: readonly FolderNode[],
+  folderId: string,
+  newParentId: string | null,
+): boolean {
+  if (newParentId === null) return false;
+  if (newParentId === folderId) return true;
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  let cursor: string | null = newParentId;
+  let hops = 0;
+  const ceiling = folders.length + 1;
+  while (cursor !== null && hops <= ceiling) {
+    if (cursor === folderId) return true;
+    cursor = byId.get(cursor)?.parentId ?? null;
+    hops += 1;
+  }
+  return false;
+}
+
+/** 1-based depth of `folderId` in the tree (a root folder is depth 1). Guards
+ * against a corrupt cycle instead of looping forever. */
+export function folderDepthOf(folders: readonly FolderNode[], folderId: string | null): number {
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  let depth = 0;
+  let cursor = folderId;
+  const ceiling = folders.length + 2;
+  while (cursor !== null && depth <= ceiling) {
+    depth += 1;
+    cursor = byId.get(cursor)?.parentId ?? null;
+  }
+  return depth;
+}

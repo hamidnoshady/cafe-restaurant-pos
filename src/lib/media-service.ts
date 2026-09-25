@@ -21,8 +21,12 @@ import {
   dailyStorageCharge,
   DEFAULT_MEDIA_CONFIG,
   keyBelongsToBusiness,
+  mediaSearchExpression,
+  mediaSortOrderBy,
   MEDIA_STORAGE_FEATURE_KEY,
+  normalizeSearchTerm,
   type MediaKind,
+  type MediaSort,
   type MediaStorageConfig,
 } from "./media";
 import { s3Delete, s3Get, s3Put, type S3Config } from "./s3-lite";
@@ -198,6 +202,10 @@ export interface MediaListFilter {
   /** Phase G — the workspace reads: a conversation's / a project's files. */
   conversationId?: string;
   projectId?: string;
+  /** How the asset entered the library — upload / ai_attachment / ai_generated. */
+  source?: MediaAssetRecord["source"];
+  /** Newest first by default; see `MEDIA_SORTS` for the full set. */
+  sort?: MediaSort;
   limit?: number;
   offset?: number;
 }
@@ -238,9 +246,24 @@ export async function listMediaAssets(businessId: string, filter: MediaListFilte
     params.push(filter.projectId);
     where.push(`project_id = $${++i}`);
   }
+  if (filter.source) {
+    params.push(filter.source);
+    where.push(`source = $${++i}`);
+  }
   if (filter.search) {
-    params.push(`%${filter.search}%`);
-    where.push(`(file_name ILIKE $${++i} OR category ILIKE $${i} OR EXISTS (SELECT 1 FROM unnest(tags) t WHERE t ILIKE $${i}))`);
+    // Character-variant folding runs on BOTH sides (translate(...)), so a
+    // term typed with Arabic ي/ك still finds a tag written with Persian ی/ک
+    // — the stored value itself is never rewritten (src/lib/media.ts).
+    const normalized = normalizeSearchTerm(filter.search);
+    if (normalized) {
+      params.push(`%${normalized}%`);
+      const fileExpr = mediaSearchExpression("file_name");
+      const categoryExpr = mediaSearchExpression("category");
+      const tagExpr = mediaSearchExpression("t");
+      where.push(
+        `(${fileExpr} ILIKE $${++i} OR ${categoryExpr} ILIKE $${i} OR EXISTS (SELECT 1 FROM unnest(tags) t WHERE ${tagExpr} ILIKE $${i}))`,
+      );
+    }
   }
   const limit = Math.min(Math.max(1, filter.limit ?? 60), 200);
   const offset = Math.max(0, filter.offset ?? 0);
@@ -249,11 +272,70 @@ export async function listMediaAssets(businessId: string, filter: MediaListFilte
     `SELECT ${ASSET_COLUMNS}, COUNT(*) OVER() AS total
        FROM media_assets
       WHERE ${where.join(" AND ")}
-      ORDER BY created_at DESC
+      ORDER BY ${mediaSortOrderBy(filter.sort)}, id DESC
       LIMIT $${++i} OFFSET $${++i}`,
     params,
   );
   return { assets: rows.map(rowToAsset), total: rows.length ? Number(rows[0].total) : 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate detection — tenant-scoped, by the bytes' own sha256
+// ---------------------------------------------------------------------------
+
+/**
+ * An existing asset with the exact same bytes, in this business's own
+ * library (sha256 is never compared across tenants). Callers use this before
+ * storing a fresh upload so a picker can offer "use the existing file"
+ * instead of writing a second identical object.
+ */
+export async function findMediaAssetByHash(businessId: string, sha256: string): Promise<MediaAssetRecord | null> {
+  const { rows } = await query<AssetRow>(
+    `SELECT ${ASSET_COLUMNS} FROM media_assets WHERE business_id = $1 AND sha256 = $2 ORDER BY created_at ASC LIMIT 1`,
+    [businessId, sha256],
+  );
+  return rows[0] ? rowToAsset(rows[0]) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Usage references — "where is this used?" / the safe-delete check
+// ---------------------------------------------------------------------------
+
+export interface MediaAssetUsageRef {
+  id: string;
+  name: string;
+  [key: string]: unknown;
+}
+
+export interface MediaAssetUsage {
+  menuItems: MediaAssetUsageRef[];
+  inventoryItems: MediaAssetUsageRef[];
+}
+
+/**
+ * Every catalogue row pointing at this asset through `image_media_id`.
+ * `menu_items`/`inventory_items` carry no `business_id` column of their own
+ * (they scope through `location_id` → `locations.business_id`), so this
+ * relies on RLS — already true of every other read of these tables
+ * (see branch-service.ts, ai-tools.ts) — rather than filtering twice.
+ *
+ * This is also the authorization primitive behind `/api/media/[id]/file`:
+ * an operational role that cannot browse the library may still render a
+ * photo already referenced by a record their own permission (menu.view,
+ * inventory.view) already lets them see.
+ */
+export async function getMediaAssetUsage(assetId: string): Promise<MediaAssetUsage> {
+  const [{ rows: menuItems }, { rows: inventoryItems }] = await Promise.all([
+    query<MediaAssetUsageRef>(`SELECT id, name FROM menu_items WHERE image_media_id = $1 ORDER BY name`, [assetId]),
+    query<MediaAssetUsageRef>(`SELECT id, name FROM inventory_items WHERE image_media_id = $1 ORDER BY name`, [
+      assetId,
+    ]),
+  ]);
+  return { menuItems, inventoryItems };
+}
+
+export function mediaAssetUsageIsEmpty(usage: MediaAssetUsage): boolean {
+  return usage.menuItems.length === 0 && usage.inventoryItems.length === 0;
 }
 
 /** The distinct categories and tags in use — the filter dropdowns. */

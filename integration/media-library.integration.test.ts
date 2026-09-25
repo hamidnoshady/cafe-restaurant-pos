@@ -615,3 +615,160 @@ describe("Phase G pt.2 — persisting AI chat image attachments into the library
     expect(stored).toEqual([]);
   });
 });
+
+describe("duplicate detection — tenant-scoped by sha256", () => {
+  beforeAll(async () => {
+    await dbLib.withoutTenantScope("test", () => media.saveMediaConfig(config, null));
+  });
+
+  it("finds an existing asset with the exact same bytes in the same business, and not across tenants", async () => {
+    const bytes = pngOf(700);
+    const hash = sha256(bytes);
+    const stored = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "dup-source.png", mimeType: "image/png", bytes, sha256: hash,
+      }),
+    );
+
+    const found = await scoped(BID, () => media.findMediaAssetByHash(BID, hash));
+    expect(found?.id).toBe(stored.id);
+
+    // The same bytes uploaded by the other tenant must not "find" this one.
+    const foundAcrossTenants = await scoped(BID2, () => media.findMediaAssetByHash(BID2, hash));
+    expect(foundAcrossTenants).toBeNull();
+
+    // A hash nobody has stored yet resolves to nothing.
+    expect(await scoped(BID, () => media.findMediaAssetByHash(BID, "0".repeat(64)))).toBeNull();
+  });
+});
+
+describe("sorting", () => {
+  it("orders by name, size and recency as requested", async () => {
+    await scoped(BID, async () => {
+      const zebra = await media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "zebra.png", mimeType: "image/png", bytes: pngOf(9000), sha256: sha256(pngOf(9000)),
+      });
+      const alphaBytes = pngOf(100);
+      const alpha = await media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "alpha.png", mimeType: "image/png", bytes: alphaBytes, sha256: sha256(alphaBytes),
+      });
+
+      const byNameAsc = await media.listMediaAssets(BID, { sort: "name_asc", limit: 200 });
+      const alphaIdx = byNameAsc.assets.findIndex((a) => a.id === alpha.id);
+      const zebraIdx = byNameAsc.assets.findIndex((a) => a.id === zebra.id);
+      expect(alphaIdx).toBeGreaterThanOrEqual(0);
+      expect(alphaIdx).toBeLessThan(zebraIdx);
+
+      const byNameDesc = await media.listMediaAssets(BID, { sort: "name_desc", limit: 200 });
+      expect(byNameDesc.assets.findIndex((a) => a.id === zebra.id)).toBeLessThan(
+        byNameDesc.assets.findIndex((a) => a.id === alpha.id),
+      );
+
+      const bySmallest = await media.listMediaAssets(BID, { sort: "smallest", limit: 200 });
+      expect(bySmallest.assets[0].byteSize).toBeLessThanOrEqual(bySmallest.assets[1].byteSize);
+    });
+  });
+});
+
+describe("source filter", () => {
+  it("narrows the library to one provenance", async () => {
+    await scoped(BID, async () => {
+      const bytes = pngOf(222);
+      await media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "source-filter-generated.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+        source: "ai_generated",
+      });
+      const onlyGenerated = await media.listMediaAssets(BID, { source: "ai_generated" });
+      expect(onlyGenerated.assets.every((a) => a.source === "ai_generated")).toBe(true);
+      expect(onlyGenerated.assets.length).toBeGreaterThan(0);
+    });
+  });
+});
+
+describe("search normalization — mixed Persian/Arabic input", () => {
+  it("finds a Persian-lettered tag when searching with the Arabic letter variant", async () => {
+    await scoped(BID, async () => {
+      const bytes = pngOf(333);
+      const asset = await media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "کتاب‌فروشی.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+      });
+      // Arabic ك (kaf) / ي (yeh) — what many keyboards actually produce — must
+      // still find the Persian ک/ی spelling stored on the file name, and the
+      // stored value itself is never rewritten.
+      const found = await media.listMediaAssets(BID, { search: "كتاب" });
+      expect(found.assets.map((a) => a.id)).toContain(asset.id);
+      const stillPersian = await media.getMediaAsset(BID, asset.id);
+      expect(stillPersian!.fileName).toBe("کتاب‌فروشی.png");
+    });
+  });
+});
+
+describe("usage references — where a catalogue item points at an asset", () => {
+  let menuItemId: string;
+  let inventoryItemId: string;
+  let assetId: string;
+  let unusedAssetId: string;
+
+  beforeAll(async () => {
+    const { rows: loc } = await db.query<{ id: string }>(
+      `INSERT INTO locations (business_id, name) VALUES ($1, 'شعبهٔ اصلی') RETURNING id`,
+      [BID],
+    );
+    const locationId = loc[0].id;
+
+    const bytes = pngOf(444);
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "used-everywhere.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+      }),
+    );
+    assetId = asset.id;
+
+    const unused = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "unused.png", mimeType: "image/png", bytes: pngOf(50), sha256: sha256(pngOf(50)),
+      }),
+    );
+    unusedAssetId = unused.id;
+
+    const { rows: menuItem } = await db.query<{ id: string }>(
+      `INSERT INTO menu_items (location_id, name, price, image_media_id) VALUES ($1, 'کاپوچینو', 150000, $2) RETURNING id`,
+      [locationId, assetId],
+    );
+    menuItemId = menuItem[0].id;
+
+    const { rows: invItem } = await db.query<{ id: string }>(
+      `INSERT INTO inventory_items (location_id, name, unit, image_media_id) VALUES ($1, 'دانهٔ قهوه', 'kg', $2) RETURNING id`,
+      [locationId, assetId],
+    );
+    inventoryItemId = invItem[0].id;
+  });
+
+  it("reports every menu/inventory row pointing at the asset", async () => {
+    const usage = await scoped(BID, () => media.getMediaAssetUsage(assetId));
+    expect(usage.menuItems.map((r) => r.id)).toContain(menuItemId);
+    expect(usage.inventoryItems.map((r) => r.id)).toContain(inventoryItemId);
+    expect(media.mediaAssetUsageIsEmpty(usage)).toBe(false);
+  });
+
+  it("reports empty usage for an asset nothing points at", async () => {
+    const usage = await scoped(BID, () => media.getMediaAssetUsage(unusedAssetId));
+    expect(media.mediaAssetUsageIsEmpty(usage)).toBe(true);
+  });
+
+  it("loses only the pointer (FK SET NULL) when the asset is deleted — the catalogue rows survive", async () => {
+    await scoped(BID, () => media.deleteMediaAsset(BID, assetId, config));
+    const { rows } = await db.query<{ image_media_id: string | null }>(
+      `SELECT image_media_id FROM menu_items WHERE id = $1`,
+      [menuItemId],
+    );
+    expect(rows[0].image_media_id).toBeNull();
+  });
+});
