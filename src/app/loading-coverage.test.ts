@@ -79,7 +79,8 @@ describe("route-level skeleton coverage", () => {
       // renders a fixed list of links, so there is no data region to reserve.
       "dashboard/platform-user-menu.tsx",
       // Persistent support chrome has no initial read; its only request is the
-      // explicit end-session action and the button owns that pending state.
+      // end-session action (button, expiry, or the ended-session screen, which
+      // is a one-line status rather than a data region) and owns its pending text.
       "dashboard/support-session-banner.tsx",
     ]);
     const offenders: string[] = [];

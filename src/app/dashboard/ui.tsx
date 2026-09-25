@@ -438,6 +438,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     rate_limited: "تعداد درخواست‌ها بیش از حد مجاز است؛ چند لحظه بعد دوباره تلاش کنید.",
     module_unavailable: "این بخش برای نوع کسب‌وکار شما فعال نیست.",
     impersonation_read_only: "در حالت مشاهدهٔ فقط‌خواندنی امکان تغییر وجود ندارد.",
+    support_policy_owner_only: "سیاست دسترسی پشتیبانی را فقط خود کسب‌وکار می‌تواند تغییر دهد.",
+    support_session_mismatch: "این برگه به نشست پشتیبانی قدیمی‌تری تعلق دارد؛ صفحه را تازه کنید.",
     // Phase 36 — the CRM app. Each code names the thing the person has to fix,
     // not the constraint that fired: «نام بخش را بنویسید» is actionable,
     // «segment_name_required» is not.

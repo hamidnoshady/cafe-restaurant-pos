@@ -24,6 +24,7 @@ import {
 import { isInternalCall } from "@/lib/internal-auth";
 import { legacyRedirectTarget } from "@/lib/app-routes";
 import { deploymentRole } from "@/lib/deployment-role";
+import { supportMutationAllowed } from "@/lib/support-session";
 import {
   ADMIN_HOST_LABEL,
   hostRoutingEnabled,
@@ -1073,14 +1074,17 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
     }
   }
 
-  // Phase 15 — read-only impersonation.
+  // Phase 15 — read-only impersonation. The same decision `withTenantScope`
+  // makes, so the two layers cannot disagree — in particular both let the
+  // session's own end request through.
   if (
-    session.imp?.mode === "read_only" &&
+    session.imp &&
     pathname.startsWith("/api/") &&
-    MUTATING_METHODS.has(request.method)
+    MUTATING_METHODS.has(request.method) &&
+    !supportMutationAllowed(session, request.method, pathname)
   ) {
     return NextResponse.json(
-      { error: "impersonation_read_only" },
+      { error: session.imp.mode === "read_only" ? "impersonation_read_only" : "support_capability_denied" },
       { status: 403 },
     );
   }

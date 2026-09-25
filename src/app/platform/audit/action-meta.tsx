@@ -40,6 +40,11 @@ export const ACTION_META: Record<string, ActionMeta> = {
   "impersonation.start": { label: "شروع دسترسی پشتیبانی", tone: "warning", icon: KeyRound },
   "impersonation.end": { label: "پایان دسترسی پشتیبانی", tone: "muted", icon: KeyRound },
   "impersonation.revoke": { label: "لغو دسترسی پشتیبانی", tone: "warning", icon: KeyRound },
+  "support_session.started": { label: "شروع نشست پشتیبانی", tone: "warning", icon: KeyRound },
+  "support_session.ended": { label: "پایان نشست پشتیبانی", tone: "muted", icon: KeyRound },
+  "support_session.expired": { label: "انقضای نشست پشتیبانی", tone: "muted", icon: KeyRound },
+  "support_session.revoked": { label: "لغو نشست پشتیبانی از کنسول", tone: "warning", icon: KeyRound },
+  "support_session.tenant_revoked": { label: "لغو نشست پشتیبانی توسط کسب‌وکار", tone: "warning", icon: KeyRound },
 };
 
 export function auditMetaFor(action: string): ActionMeta {
@@ -51,6 +56,7 @@ export const AUDIT_ACTION_FAMILIES: { value: string; label: string }[] = [
   { value: "business", label: "کسب‌وکار" },
   { value: "feature", label: "ویژگی‌ها" },
   { value: "impersonation", label: "دسترسی پشتیبانی" },
+  { value: "support_session", label: "نشست‌های پشتیبانی" },
   { value: "billing", label: "مالی" },
   { value: "backup", label: "پشتیبان‌گیری" },
   { value: "cms", label: "سایت‌ساز" },
