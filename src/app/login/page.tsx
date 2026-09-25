@@ -9,6 +9,8 @@ import {
   swapHostLabel,
 } from "@/lib/host";
 import { resolveBusinessByLabel } from "@/lib/host-resolution";
+import { endedSupportSessionClaims } from "@/lib/auth";
+import { SupportSessionEnded } from "@/app/dashboard/support-session-banner";
 import LoginForm from "./login-form";
 
 // The alias resolution above reads the request's Host header, so this route
@@ -41,6 +43,12 @@ export default async function LoginPage() {
       }
     }
   }
+
+  // Every page's `redirect("/login")` lands here, so this is where a support
+  // operator whose session is over is sent back to the console instead of
+  // being shown the business's staff login.
+  const endedSupport = await endedSupportSessionClaims();
+  if (endedSupport) return <SupportSessionEnded grantId={endedSupport.imp.grantId} />;
 
   return <LoginForm />;
 }

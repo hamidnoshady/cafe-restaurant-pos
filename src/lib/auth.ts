@@ -25,11 +25,9 @@ import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./t
 import { capabilityForApiPath, capabilityHttpStatus, resolveCapability } from "./capabilities";
 import { readDeploymentProfile } from "./deployment-mode";
 import { deploymentRole } from "./deployment-role";
-import { supportMutationAllowed } from "./support-session";
+import { isSupportSessionExitRequest, supportMutationAllowed } from "./support-session";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-
-export { supportMutationAllowed } from "./support-session";
 
 /**
  * Phase 17 security review — `imp.grantId`'s own doc comment (auth-edge.ts)
@@ -125,6 +123,30 @@ export async function getSession(): Promise<SessionPayload | null> {
 }
 
 /**
+ * The support-session claims on this request's tenant cookie, verified for
+ * signature and expiry only — *not* for whether the grant is still live.
+ *
+ * Exactly one caller needs the unvalidated view: ending the session. Leaving
+ * must still work (and still clear the cookie) after the grant has expired or
+ * been revoked elsewhere, which is precisely when `getSession()` returns null.
+ * The ids come from a token this server signed, never from the request body,
+ * so a browser cannot point the close at somebody else's grant.
+ */
+export async function supportSessionClaims(): Promise<(SessionPayload & { imp: NonNullable<SessionPayload["imp"]> }) | null> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const claims = token ? await verifySession(token) : null;
+  return claims?.imp ? { ...claims, imp: claims.imp } : null;
+}
+
+/** A support cookie whose grant is over: the page should send the operator back to the console, not to /login. */
+export async function endedSupportSessionClaims() {
+  const claims = await supportSessionClaims();
+  if (!claims) return null;
+  const live = await activeGrant(claims.imp.grantId, claims.imp.adminId, claims.businessId);
+  return live && live.mode === claims.imp.mode ? null : claims;
+}
+
+/**
  * Wraps a route handler so its tenant scope survives for its *entire*
  * execution, including every query any guard or service call makes along the
  * way — not just the moment `getSession()` runs.
@@ -163,7 +185,7 @@ export function withTenantScope<Args extends unknown[]>(
     return runInTenantScope(scope, () => withAuthorizationMemo(async () => {
       const request = args[0] as NextRequest | undefined;
 
-      if (session?.imp && request && MUTATING_METHODS.has(request.method) && !supportMutationAllowed(session, request.nextUrl.pathname)) {
+      if (session?.imp && request && MUTATING_METHODS.has(request.method) && !supportMutationAllowed(session, request.method, request.nextUrl.pathname)) {
         return NextResponse.json(
           { error: session.imp.mode === "read_only" ? "impersonation_read_only" : "support_capability_denied" },
           { status: 403 },
@@ -252,7 +274,12 @@ export function withTenantScope<Args extends unknown[]>(
       // read_only mode never reaches here for a mutating method (middleware
       // 403s it first), so this fires only for the higher-trust `full` mode —
       // exactly the case that can change a customer's data.
-      if (session?.imp && request && MUTATING_METHODS.has(request.method)) {
+      if (
+        session?.imp &&
+        request &&
+        MUTATING_METHODS.has(request.method) &&
+        !isSupportSessionExitRequest(request.method, request.nextUrl.pathname)
+      ) {
         await platformAudit({
           adminId: session.imp.adminId,
           businessId: session.businessId,

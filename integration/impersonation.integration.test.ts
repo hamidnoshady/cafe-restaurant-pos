@@ -145,7 +145,9 @@ describe("startImpersonation / activeGrant", () => {
   });
 });
 
-describe("endImpersonation — the admin leaving on their own", () => {
+const channel = { channel: "test" };
+
+describe("closeSupportSession (operator) — the admin leaving on their own", () => {
   it("makes activeGrant stop returning the grant immediately", async () => {
     const { grant } = await platformService.startImpersonation({
       adminId: admin.id,
@@ -155,7 +157,7 @@ describe("endImpersonation — the admin leaving on their own", () => {
     });
     expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).not.toBeNull();
 
-    await platformService.endImpersonation(grant.id, admin.id);
+    expect(await platformService.closeSupportSession(grant.id, { type: "operator", adminId: admin.id }, channel)).toMatchObject({ status: "ended" });
     expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).toBeNull();
   });
 
@@ -166,13 +168,13 @@ describe("endImpersonation — the admin leaving on their own", () => {
       mode: "full",
       reason: "بررسی مشکل فنی مشتری",
     });
-    await platformService.endImpersonation(grant.id, otherAdmin.id);
-    // Still live: endImpersonation's WHERE clause requires the same admin.
+    expect(await platformService.closeSupportSession(grant.id, { type: "operator", adminId: otherAdmin.id }, channel)).toEqual({ status: "not_active" });
+    // Still live: an operator close is scoped to the operator's own grants.
     expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).not.toBeNull();
   });
 });
 
-describe("revokeImpersonation — the kill switch", () => {
+describe("closeSupportSession (platform_admin) — the kill switch", () => {
   it("makes activeGrant stop returning the grant immediately, same as ending it", async () => {
     const { grant } = await platformService.startImpersonation({
       adminId: admin.id,
@@ -182,7 +184,7 @@ describe("revokeImpersonation — the kill switch", () => {
     });
     expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).not.toBeNull();
 
-    await platformService.revokeImpersonation(grant.id, otherAdmin.id);
+    expect(await platformService.closeSupportSession(grant.id, { type: "platform_admin", adminId: otherAdmin.id }, channel)).toMatchObject({ status: "revoked" });
     expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).toBeNull();
   });
 
@@ -193,7 +195,7 @@ describe("revokeImpersonation — the kill switch", () => {
       mode: "full",
       reason: "بررسی مشکل فنی مشتری",
     });
-    await platformService.revokeImpersonation(grant.id, otherAdmin.id);
+    await platformService.closeSupportSession(grant.id, { type: "platform_admin", adminId: otherAdmin.id }, channel);
 
     const { rows } = await db.query<{ ended_at: string | null; revoked_at: string | null }>(
       "SELECT ended_at, revoked_at FROM impersonation_grants WHERE id = $1",
@@ -201,8 +203,8 @@ describe("revokeImpersonation — the kill switch", () => {
     );
     expect(rows[0].revoked_at).not.toBeNull();
 
-    // endImpersonation's WHERE excludes already-revoked rows, so this is a no-op.
-    await platformService.endImpersonation(grant.id, admin.id);
+    // A closed grant is never closed (or reopened) a second time.
+    expect(await platformService.closeSupportSession(grant.id, { type: "operator", adminId: admin.id }, channel)).toEqual({ status: "not_active" });
     const after = await db.query<{ ended_at: string | null }>(
       "SELECT ended_at FROM impersonation_grants WHERE id = $1",
       [grant.id],
@@ -276,7 +278,7 @@ describe("redeemImpersonationHandoff — the business-origin half", () => {
       mode: "full",
       reason: "بررسی مشکل فنی مشتری",
     });
-    await platformService.revokeImpersonation(grant.id, otherAdmin.id);
+    await platformService.closeSupportSession(grant.id, { type: "platform_admin", adminId: otherAdmin.id }, channel);
     expect(await platformService.redeemImpersonationHandoff(handoff.token)).toEqual({
       ok: false,
       error: "grant_inactive",
