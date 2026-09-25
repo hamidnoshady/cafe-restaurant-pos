@@ -30,7 +30,7 @@ import {
   type MediaSort,
   type MediaStorageConfig,
 } from "./media";
-import { s3Delete, s3Get, s3Put, type S3Config } from "./s3-lite";
+import { presignS3Get, s3Delete, s3Get, s3Put, type S3Config } from "./s3-lite";
 import { chargeFeatureUse, WalletInsufficientFundsError } from "./wallet-service";
 
 // ---------------------------------------------------------------------------
@@ -479,6 +479,36 @@ export async function readMediaObject(
   if (!keyBelongsToBusiness(row.storage_key, config.keyPrefix, businessId)) return null;
   const bytes = await s3Get(s3ConfigOf(config), row.storage_key);
   return { asset: rowToAsset(row), bytes };
+}
+
+/**
+ * A short-lived URL straight to the object in the bucket — for the one case
+ * `readMediaObject` cannot serve: a fetch that has to come from outside this
+ * app entirely (a WordPress site's own `media_sideload_image`, not a browser
+ * with a session cookie). Same fail-closed tenant check as every other read
+ * path; the difference is what happens after it passes — a signature good
+ * for `expiresSeconds`, not a proxied response.
+ *
+ * This hands the bucket's bytes to whoever holds the URL for that window,
+ * unauthenticated — acceptable only because the caller already required its
+ * own authorization (owner/manager pushing a specific asset they can already
+ * browse) before minting one, and the window is minutes, not hours.
+ */
+export async function readMediaObjectDownloadUrl(
+  businessId: string,
+  assetId: string,
+  config: MediaStorageConfig,
+  expiresSeconds: number,
+): Promise<{ asset: MediaAssetRecord; url: string } | null> {
+  const { rows } = await query<AssetRow & { storage_key: string }>(
+    `SELECT ${ASSET_COLUMNS}, storage_key FROM media_assets WHERE id = $1 AND business_id = $2 AND deleted_at IS NULL`,
+    [assetId, businessId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  if (!keyBelongsToBusiness(row.storage_key, config.keyPrefix, businessId)) return null;
+  const url = presignS3Get(s3ConfigOf(config), row.storage_key, expiresSeconds);
+  return { asset: rowToAsset(row), url };
 }
 
 /**

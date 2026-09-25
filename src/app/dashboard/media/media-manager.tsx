@@ -68,6 +68,18 @@ interface CollectionRow {
   assetCount: number;
 }
 
+interface WpMappingRow {
+  status: "pending" | "synced" | "failed";
+  wpUrl: string | null;
+  lastError: string | null;
+}
+interface WpPushConnection {
+  id: string;
+  name: string;
+  canPush: boolean;
+  mapping: WpMappingRow | null;
+}
+
 interface LibraryPayload {
   assets: AssetRow[];
   total: number;
@@ -1101,6 +1113,8 @@ export function AssetDrawer({
   const [notice, setNotice] = useState("");
   const [usage, setUsage] = useState<MediaAssetUsage | null>(null);
   const [assetCollections, setAssetCollections] = useState<{ id: string; name: string }[] | null>(null);
+  const [wpConnections, setWpConnections] = useState<WpPushConnection[] | null>(null);
+  const [wpBusyId, setWpBusyId] = useState<string | null>(null);
 
   const loadAssetCollections = useCallback(() => {
     api<{ collections: { id: string; name: string }[] }>(`/api/media/${asset.id}/collections`).then(
@@ -1156,6 +1170,39 @@ export function AssetDrawer({
       if (ok) setUsage(data.usage);
     });
   }, [asset.id]);
+
+  // WordPress is a *view* over this same asset (wordpress_media_mapping),
+  // not a second library — this list is only which connections could
+  // receive it and where each one currently stands, loaded lazily like
+  // usage/collections above.
+  const isPushableToWordPress = asset.kind === "image" || asset.kind === "video";
+  const loadWpConnections = useCallback(() => {
+    if (!isPushableToWordPress) return;
+    api<{ connections: WpPushConnection[] }>(`/api/media/${asset.id}/wordpress`).then(({ ok, data }) => {
+      if (ok) setWpConnections(data.connections);
+    });
+  }, [asset.id, isPushableToWordPress]);
+  useEffect(() => {
+    setWpConnections(null);
+    loadWpConnections();
+  }, [loadWpConnections]);
+
+  async function pushToWordPress(connectionId: string) {
+    setWpBusyId(connectionId);
+    setError("");
+    setNotice("");
+    const { ok, data } = await api<{ message?: string }>(`/api/media/${asset.id}/wordpress`, {
+      method: "POST",
+      body: JSON.stringify({ connectionId }),
+    });
+    setWpBusyId(null);
+    if (!ok) {
+      setError(data.message ?? "ارسال به وردپرس صف نشد.");
+      return;
+    }
+    setNotice("به صف ارسال به وردپرس اضافه شد؛ وضعیت پس از دریافت پاسخ افزونه به‌روزرسانی می‌شود.");
+    loadWpConnections();
+  }
 
   const isTaggableImage = asset.kind === "image" && asset.mimeType !== "image/svg+xml";
   const pending = asset.aiStatus === "pending_review" ? asset.aiLabels : null;
@@ -1558,6 +1605,53 @@ export function AssetDrawer({
                 </Button>
               </>
             )}
+          </div>
+        ) : null}
+
+        {isPushableToWordPress && wpConnections && wpConnections.length > 0 ? (
+          <div className="mb-4 rounded-xl border border-border p-3">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">ارسال به وردپرس</p>
+            <ul className="flex flex-col gap-2">
+              {wpConnections.map((c) => (
+                <li key={c.id} className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                  {c.mapping?.status === "synced" ? (
+                    <>
+                      <StatusBadge tone="positive">همگام‌شده</StatusBadge>
+                      {c.mapping.wpUrl ? (
+                        <a
+                          href={c.mapping.wpUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary underline underline-offset-2"
+                        >
+                          مشاهده در سایت
+                        </a>
+                      ) : null}
+                    </>
+                  ) : c.mapping?.status === "pending" ? (
+                    <StatusBadge tone="active">در حال ارسال</StatusBadge>
+                  ) : c.mapping?.status === "failed" ? (
+                    <StatusBadge tone="danger">ناموفق</StatusBadge>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!c.canPush || wpBusyId === c.id}
+                    onClick={() => pushToWordPress(c.id)}
+                    title={c.canPush ? undefined : "این اتصال از ارسال رسانه پشتیبانی نمی‌کند."}
+                  >
+                    {wpBusyId === c.id
+                      ? "در حال ارسال…"
+                      : c.mapping?.status === "synced"
+                        ? "ارسال دوباره"
+                        : c.mapping?.status === "failed"
+                          ? "تلاش دوباره"
+                          : "ارسال"}
+                  </Button>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 

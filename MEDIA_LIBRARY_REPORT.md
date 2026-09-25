@@ -28,9 +28,9 @@ What actually changed, in the order it was built:
    purge tick, collections as a first-class concept distinct from folders and tags, and a
    `wordpress_media_mapping` table recording which canonical asset corresponds to which
    connection's remote WordPress attachment. All three are wired end-to-end at the
-   service layer and (trash, collections) in the manager UI; the WordPress mapping table
-   is real, tested, RLS-protected schema with tested service functions, but has **no
-   route or UI consumer yet** — see Section K.
+   service layer and in the manager UI — the WordPress mapping table's producer route,
+   plugin-side confirmation loop and drawer UI were built in a later follow-up session
+   (item 7 below; Section K).
 3. **Deterministic transforms** (migration `0175`, this session): crop/rotate/resize as a
    free, local, non-AI tier (`sharp`), producing new `transformed` derived assets with
    `source_asset_id` provenance and `transform_ops` history, wired into
@@ -55,12 +55,17 @@ What actually changed, in the order it was built:
    loop — closing the single largest concretely-scoped gap this report had previously
    named. Found and fixed a real bug while wiring it in: the manager's upload failure
    summary was being silently erased by its own subsequent `reload()` call (Section J).
+7. **WordPress push** (follow-up session): the producer the mapping table was missing.
+   `POST /api/media/[id]/wordpress` pushes a canonical asset to a connected plugin-mode
+   WooCommerce store via a short-lived presigned bucket URL (`presignS3Get`, new); the
+   plugin (v1.6.4) echoes the push's operation id back on the resulting attachment event,
+   closing the loop to `confirmWordPressMediaSync`/`failWordPressMediaSync`; the asset
+   drawer shows per-connection push status. See Section K.
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
 `0174`/`0175`, a full naming-system rebuild, AI-tagging review-workflow states
 (`pending_review`/`confirmed`/`rejected` semantics), a visual folder explorer with a
-mobile drawer, rich filter-chip UI, a WordPress push route/UI built on top of the new
-mapping table, centralized OCR/document-intelligence consumption by
+mobile drawer, rich filter-chip UI, centralized OCR/document-intelligence consumption by
 Accounting/CRM/Workspace, new AI editing operations beyond crop/rotate/resize (background
 removal, upscale, variations), a new numbered migration beyond `0174`/`0175`, dead-route
 removal, or E2E/mobile/accessibility/performance tests/CI changes. Section V lists these
@@ -261,26 +266,71 @@ one terminal `UploadProgressEvent`, the same "never rejects, `ok:false` instead"
 
 ## K. WordPress
 
-`migrations/0174` added `wordpress_media_mapping` (canonical asset ↔ one connection's
-remote attachment, unique per `(connection_id, media_asset_id)` so a re-push updates the
-existing row rather than duplicating it on the WordPress side) and four service functions
-(`recordWordPressMediaPush`, `confirmWordPressMediaSync`, `failWordPressMediaSync`,
-`getWordPressMediaMapping`/`listWordPressMappingsForAsset`), all covered by integration
-tests against a real database (pending push → confirmed sync; re-push updates in place;
-failed push recorded distinctly from synced).
+WordPress media is now a **view over the canonical Media Library** for the one path that
+was missing: pushing an asset the operator already has in the library out to a connected
+site. `migrations/0174`'s `wordpress_media_mapping` (canonical asset ↔ one connection's
+remote attachment, unique per `(connection_id, media_asset_id)`) and its five service
+functions existed with no caller before this session; this session built the producer,
+the confirmation loop, and the UI around them, so the whole lifecycle now runs end to end:
 
-**This is schema and service-layer plumbing with no consumer.** `grep`-confirmed: no
-route and no UI component calls any of these four functions. `src/app/(app)/websites/wp/`
-and `src/app/api/integrations/wp-manager/media/` — the actual WordPress media mirror a
-user interacts with today — are unchanged; they still run their own independent mirror,
-not a view over the canonical Media Library. Turning WordPress media into "a view over
-central Media" (the original request's exact phrase) needs: a route that lets an
-operator push a canonical asset out to a connected WordPress site (calling
-`recordWordPressMediaPush`, then an outbox job that actually uploads bytes via the
-WordPress REST API and calls `confirmWordPressMediaSync` on the plugin's webhook
-confirmation), and a UI affordance in the wp-manager screens showing "already pushed to
-this site" using the mapping table instead of (or alongside) the existing independent
-mirror. None of that exists yet.
+- **Producer** — `POST /api/media/[id]/wordpress` (new route). Plugin-mode WooCommerce
+  connections advertising the `media_create` capability only (REST mode is refused with
+  `media_rest_unsupported` for the same SSRF reason the existing arbitrary-URL producer
+  at `/api/integrations/wp-manager/media` refuses it); scoped to `image`/`video` assets.
+  It cannot reuse `/api/media/[id]/file` to hand the plugin bytes — that route requires
+  this app's own session cookie, which a WordPress server calling `media_sideload_image()`
+  has no way to send — so it mints a **presigned S3 GET URL** straight to the object
+  (`presignS3Get`, new in `s3-lite.ts`: the SigV4 query-string presigning variant,
+  `X-Amz-Expires=900`, cross-checked byte-for-byte against boto3's
+  `generate_presigned_url("get_object", ...)` under a fixed clock), enqueues a
+  `media_create` outbox job carrying that URL, and calls `recordWordPressMediaPush`.
+  `GET /api/media/[id]/wordpress` lists the business's WooCommerce connections with each
+  one's push eligibility and current mapping, for the drawer.
+- **Confirmation loop — the gap that made the mapping table theoretical.** The plugin's
+  job ack (`pluginAckJobs`) only ever reported "the job ran without throwing", never the
+  resulting attachment's WordPress id — so nothing could call `confirmWordPressMediaSync`
+  with real data. Closed on both sides: the plugin (`class-pos-sync.php`,
+  `apply_media_create()`, pre-existing) already stamps the new attachment with
+  `_pos_operation_id`; `content_payload()` now echoes that meta back as `operation_id` on
+  the `add_attachment` event the plugin fires immediately after (**plugin v1.6.4**). The
+  app's ingestion path (`webhook-ingest-service.ts`) recognizes an `attachment` event
+  carrying an `operation_id` and calls `confirmWordPressMediaSync` with the real
+  `wp_media_id`/`wp_url` — the *only* signal that correlates a push to this specific
+  mapping row, since every other attachment event (a site owner's own upload, a later
+  edit) carries no operation id and is correctly left untouched. Symmetrically, a
+  `media_create` job that exhausts its retries and dead-letters now calls
+  `failWordPressMediaSync` (`pluginAckJobs`) instead of leaving the mapping `pending`
+  forever with no event left that could ever resolve it.
+- **UI** — the asset drawer's new "ارسال به وردپرس" panel (image/video assets only, and
+  only rendered once the business has at least one WooCommerce connection): one row per
+  connection with its push button (disabled with a tooltip when the connection cannot
+  receive media), and a status badge — در حال ارسال / همگام‌شده (with a live link to the
+  file on the site) / ناموفق — driven by the mapping, re-pushable at any point.
+- **What is still a separate, unrelated system, on purpose**: `integration_wp_content`
+  (the general bidirectional post/page/media *content mirror* the wp-manager screens
+  already showed, keyed on `connection_id, wp_type, remote_id`) and the pre-existing
+  arbitrary-URL producer at `/api/integrations/wp-manager/media` are both untouched — the
+  former is a different feature (browsing what a store already has), the latter a
+  different one (adding a URL that never was a canonical asset). Neither claims to be
+  "the view over central Media"; this mapping table is.
+- **A disclosed, inherent limitation, not a bug**: the presigned URL only works when the
+  Media bucket is reachable from the public internet. A tenant whose storage endpoint is
+  a LAN-only MinIO (a case `s3-lite.ts` explicitly supports for backups) cannot use this
+  feature — an external WordPress site has no path to fetch from a private network. This
+  is a deployment-topology constraint on the operator, not something a URL-signing
+  mechanism can fix.
+
+Tests: `presignS3Get` pinned against boto3 plus edge cases (`s3-lite.test.ts`, 5 new
+tests); `readMediaObjectDownloadUrl`'s real fetch-through-the-mock-bucket round-trip and
+tenant isolation (`media-library.integration.test.ts`, 3 new tests); the route's full
+permission/capability/kind gating and its outbox-insert/mapping/audit side effects, mocked
+(`src/app/api/media/[id]/wordpress/route.test.ts`, 13 new tests); the operation-id
+correlation, the "ordinary sync never touches an unrelated mapping" negative case, and
+both branches of the ack-driven dead-letter → fail wiring, against a real database
+(`wp-manager.integration.test.ts`, 4 new tests); the plugin source change
+(`wp-plugin-admin-source.test.ts`, 1 new test asserting the meta is read only inside the
+attachment branch); the drawer panel's visibility, disabled state, status badges and push
+flow (`media-manager.test.tsx`, 4 new tests). 30 new tests total, all passing.
 
 ## L. AI media (editing / generation)
 
@@ -336,7 +386,7 @@ a centralized OCR pipeline exists, because no centralized OCR pipeline was built
 | Product | No separate module — "Product" in this app's dashboard is a view over menu/inventory items, both already covered above |
 | AI Chat attachments | **Yes** (pre-existing) — `source='ai_attachment'` via `ai-media-persist.ts` → `storeMediaAsset` |
 | AI-generated images | **Yes** (pre-existing) — `source='ai_generated'` |
-| WordPress/CMS media mirror | **No** — independent mirror; a mapping table exists with no consumer (Section K) |
+| WordPress/CMS media mirror | **Partial** — pushing a canonical asset out to a connected site is now a view over the Media Library via `wordpress_media_mapping` (Section K); the separate, pre-existing `integration_wp_content` mirror (browsing what a store already has, independent of this app's storage) is untouched by design, not a gap in this row |
 | Website builder (`website/content-service.ts`, distinct first-party CMS, not WordPress) | **No** — pushes bytes to an external headless-CMS adapter by design (not this app's own storage); its byte-signature check now delegates to the canonical one (Section O.2), but its upload target is genuinely external, not a duplicate of local storage |
 | Accounting (invoice/receipt OCR) | **No** — deliberately ephemeral, not persisted anywhere (Section M) |
 | CRM (party profile image) | **No** — inline `data:` URL on the party row, same architecture as the business logo (not S3-backed); this session added the server-side validation it was missing (Section O.2) but did not migrate it onto the Media Library |
@@ -454,6 +504,7 @@ all.
 | `PATCH /api/media/folders/[id]` | + `parentId` (folder move), cycle/depth guards |
 | `GET /api/media/[id]/file` | permission model changed from unconditional `media.view` to usage-based (Section O.1) |
 | `GET /api/media/[id]/usage` **(new, first session)** | asset usage references for the delete-confirmation UI |
+| `GET/POST /api/media/[id]/wordpress` **(new)** | list WooCommerce push targets + current mapping / push a canonical asset out to one |
 
 No routes were removed.
 
@@ -490,14 +541,15 @@ duplication to consolidate, not dead code to delete.
   synthetic PNGs generated with `sharp` — crop dimensions, crop out-of-bounds rejection,
   rotate 90° dimension swap, resize `fit: "inside"` bound check, resize `fit: "fill"`
   exact dimensions, non-image bytes rejected via `MediaTransformError`.
-- `integration/media-library.integration.test.ts`: 40 tests total — the first session's
+- `integration/media-library.integration.test.ts`: 43 tests total — the first session's
   +5 `describe` blocks (dedup, sort, source filter, search normalization, usage
-  references), the phase-2 work's trash/collections/WordPress-mapping blocks, and 3 new
-  tests this session for the deterministic-transform feature (a `transformed` asset's
-  round-trip through `getMediaAsset` including `sourceAssetId`/`transformOps`; a
-  crop-then-resize chain recording only its own op at each step, not accumulated
-  history; a transformed asset appearing in a filtered library listing next to its
-  source).
+  references), the phase-2 work's trash/collections/WordPress-mapping blocks, 3 tests for
+  the deterministic-transform feature (a `transformed` asset's round-trip through
+  `getMediaAsset` including `sourceAssetId`/`transformOps`; a crop-then-resize chain
+  recording only its own op at each step, not accumulated history; a transformed asset
+  appearing in a filtered library listing next to its source), and 3 new tests this
+  session for `readMediaObjectDownloadUrl` (a presigned URL that actually fetches the
+  real bytes back from the mock bucket; tenant isolation; nonexistent asset).
 - `integration/media-reconcile-orphans.integration.test.ts` **(new file, this session)**:
   6 tests, described in Section P.
 - `integration/parties.integration.test.ts`: +5 tests this session for the
@@ -532,6 +584,21 @@ duplication to consolidate, not dead code to delete.
   `cancel()` settling every remaining file as `canceled` without a network call for the
   ones a worker had not reached, and `cancel()` aborting an already in-flight request
   through the shared `AbortSignal`.
+- WordPress push (Section K, this session) — 30 new tests across six files:
+  `src/lib/s3-lite.test.ts` (+5, `presignS3Get` pinned against boto3 plus clamping/
+  encoding/clock edge cases), `integration/media-library.integration.test.ts` (+3,
+  covered above), `src/app/api/media/[id]/wordpress/route.test.ts` **(new file, 13
+  tests)** — the full permission/kind/capability/paused/REST-mode gating matrix plus the
+  outbox-insert/mapping/audit side effects of a successful push, mocked in the same style
+  as the pre-existing `wp-manager/media/route.test.ts` — `integration/
+  wp-manager.integration.test.ts` (+4, against a real database: operation-id correlation
+  confirms the right mapping; an unrelated attachment sync with no operation id touches
+  nothing; a dead-lettered `media_create` job fails the mapping; an ordinary retry-able
+  failure leaves it pending), `src/lib/integrations/wp-plugin-admin-source.test.ts` (+1,
+  asserting the plugin echoes the meta only inside the attachment branch), and
+  `media-manager.test.tsx` (+4, the drawer panel's visibility gating, disabled state for
+  a connection that cannot push, status badges with a working link, and the push flow
+  itself).
 
 No tests were skipped, stubbed, or marked as TODO anywhere in this program. Media now has
 two dedicated component-test files (`media-manager.test.tsx`'s crop and upload-panel
@@ -631,11 +698,33 @@ dedicated Media E2E/mobile/a11y coverage.
     `act()` boundary in one of its three new tests; the test's assertions are
     deterministic and pass on every repeated run, but the warning itself was not fully
     eliminated.
+13. **Same follow-up session — WordPress push (Section K)**: closed the "mapping table
+    with no producer" gap. `presignS3Get`'s output was cross-checked byte-for-byte
+    against a real boto3 `generate_presigned_url` call under a pinned clock before being
+    trusted in `s3-lite.test.ts`. `npx tsc --noEmit` clean; `npx eslint` clean on every
+    touched file (`s3-lite.ts`, `media-service.ts`, `wp-content-service.ts`,
+    `webhook-ingest-service.ts`, `plugin-service.ts`, the new route and its test, the
+    drawer and its test). Full unit suite re-run: **428/428 files, 6017/6017 tests
+    passed** (428/6017, up from the prior 427/5993 by the 1 new route-test file plus the
+    additions inside `s3-lite.test.ts`, `wp-plugin-admin-source.test.ts` and
+    `media-manager.test.tsx` — 0 regressions elsewhere). The full DB integration suite
+    (`npm run test:db` equivalent, `vitest.db.config.ts`, all 133 files) was re-run in
+    full — not just the Media-touching files — and passed: **133/133 files, 1557/1558
+    tests passed, 1 pre-existing skip**, including `media-library.integration.test.ts`
+    43/43 and `wp-manager.integration.test.ts` 28/28 (24 pre-existing + 4 new). The PHP
+    plugin change (`class-pos-sync.php`, version bumped 1.6.3→1.6.4, changelog entry
+    added) has no PHP test runner in this repo; it was verified by careful read-through
+    plus the new `wp-plugin-admin-source.test.ts` assertion on the exact source text, not
+    by executing PHP. `npm run build` again hit the same sandbox OOM
+    (`SIGKILL`) documented in item 10 — unrelated to this change, not re-investigated.
 
-Net effect on the test suite across this whole program: **+35 unit tests
-(`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx` 0→6,
-`media-uploader.test.ts` 0→8), +14 integration tests from an earlier session (3
-transform + 6 orphan-reconciliation + 5 parties), plus the phase-2
+Net effect on the test suite across this whole program: **+35 unit tests from earlier
+sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx`
+0→10 counting this step's +4, `media-uploader.test.ts` 0→8) plus +23 unit tests from this
+step (`s3-lite.test.ts` +5, `src/app/api/media/[id]/wordpress/route.test.ts` +13 new
+file, `wp-plugin-admin-source.test.ts` +1), +14 integration tests from an earlier session
+(3 transform + 6 orphan-reconciliation + 5 parties) plus +7 from this step (3
+`readMediaObjectDownloadUrl` + 4 WordPress-correlation), plus the phase-2
 trash/collections/WordPress-mapping integration coverage from the middle of this program
 — 0 net regressions** at every checkpoint where the full suite was re-run.
 
@@ -651,10 +740,13 @@ full-suite re-run this session, after every change, was green.
   follow-up session: `src/lib/media-uploader.ts` now backs both the manager's multi-file
   upload and the picker's single-file upload, tested and verified (Section J, Section U
   item 12).
-- **WordPress as "a view over central Media"** — the mapping table and its service
-  functions exist and are tested, but nothing pushes a canonical asset to a connected
-  WordPress site through them yet, and the existing independent WordPress media mirror
-  is untouched (Section K).
+- ~~**WordPress as "a view over central Media"**~~ — closed in a follow-up session: a
+  producer route pushes a canonical asset to a connected plugin-mode WooCommerce
+  connection via a presigned bucket URL, the plugin's echoed operation id closes the loop
+  back to `confirmWordPressMediaSync`/`failWordPressMediaSync`, and the asset drawer shows
+  per-connection push/status, all tested (Section K, Section U item 13). The existing
+  independent content mirror (`integration_wp_content`) is a different, still-untouched
+  feature by design, not a gap in this one.
 - ~~**Crop has no UI entry point**~~ — closed in a follow-up session: a drag-to-select
   crop rectangle is now wired into the manager's asset drawer, tested, and verified
   (Section L, Section U item 11).

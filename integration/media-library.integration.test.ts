@@ -1009,6 +1009,50 @@ describe("WordPress mapping — canonical asset ↔ one connection's remote atta
   });
 });
 
+describe("readMediaObjectDownloadUrl — a presigned link for a fetch this app cannot proxy", () => {
+  it("mints a URL that actually fetches the object's real bytes straight from the bucket", async () => {
+    const bytes = pngOf(120);
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "for-wordpress.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+      }),
+    );
+
+    const result = await scoped(BID, () => media.readMediaObjectDownloadUrl(BID, asset.id, config, 300));
+    expect(result).not.toBeNull();
+    expect(result?.asset.id).toBe(asset.id);
+    expect(result?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/media-test\/media\//);
+    expect(result?.url).toContain("X-Amz-Expires=300");
+
+    // The mock bucket from this file's beforeAll actually serves whatever URL
+    // comes out — the same server a real presigned-GET client would hit.
+    const response = await fetch(result!.url);
+    expect(response.status).toBe(200);
+    const fetched = Buffer.from(await response.arrayBuffer());
+    expect(fetched.equals(bytes)).toBe(true);
+  });
+
+  it("refuses a business's asset id under another tenant, the same fail-closed check as readMediaObject", async () => {
+    const bytes = pngOf(121);
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "tenant-only.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+      }),
+    );
+    const result = await scoped(BID2, () => media.readMediaObjectDownloadUrl(BID2, asset.id, config, 300));
+    expect(result).toBeNull();
+  });
+
+  it("returns null for an asset that does not exist", async () => {
+    const result = await scoped(BID, () =>
+      media.readMediaObjectDownloadUrl(BID, "00000000-0000-0000-0000-000000000000", config, 300),
+    );
+    expect(result).toBeNull();
+  });
+});
+
 describe("deterministic transforms (migration 0175) — crop/rotate/resize as derived assets", () => {
   it("stores a 'transformed' variant pointing back at its source, carrying its transform_ops, and round-trips through getMediaAsset", async () => {
     const originalBytes = pngOf(200);

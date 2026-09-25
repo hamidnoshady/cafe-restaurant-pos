@@ -112,6 +112,105 @@ function mockFetchOk() {
   });
 }
 
+describe("AssetDrawer WordPress push", () => {
+  function wpFetch(connections: unknown[]) {
+    return vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/media/asset-1/usage") {
+        return { ok: true, status: 200, json: async () => ({ usage: { menuItems: [], inventoryItems: [] } }) };
+      }
+      if (url === "/api/media/asset-1/collections") {
+        return { ok: true, status: 200, json: async () => ({ collections: [] }) };
+      }
+      if (url === "/api/media/asset-1/wordpress" && (!init || init.method === undefined)) {
+        return { ok: true, status: 200, json: async () => ({ connections }) };
+      }
+      if (url === "/api/media/asset-1/wordpress" && init?.method === "POST") {
+        return { ok: true, status: 201, json: async () => ({ ok: true, mapping: { status: "pending" } }) };
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+  }
+
+  it("hides the section entirely for a business with no WooCommerce connections", async () => {
+    const fetchMock = wpFetch([]);
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <AssetDrawer asset={baseAsset()} folders={[]} collections={[]} enhancePriceRial={0} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => url === "/api/media/asset-1/wordpress")).toBe(true),
+    );
+    expect(screen.queryByText("ارسال به وردپرس")).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("never fetches a push list for a document — the feature is scoped to image/video", async () => {
+    const fetchMock = wpFetch([{ id: "conn-1", name: "فروشگاه من", canPush: true, mapping: null }]);
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <AssetDrawer
+        asset={baseAsset({ kind: "document", mimeType: "application/pdf" })}
+        folders={[]}
+        collections={[]}
+        enhancePriceRial={0}
+        onClose={() => {}}
+        onUpdated={() => {}}
+        onDeleted={() => {}}
+      />,
+    );
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => url === "/api/media/asset-1/usage")).toBe(true),
+    );
+    expect(fetchMock.mock.calls.some(([url]) => url === "/api/media/asset-1/wordpress")).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it("shows each connection's push eligibility and current sync status, and disables the button when the plugin cannot receive media", async () => {
+    const fetchMock = wpFetch([
+      { id: "conn-1", name: "فروشگاه فعال", canPush: true, mapping: null },
+      { id: "conn-2", name: "فروشگاه قدیمی", canPush: false, mapping: null },
+      { id: "conn-3", name: "فروشگاه همگام‌شده", canPush: true, mapping: { status: "synced", wpUrl: "https://shop.example.com/x.png", lastError: null } },
+    ]);
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <AssetDrawer asset={baseAsset()} folders={[]} collections={[]} enhancePriceRial={0} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    await screen.findByText("فروشگاه فعال");
+    expect(screen.getByText("فروشگاه قدیمی")).not.toBeNull();
+    expect(screen.getByText("همگام‌شده")).not.toBeNull();
+    const link = screen.getByRole("link", { name: "مشاهده در سایت" });
+    expect(link.getAttribute("href")).toBe("https://shop.example.com/x.png");
+
+    const buttons = screen.getAllByRole("button", { name: /ارسال/ });
+    // «فروشگاه قدیمی» cannot receive media — its button is disabled.
+    const disabled = buttons.find((b) => b.hasAttribute("disabled"));
+    expect(disabled).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
+  it("pushing queues the job and refreshes the connection list", async () => {
+    const fetchMock = wpFetch([{ id: "conn-1", name: "فروشگاه فعال", canPush: true, mapping: null }]);
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(
+      <AssetDrawer asset={baseAsset()} folders={[]} collections={[]} enhancePriceRial={0} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    const button = await screen.findByRole("button", { name: "ارسال" });
+    await act(async () => {
+      await user.click(button);
+    });
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) => url === "/api/media/asset-1/wordpress" && init?.method === "POST",
+      );
+      expect(call).toBeTruthy();
+      expect(call![1]?.body).toBe(JSON.stringify({ connectionId: "conn-1" }));
+    });
+    await screen.findByText("به صف ارسال به وردپرس اضافه شد؛ وضعیت پس از دریافت پاسخ افزونه به‌روزرسانی می‌شود.");
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("AssetDrawer crop tool", () => {
   it("hides the crop button for non-image assets", () => {
     render(
