@@ -4,7 +4,7 @@ Tags: woocommerce, accounting, pos, sync, erp
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.6.2
+Stable tag: 1.6.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,9 @@ HMAC-SHA256 روی متن دقیق درخواست است. توکن فقط برا
 از دست نمی‌رود.
 
 == Changelog ==
+
+= 1.6.3 =
+* بهبودها و رفع اشکال.
 
 = 1.6.2 =
 * حذف صفحهٔ قدیمی و بلااستفادهٔ تنظیمات زیرمنوی ووکامرس (از ۱.۶.۰ منوی مستقل «اشوبه» جای آن را گرفته بود)؛ کلاس تنظیمات اکنون فقط پردازش‌کنندهٔ فرم‌های همان پیشخوان است.
