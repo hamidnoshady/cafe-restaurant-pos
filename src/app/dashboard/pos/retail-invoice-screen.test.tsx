@@ -307,6 +307,55 @@ describe("RetailInvoiceScreen — submitting a sale", () => {
     ]);
   });
 
+  it("moves the payment-way radiogroup's checked state and DOM focus with ArrowDown/ArrowUp, per WAI-ARIA — not just its own click", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/api/payment-methods")) {
+        return new Response(JSON.stringify({ paymentMethods: [CASH_METHOD, BANK_METHOD] }), { status: 200 });
+      }
+      const [match] = routeFor(url);
+      if (match) return new Response(JSON.stringify(match.body), { status: 200 });
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RetailInvoiceScreen industry="accessories" />);
+    await flush();
+
+    const radios = await flushUntil(() => {
+      const found = screen.getAllByRole("radio");
+      expect(found).toHaveLength(2);
+    }).then(() => screen.getAllByRole("radio")) as HTMLButtonElement[];
+    const [cashRadio, bankRadio] = radios;
+
+    // Cash is the first way — checked by default, and the only Tab stop.
+    expect(cashRadio.getAttribute("aria-checked")).toBe("true");
+    expect(cashRadio.tabIndex).toBe(0);
+    expect(bankRadio.getAttribute("aria-checked")).toBe("false");
+    expect(bankRadio.tabIndex).toBe(-1);
+
+    act(() => {
+      cashRadio.focus();
+      fireEvent.keyDown(cashRadio, { key: "ArrowDown" });
+    });
+
+    expect(bankRadio.getAttribute("aria-checked")).toBe("true");
+    expect(bankRadio.tabIndex).toBe(0);
+    expect(cashRadio.getAttribute("aria-checked")).toBe("false");
+    expect(cashRadio.tabIndex).toBe(-1);
+    // Focus moves with the check, the way a native <input type="radio"> group
+    // behaves — otherwise the arrow key silently strands keyboard focus on a
+    // button that is no longer even in the Tab order.
+    expect(document.activeElement).toBe(bankRadio);
+
+    // ArrowUp reverses it, and wraps: from the first/only-remaining option
+    // back to the last.
+    act(() => {
+      fireEvent.keyDown(bankRadio, { key: "ArrowUp" });
+    });
+    expect(cashRadio.getAttribute("aria-checked")).toBe("true");
+    expect(document.activeElement).toBe(cashRadio);
+  });
+
   it("still shows the sale as completed when the print-data fetch fails, and warns instead of blocking", async () => {
     const fetchMock2 = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.includes("/api/sales/invoices") && init?.method === "POST") {

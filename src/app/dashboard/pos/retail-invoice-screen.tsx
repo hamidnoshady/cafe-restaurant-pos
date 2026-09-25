@@ -18,7 +18,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * computes a ledger amount; the totals shown are the ones the server will
  * confirm back.
  */
-import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { PlusIcon, PrinterIcon, RefreshCwIcon, SplitIcon, Trash2Icon, XIcon } from "lucide-react";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
@@ -41,6 +41,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { MAX_RETAIL_TENDERS } from "@/lib/retail-tenders";
+import { radioMoveForKey, radioTargetIndex } from "@/lib/radio-keys";
 import { safeRandomId } from "@/lib/client-id";
 import { HoldToConfirmButton } from "../hold-to-confirm-button";
 import { kickDrawer, printReceipt } from "@/lib/printing/client";
@@ -203,6 +204,11 @@ export function RetailInvoiceScreen({
   // to run without a real selection.
   const paymentMethod = selectedWay ? ledgerSettlementFor(selectedWay.settlement) : null;
   const [paymentReference, setPaymentReference] = useState("");
+  // Roving focus for the `role="radiogroup"` below — see radio-keys.ts (the
+  // same helper business-settings.tsx's currency choice and the branch-colour
+  // picker already use). Without it every way is its own Tab stop and the
+  // arrow keys do nothing, which is a tab list wearing a radiogroup's name.
+  const paymentWayButtonsRef = useRef<Array<HTMLButtonElement | null>>([]);
   // «تقسیم بین چند روش» — an invoice still posts through the per-line
   // domain-event engine (one destination per *line*, drawn from a shared
   // queue; see retail-tenders.ts), but the till can hand over cash+card for
@@ -650,22 +656,37 @@ export function RetailInvoiceScreen({
                     </p>
                   ) : (
                     <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="روش پرداخت">
-                      {settlementWays.map((way) => (
-                        <button
-                          key={way.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={selectedWay?.id === way.id}
-                          onClick={() => setPaymentWayId(way.id)}
-                          className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 ${
-                            selectedWay?.id === way.id
-                              ? "border-amber-500 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 font-medium text-amber-900 dark:text-amber-200"
-                              : "border-border text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40"
-                          }`}
-                        >
-                          {way.name}
-                        </button>
-                      ))}
+                      {settlementWays.map((way, index) => {
+                        const active = selectedWay?.id === way.id;
+                        return (
+                          <button
+                            key={way.id}
+                            ref={(node) => {
+                              paymentWayButtonsRef.current[index] = node;
+                            }}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            tabIndex={active ? 0 : -1}
+                            onClick={() => setPaymentWayId(way.id)}
+                            onKeyDown={(event) => {
+                              const move = radioMoveForKey(event.key, true);
+                              const target = move && radioTargetIndex(move, index, settlementWays.length);
+                              if (target === null || target === undefined) return;
+                              event.preventDefault();
+                              setPaymentWayId(settlementWays[target].id);
+                              paymentWayButtonsRef.current[target]?.focus();
+                            }}
+                            className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 ${
+                              active
+                                ? "border-amber-500 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 font-medium text-amber-900 dark:text-amber-200"
+                                : "border-border text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40"
+                            }`}
+                          >
+                            {way.name}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                   {selectedWay?.requiresReference ? (

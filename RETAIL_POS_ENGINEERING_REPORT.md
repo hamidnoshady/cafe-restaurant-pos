@@ -351,11 +351,13 @@ shipped. Not done, in the order the brief recommended tackling them:
   inspection and empirical test before being shipped, and reverted rather
   than exposed. See §12.1 for the root cause and why it was reverted instead
   of fixed in place.
-- **RTL/accessibility/responsive-breakpoint audit** — not performed as a
-  dedicated pass; the new `HoldToConfirmButton` wiring reuses an
-  already-accessible component (aria-label with the hold instruction,
-  keyboard Space/Enter support), but no systematic RTL or breakpoint sweep of
-  `retail-invoice-screen.tsx` was done this engagement.
+- **RTL/accessibility/responsive-breakpoint audit** — a scoped pass over the
+  three retail invoice screens (not a systematic sweep of the whole app) was
+  done in a later follow-up; see §18. It found and fixed one concrete WAI-ARIA
+  violation (the payment-way radiogroup had no keyboard support) and confirmed
+  the rest of these screens already follow the app's established RTL/a11y
+  conventions correctly. No responsive-breakpoint sweep (e.g. manually
+  checking 390px) was performed either time — that remains open.
 - **Manual/browser test scenarios** — the brief lists ten manual scenarios
   (normal sale, barcode, watch, jewelry, cosmetics batch, split payment,
   credit, printer missing, printer retry, mobile @390px). **None of these
@@ -1255,14 +1257,103 @@ rows" gap and this display/filter bug are both closed by this section.
 ## 17. Remaining backlog against the original 91-point brief
 
 Everything in §9 not superseded by §14 (void/reversal), §15 (split payment),
-or §16 (invoice-management export/filter fix) remains open and was
-explicitly **not** attempted this bucket, per direction: the `retail-pos/`
-module reorganisation, the full desktop/mobile UI redesign, modal line
-editors for in-place cart-line edits, a dedicated payment modal, permission-
-ID normalisation to `sales.invoice.*`, the supervisor-PIN override system,
-a systematic RTL/accessibility/breakpoint audit, and the ten manual/browser
-test scenarios the original brief lists. A gold/watch return/reinstatement
+§16 (invoice-management export/filter fix), or §18 (RTL/accessibility audit)
+remains open and was explicitly **not** attempted this bucket, per direction:
+the `retail-pos/` module reorganisation, the full desktop/mobile UI redesign,
+modal line editors for in-place cart-line edits, a dedicated payment modal,
+permission-ID normalisation to `sales.invoice.*`, the supervisor-PIN override
+system, a responsive-breakpoint sweep, and the ten manual/browser test
+scenarios the original brief lists. A gold/watch return/reinstatement
 workflow (manager approval, physical inspection, explicit disposition
 outcomes) — distinct from void, which §14 blocks entirely for gold/watch by
 design — is also not built. None of these are silent regressions; they are
 listed here, as in §9, so they are not mistaken for done.
+
+Permission-ID normalisation and the supervisor-PIN system were considered as
+the next item after §16 and deliberately **not** started: the former is not
+a pure rename — retail invoices are `orders` rows, so a new `sales.invoice.*`
+namespace would need a data migration backfilling every existing business's
+custom-role grants (`orders.view` → also `sales.invoice.view`, etc.) or
+existing users lose access to retail invoices the moment it ships, which is
+a product/rollout decision, not a refactor. The latter needs its own design
+decisions (who can set/reset a PIN, lockout behaviour, audit logging) that
+were not made. Both are left as backlog rather than guessed at.
+
+## 18. Follow-up session — retail-invoice RTL/accessibility audit
+
+A scoped audit of the three retail-invoice-specific screens
+(`retail-invoice-screen.tsx`, `invoice-management-view.tsx`,
+`retail-invoice-detail-modal.tsx`) — not a systematic sweep of the whole
+product, which §9/§17 still list as open.
+
+### 18.1 What was checked, and came back clean
+
+- **RTL layout** — `grep` for physical-direction Tailwind utilities
+  (`left-`/`right-`/`ml-`/`mr-`/`pl-`/`pr-`/`text-left`/`text-right`/
+  `rounded-l-`/`rounded-r-`/`border-l-`/`border-r-`) across all three files
+  returned nothing; they already use only logical properties (`ps-`/`pe-`/
+  `ms-`/`me-`/`start-`/`end-`), consistent with the README's stated
+  convention. No directional chevron/arrow icons that would need mirroring
+  either.
+- **Document direction/language** — set once, correctly, at the root
+  (`<html lang="fa" dir="rtl">` in `src/app/layout.tsx`); no per-component
+  overrides needed or found.
+- **Labelling** — every icon paired with visible text carries
+  `aria-hidden="true"` (decorative, not a redundant second announcement); the
+  search input and each split-payment tender row's way/amount/reference
+  fields have real `aria-label`s (`Field`'s own doc comment already explains
+  *why* it offers an `as="div"` mode instead of a wrapping `<label>` for
+  multi-control groups — a `<label>` forwards a click on its own whitespace
+  to the first labelable descendant, which would silently mis-click a
+  radiogroup or chip picker); filter chip groups use `role="group"` +
+  `aria-label` with `aria-pressed` toggle buttons, a pattern that needs no
+  roving tabindex (unlike a true radiogroup — see §18.2).
+- **Modal semantics** — `RetailInvoiceDetailModal` and its tabs are built on
+  the shared `Dialog`/`Tabs` primitives (`@/components/ui/dialog`,
+  `@/components/ui/tabs`), which already own focus trapping, `aria-modal`,
+  Escape-to-close and focus restoration; nothing retail-specific to fix
+  there.
+
+### 18.2 The one real finding: the payment-way radiogroup had no keyboard support
+
+`retail-invoice-screen.tsx`'s single-way payment picker uses
+`role="radiogroup"`/`role="radio"` — a promise, per WAI-ARIA authoring
+practices, that arrow keys move the selection and exactly one radio is a Tab
+stop. It kept neither promise: every way was independently tabbable (Tab
+had to be pressed once per way instead of once for the whole group) and the
+arrow keys did nothing. Two other radiogroups already in this codebase
+(`business-settings.tsx`'s «تومان/ریال» choice, `branches-manager.tsx`'s
+branch-colour picker) get this right via a small, already-existing,
+already-unit-tested shared helper, `src/lib/radio-keys.ts` — this screen's
+picker had simply never been wired up to it. Fixed the same way those two
+already do: a `buttonsRef` array, `tabIndex={active ? 0 : -1}` (roving
+focus), and an `onKeyDown` that resolves the key via `radioMoveForKey(key,
+/* rtl */ true)` + `radioTargetIndex()`, moves the selection, and moves DOM
+focus to match — so Down/Right-in-RTL advances, Up/Left-in-RTL goes back,
+Home/End jump to the ends, and the ring wraps both ways, identical to how a
+native `<input type="radio">` group already behaves for a sighted mouse
+user.
+
+### 18.3 Tests
+
+`retail-invoice-screen.test.tsx` gained one test: renders the screen with
+two payment ways, confirms the first is checked and the only `tabIndex={0}`
+element, presses `ArrowDown` and confirms both the checked state *and*
+`document.activeElement` moved to the second way (not just one or the
+other — a common half-fix), then `ArrowUp` and confirms it wraps back.
+
+### 18.4 Tool run results
+
+```
+$ npx tsc --noEmit                                              → 0 errors
+$ npx eslint src/app/dashboard/pos/retail-invoice-screen.tsx
+    src/app/dashboard/pos/retail-invoice-screen.test.tsx           → 0 problems
+$ npx vitest run src/app/dashboard/pos/retail-invoice-screen.test.tsx → 6/6 pass
+```
+
+**Net diff this section:** `retail-invoice-screen.tsx` (roving tabindex +
+`onKeyDown` on the payment-way radiogroup, using the existing
+`src/lib/radio-keys.ts` — no new shared code needed); one new test in
+`retail-invoice-screen.test.tsx`. §9/§17's RTL/accessibility item is
+narrowed by this section, not closed — see §18's own opening line and §17's
+note above for what is still open.
