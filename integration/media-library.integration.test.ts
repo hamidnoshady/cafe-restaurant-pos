@@ -772,3 +772,341 @@ describe("usage references — where a catalogue item points at an asset", () =>
     expect(rows[0].image_media_id).toBeNull();
   });
 });
+
+describe("trash — soft delete, restore, and the retention purge tick", () => {
+  it("moves an asset to the trash without touching the row or the object", async () => {
+    const bytes = pngOf(80);
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "trash-me.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+      }),
+    );
+
+    const trashed = await scoped(BID, () => media.softDeleteMediaAsset(BID, asset.id));
+    expect(trashed).toBe(true);
+
+    // Still readable by id (administrative paths, e.g. restore) …
+    const stillThere = await scoped(BID, () => media.getMediaAsset(BID, asset.id));
+    expect(stillThere?.deletedAt).not.toBeNull();
+    // … but no longer served through the normal read path.
+    const read = await scoped(BID, () => media.readMediaObject(BID, asset.id, config));
+    expect(read).toBeNull();
+    // … and excluded from the default library listing.
+    const listed = await scoped(BID, () => media.listMediaAssets(BID, {}));
+    expect(listed.assets.map((a) => a.id)).not.toContain(asset.id);
+    // … while showing up in the trash view.
+    const trash = await scoped(BID, () => media.listMediaAssets(BID, { trashed: true }));
+    expect(trash.assets.map((a) => a.id)).toContain(asset.id);
+
+    // A second soft-delete is a no-op (idempotent), not an error.
+    const again = await scoped(BID, () => media.softDeleteMediaAsset(BID, asset.id));
+    expect(again).toBe(false);
+
+    // Restoring clears it and it is a normal asset again.
+    const restored = await scoped(BID, () => media.restoreMediaAsset(BID, asset.id));
+    expect(restored).toBe(true);
+    const backNormal = await scoped(BID, () => media.getMediaAsset(BID, asset.id));
+    expect(backNormal?.deletedAt).toBeNull();
+    const listedAgain = await scoped(BID, () => media.listMediaAssets(BID, {}));
+    expect(listedAgain.assets.map((a) => a.id)).toContain(asset.id);
+  });
+
+  it("a duplicate upload never reuses a trashed asset's hash", async () => {
+    const bytes = pngOf(81);
+    const hash = sha256(bytes);
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "will-be-trashed.png", mimeType: "image/png", bytes, sha256: hash,
+      }),
+    );
+    await scoped(BID, () => media.softDeleteMediaAsset(BID, asset.id));
+    const found = await scoped(BID, () => media.findMediaAssetByHash(BID, hash));
+    expect(found).toBeNull();
+  });
+
+  it("the retention sweep purges only what is past the cutoff, leaving fresher trash alone", async () => {
+    const oldBytes = pngOf(82);
+    const freshBytes = pngOf(83);
+    const oldAsset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "old-trash.png", mimeType: "image/png", bytes: oldBytes, sha256: sha256(oldBytes),
+      }),
+    );
+    const freshAsset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "fresh-trash.png", mimeType: "image/png", bytes: freshBytes, sha256: sha256(freshBytes),
+      }),
+    );
+    await scoped(BID, () => media.softDeleteMediaAsset(BID, oldAsset.id));
+    await scoped(BID, () => media.softDeleteMediaAsset(BID, freshAsset.id));
+    // Backdate only the "old" one past a 30-day retention window.
+    await db.query(`UPDATE media_assets SET deleted_at = now() - interval '31 days' WHERE id = $1`, [oldAsset.id]);
+
+    const purged = await media.runMediaTrashPurgeTick(new Date(), 30);
+    expect(purged).toBeGreaterThanOrEqual(1);
+
+    const oldStillThere = await scoped(BID, () => media.getMediaAsset(BID, oldAsset.id));
+    expect(oldStillThere).toBeNull(); // row gone for good
+    const freshStillThere = await scoped(BID, () => media.getMediaAsset(BID, freshAsset.id));
+    expect(freshStillThere?.deletedAt).not.toBeNull(); // still in the trash, untouched
+  });
+});
+
+describe("collections — a named set an asset can belong to any number of", () => {
+  let assetA: string;
+  let assetB: string;
+
+  beforeAll(async () => {
+    const a = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "campaign-1.png", mimeType: "image/png", bytes: pngOf(90), sha256: sha256(pngOf(90)),
+      }),
+    );
+    const b = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "campaign-2.png", mimeType: "image/png", bytes: pngOf(91), sha256: sha256(pngOf(91)),
+      }),
+    );
+    assetA = a.id;
+    assetB = b.id;
+  });
+
+  it("creates, lists, and renames a collection; membership counts follow non-trashed assets", async () => {
+    const created = await scoped(BID, () =>
+      media.createMediaCollection(BID, null, "کمپین تابستانه", "بنرهای فصلی"),
+    );
+    expect(created.assetCount).toBe(0);
+
+    const addedA = await scoped(BID, () => media.addAssetToCollection(BID, created.id, assetA, null));
+    const addedB = await scoped(BID, () => media.addAssetToCollection(BID, created.id, assetB, null));
+    expect(addedA).toBe(true);
+    expect(addedB).toBe(true);
+    // Adding the same asset twice is a no-op, not a duplicate row / an error.
+    await scoped(BID, () => media.addAssetToCollection(BID, created.id, assetA, null));
+
+    const list = await scoped(BID, () => media.listMediaCollections(BID));
+    const found = list.find((c) => c.id === created.id);
+    expect(found?.assetCount).toBe(2);
+
+    const forAssetA = await scoped(BID, () => media.listCollectionsForAsset(BID, assetA));
+    expect(forAssetA.map((c) => c.id)).toContain(created.id);
+
+    // Filtering the library by collection returns exactly its members.
+    const filtered = await scoped(BID, () => media.listMediaAssets(BID, { collectionId: created.id }));
+    expect(filtered.assets.map((a) => a.id).sort()).toEqual([assetA, assetB].sort());
+
+    const renamed = await scoped(BID, () => media.renameMediaCollection(BID, created.id, "کمپین بهاره", undefined));
+    expect(renamed).toBe(true);
+
+    const removed = await scoped(BID, () => media.removeAssetFromCollection(BID, created.id, assetB));
+    expect(removed).toBe(true);
+    const afterRemove = await scoped(BID, () => media.listMediaCollections(BID));
+    expect(afterRemove.find((c) => c.id === created.id)?.assetCount).toBe(1);
+
+    // Deleting the collection disbands the grouping; the assets are untouched.
+    const deleted = await scoped(BID, () => media.deleteMediaCollection(BID, created.id));
+    expect(deleted).toBe(true);
+    const stillThere = await scoped(BID, () => media.getMediaAsset(BID, assetA));
+    expect(stillThere).not.toBeNull();
+  });
+
+  it("two businesses can each have their own collection of the same name (tenant-scoped uniqueness)", async () => {
+    const one = await scoped(BID, () => media.createMediaCollection(BID, null, "پرفروش‌ترین‌ها", null));
+    const two = await scoped(BID2, () => media.createMediaCollection(BID2, null, "پرفروش‌ترین‌ها", null));
+    expect(one.id).not.toBe(two.id);
+    const forBid = await scoped(BID, () => media.listMediaCollections(BID));
+    const forBid2 = await scoped(BID2, () => media.listMediaCollections(BID2));
+    expect(forBid.map((c) => c.id)).toContain(one.id);
+    expect(forBid.map((c) => c.id)).not.toContain(two.id);
+    expect(forBid2.map((c) => c.id)).toContain(two.id);
+    expect(forBid2.map((c) => c.id)).not.toContain(one.id);
+  });
+});
+
+describe("WordPress mapping — canonical asset ↔ one connection's remote attachment", () => {
+  let assetId: string;
+  let connectionId: string;
+
+  beforeAll(async () => {
+    const asset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "product-shot.png", mimeType: "image/png", bytes: pngOf(95), sha256: sha256(pngOf(95)),
+      }),
+    );
+    assetId = asset.id;
+
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO integration_connections
+         (business_id, name, provider, base_url, consumer_key_ciphertext, consumer_secret_ciphertext, webhook_secret_ciphertext)
+       VALUES ($1, 'فروشگاه وردپرسی', 'woocommerce', 'https://example.com', 'ck', 'cs', 'wh')
+       RETURNING id`,
+      [BID],
+    );
+    connectionId = rows[0].id;
+  });
+
+  it("records a pending push, then a confirm fills in the remote identity", async () => {
+    const operationId = `wp-media:${connectionId}:${randomUUID()}`;
+    const mapping = await scoped(BID, () =>
+      media.recordWordPressMediaPush({ businessId: BID, mediaAssetId: assetId, connectionId, operationId }),
+    );
+    expect(mapping.status).toBe("pending");
+    expect(mapping.wpMediaId).toBeNull();
+
+    const confirmed = await scoped(BID, () =>
+      media.confirmWordPressMediaSync(operationId, "4821", "https://example.com/wp-content/uploads/product-shot.png"),
+    );
+    expect(confirmed).toBe(true);
+
+    const mappings = await scoped(BID, () => media.listWordPressMappingsForAsset(BID, assetId));
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0].status).toBe("synced");
+    expect(mappings[0].wpMediaId).toBe("4821");
+
+    const direct = await scoped(BID, () => media.getWordPressMediaMapping(BID, connectionId, assetId));
+    expect(direct?.status).toBe("synced");
+  });
+
+  it("re-pushing the same asset to the same connection updates the existing row instead of duplicating it", async () => {
+    const secondOperationId = `wp-media:${connectionId}:${randomUUID()}`;
+    await scoped(BID, () =>
+      media.recordWordPressMediaPush({
+        businessId: BID,
+        mediaAssetId: assetId,
+        connectionId,
+        operationId: secondOperationId,
+      }),
+    );
+    const mappings = await scoped(BID, () => media.listWordPressMappingsForAsset(BID, assetId));
+    expect(mappings).toHaveLength(1); // still one row, not two
+    expect(mappings[0].status).toBe("pending"); // reset by the re-push
+    expect(mappings[0].operationId).toBe(secondOperationId);
+  });
+
+  it("a failed push is recorded distinctly from a synced one", async () => {
+    const operationId = `wp-media:${connectionId}:${randomUUID()}`;
+    const failAsset = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "will-fail.png", mimeType: "image/png", bytes: pngOf(96), sha256: sha256(pngOf(96)),
+      }),
+    );
+    await scoped(BID, () =>
+      media.recordWordPressMediaPush({ businessId: BID, mediaAssetId: failAsset.id, connectionId, operationId }),
+    );
+    const failed = await scoped(BID, () => media.failWordPressMediaSync(operationId, "سایت وردپرس پاسخ نداد"));
+    expect(failed).toBe(true);
+    const mapping = await scoped(BID, () => media.getWordPressMediaMapping(BID, connectionId, failAsset.id));
+    expect(mapping?.status).toBe("failed");
+    expect(mapping?.lastError).toContain("وردپرس");
+  });
+});
+
+describe("deterministic transforms (migration 0175) — crop/rotate/resize as derived assets", () => {
+  it("stores a 'transformed' variant pointing back at its source, carrying its transform_ops, and round-trips through getMediaAsset", async () => {
+    const originalBytes = pngOf(200);
+    const original = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "میز-اول.png", mimeType: "image/png", bytes: originalBytes, sha256: sha256(originalBytes),
+      }),
+    );
+    expect(original.variant).toBe("original");
+    expect(original.sourceAssetId).toBeNull();
+    expect(original.transformOps).toEqual([]);
+
+    const rotatedBytes = pngOf(210);
+    const rotateOp = { operation: "rotate" as const, degrees: 90 };
+    const rotated = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "میز-اول-rotate.png", mimeType: "image/png", bytes: rotatedBytes, sha256: sha256(rotatedBytes),
+        folderId: original.folderId,
+        variant: "transformed",
+        sourceAssetId: original.id,
+        transformOps: [rotateOp],
+      }),
+    );
+    expect(rotated.variant).toBe("transformed");
+    expect(rotated.sourceAssetId).toBe(original.id);
+    expect(rotated.transformOps).toEqual([rotateOp]);
+
+    // The DB round-trip (not just the freshly-returned row) preserves everything,
+    // proving the jsonb column and the widened variant CHECK both persisted correctly.
+    const reread = await scoped(BID, () => media.getMediaAsset(BID, rotated.id));
+    expect(reread).not.toBeNull();
+    expect(reread!.variant).toBe("transformed");
+    expect(reread!.sourceAssetId).toBe(original.id);
+    expect(reread!.transformOps).toEqual([rotateOp]);
+
+    // The original asset itself is untouched — non-destructive by construction.
+    const rereadOriginal = await scoped(BID, () => media.getMediaAsset(BID, original.id));
+    expect(rereadOriginal!.variant).toBe("original");
+    expect(rereadOriginal!.transformOps).toEqual([]);
+  });
+
+  it("a chain of transforms (crop then resize) each records only its own op, not the whole history", async () => {
+    const originalBytes = pngOf(220);
+    const original = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "banner.png", mimeType: "image/png", bytes: originalBytes, sha256: sha256(originalBytes),
+      }),
+    );
+
+    const cropOp = { operation: "crop" as const, x: 0, y: 0, width: 100, height: 100 };
+    const croppedBytes = pngOf(230);
+    const cropped = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "banner-crop.png", mimeType: "image/png", bytes: croppedBytes, sha256: sha256(croppedBytes),
+        variant: "transformed", sourceAssetId: original.id, transformOps: [cropOp],
+      }),
+    );
+
+    const resizeOp = { operation: "resize" as const, width: 80, fit: "inside" as const };
+    const resizedBytes = pngOf(240);
+    const resized = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "banner-crop-resize.png", mimeType: "image/png", bytes: resizedBytes, sha256: sha256(resizedBytes),
+        variant: "transformed", sourceAssetId: cropped.id, transformOps: [resizeOp],
+      }),
+    );
+
+    expect(resized.sourceAssetId).toBe(cropped.id);
+    expect(resized.transformOps).toEqual([resizeOp]);
+    expect(cropped.sourceAssetId).toBe(original.id);
+    expect(cropped.transformOps).toEqual([cropOp]);
+  });
+
+  it("a transformed asset shows up in the library listing next to its source, filterable like any other asset", async () => {
+    const originalBytes = pngOf(250);
+    const original = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "listable.png", mimeType: "image/png", bytes: originalBytes, sha256: sha256(originalBytes),
+      }),
+    );
+    const transformedBytes = pngOf(260);
+    const transformed = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "listable-rotate.png", mimeType: "image/png", bytes: transformedBytes, sha256: sha256(transformedBytes),
+        variant: "transformed", sourceAssetId: original.id, transformOps: [{ operation: "rotate", degrees: -90 }],
+      }),
+    );
+
+    const listed = await scoped(BID, () => media.listMediaAssets(BID, { search: "listable" }));
+    const ids = listed.assets.map((item) => item.id);
+    expect(ids).toContain(original.id);
+    expect(ids).toContain(transformed.id);
+  });
+});

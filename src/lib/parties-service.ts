@@ -30,6 +30,7 @@
  */
 import { getBusinessDek } from "./business-keys";
 import { query } from "./db";
+import { hasMatchingMediaSignature } from "./media";
 import {
   blindIndex,
   decryptOptional,
@@ -51,6 +52,7 @@ import {
   PARTY_ROLE_STORAGE,
   asciiDigits,
   deriveDisplayName,
+  isProfileImageValue,
   isValidIranianNationalId,
   nextAccountingCode,
   partyPersonType,
@@ -339,6 +341,35 @@ interface NormalizedWrite {
  * when the tab was sent, so a caller that knows nothing about tabs (a POS quick-add
  * posting `{displayName, phone}`) still gets exactly the row it asked for.
  */
+
+const PROFILE_IMAGE_DATA_URL_RE = /^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/i;
+
+/**
+ * `isProfileImageValue` (src/lib/parties.ts) is the cheap, pure shape check
+ * shared with the client form's live field feedback — it never decodes the
+ * base64, so it cannot tell a real PNG from four kilobytes of `AAAA…`
+ * declared as one. This is the actual trust boundary: a party's profile
+ * image is later rendered as `<img src>` (party-form.tsx and every party
+ * list that shows an avatar), so a data-URL value gets the same
+ * byte-signature check the Media Library gives every upload
+ * (`hasMatchingMediaSignature`, src/lib/media.ts) before it is ever written.
+ * An `https://` value (a linked, not uploaded, avatar) has no bytes to check.
+ */
+function validatedProfileImage(value: string | null): string | null {
+  if (value === null) return null;
+  if (!isProfileImageValue(value)) throw new PartyValidationError("invalid_image", "profileImage");
+  const trimmed = value.trim();
+  const dataUrlMatch = PROFILE_IMAGE_DATA_URL_RE.exec(trimmed);
+  if (dataUrlMatch) {
+    const mimeType = dataUrlMatch[1].toLowerCase().replace("image/jpg", "image/jpeg");
+    const bytes = Buffer.from(dataUrlMatch[2].replace(/\s+/g, ""), "base64");
+    if (bytes.byteLength === 0 || !hasMatchingMediaSignature(mimeType, bytes)) {
+      throw new PartyValidationError("invalid_image", "profileImage");
+    }
+  }
+  return value;
+}
+
 function normalizePartyWrite(input: PartyInput, existing?: Party | null): NormalizedWrite {
   const general = tabOf<PartyGeneralInfo & Record<string, unknown>>(input, "generalInfo", "general_info");
   const contact = tabOf<PartyContactInfo & Record<string, unknown>>(input, "contactInfo", "contact_info");
@@ -487,7 +518,10 @@ function normalizePartyWrite(input: PartyInput, existing?: Party | null): Normal
     // somebody had archived.
     status: input.status === undefined ? (existing?.status ?? true) : input.status !== false,
     categoryId: input.categoryId !== undefined ? textOf(input.categoryId) : (existing?.categoryId ?? null),
-    profileImage: input.profileImage !== undefined ? textOf(input.profileImage) : (existing?.profileImage ?? null),
+    profileImage:
+      input.profileImage !== undefined
+        ? validatedProfileImage(textOf(input.profileImage))
+        : (existing?.profileImage ?? null),
     notes,
     accountingCodeMode,
     accountingCode: accountingCodeMode === "Manual" ? manualCode : null,

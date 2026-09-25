@@ -15,6 +15,7 @@ import {
   normalizeKeyPrefix,
   normalizeSearchTerm,
   parseCategory,
+  parseMediaTransformInput,
   parseTags,
   safeFileName,
   validateMediaConfigInput,
@@ -281,5 +282,50 @@ describe("folder tree safety", () => {
     ];
     expect(() => folderMoveCreatesCycle(corrupt, "x", "y")).not.toThrow();
     expect(() => folderDepthOf(corrupt, "x")).not.toThrow();
+  });
+});
+
+describe("parseMediaTransformInput — the lightweight crop/rotate/resize contract", () => {
+  it("accepts a well-formed crop and normalizes it to integers", () => {
+    const result = parseMediaTransformInput({ operation: "crop", params: { x: 10, y: 20, width: 100, height: 200 } });
+    expect(result).toEqual({ ok: true, value: { operation: "crop", params: { x: 10, y: 20, width: 100, height: 200 } } });
+  });
+
+  it("refuses a crop with negative offsets, non-integers, or a zero/oversized dimension", () => {
+    expect(parseMediaTransformInput({ operation: "crop", params: { x: -1, y: 0, width: 10, height: 10 } }).ok).toBe(false);
+    expect(parseMediaTransformInput({ operation: "crop", params: { x: 0, y: 0, width: 10.5, height: 10 } }).ok).toBe(false);
+    expect(parseMediaTransformInput({ operation: "crop", params: { x: 0, y: 0, width: 0, height: 10 } }).ok).toBe(false);
+    expect(parseMediaTransformInput({ operation: "crop", params: { x: 0, y: 0, width: 5000, height: 10 } }).ok).toBe(false);
+    expect(parseMediaTransformInput({ operation: "crop", params: { x: 0, y: 0 } }).ok).toBe(false);
+  });
+
+  it("accepts a rotate within ±360° and refuses a no-op or out-of-range one", () => {
+    expect(parseMediaTransformInput({ operation: "rotate", params: { degrees: 90 } })).toEqual({
+      ok: true,
+      value: { operation: "rotate", params: { degrees: 90 } },
+    });
+    expect(parseMediaTransformInput({ operation: "rotate", params: { degrees: -45 } }).ok).toBe(true);
+    expect(parseMediaTransformInput({ operation: "rotate", params: { degrees: 0 } }).ok).toBe(false);
+    expect(parseMediaTransformInput({ operation: "rotate", params: { degrees: 720 } }).ok).toBe(false);
+    expect(parseMediaTransformInput({ operation: "rotate", params: {} }).ok).toBe(false);
+  });
+
+  it("accepts a resize with at least one dimension and defaults fit to 'inside'", () => {
+    const result = parseMediaTransformInput({ operation: "resize", params: { width: 400 } });
+    expect(result).toEqual({ ok: true, value: { operation: "resize", params: { width: 400, height: undefined, fit: "inside" } } });
+    expect(parseMediaTransformInput({ operation: "resize", params: { height: 300, fit: "cover" } }).ok).toBe(true);
+    expect(parseMediaTransformInput({ operation: "resize", params: {} }).ok).toBe(false);
+    expect(parseMediaTransformInput({ operation: "resize", params: { width: 0 } }).ok).toBe(false);
+    expect(parseMediaTransformInput({ operation: "resize", params: { width: 100, fit: "not-a-fit" } })).toMatchObject({
+      ok: true,
+      value: { params: { fit: "inside" } },
+    });
+  });
+
+  it("refuses an unknown operation or a non-object body", () => {
+    expect(parseMediaTransformInput({ operation: "sepia", params: {} }).ok).toBe(false);
+    expect(parseMediaTransformInput(null).ok).toBe(false);
+    expect(parseMediaTransformInput("crop").ok).toBe(false);
+    expect(parseMediaTransformInput(42).ok).toBe(false);
   });
 });

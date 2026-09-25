@@ -321,6 +321,17 @@ export const MAX_TAGS_PER_ASSET = 20;
 export const MAX_TAG_LENGTH = 60;
 export const MAX_CATEGORY_LENGTH = 80;
 
+/**
+ * How long a soft-deleted ("trashed") asset stays recoverable before the
+ * retention sweep (`runMediaTrashPurgeTick`, media-service.ts) removes it and
+ * its stored object for good. An operator can always purge sooner by hand.
+ */
+export const MEDIA_TRASH_RETENTION_DAYS = 30;
+
+/** A collection's name — same shape as a folder's (media_collections.name). */
+export const MAX_COLLECTION_NAME_LENGTH = 120;
+export const MAX_COLLECTION_DESCRIPTION_LENGTH = 500;
+
 /** A cleaned tag list: trimmed, deduplicated, capped — or null when invalid. */
 export function parseTags(value: unknown): string[] | null {
   if (value === undefined || value === null) return [];
@@ -436,6 +447,108 @@ export function mediaSearchExpression(column: string): string {
 // ---------------------------------------------------------------------------
 // Folder tree safety — cycle and depth checks shared by create/move
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Deterministic transforms — the lightweight Cloudinary/Canva-style tier
+// (crop / rotate / resize), explicitly NOT a full image editor. Pure
+// validation only; the actual pixel work (sharp) lives in media-transform.ts
+// because it needs a native binding, which this dependency-free module never
+// takes on.
+// ---------------------------------------------------------------------------
+
+export const MEDIA_TRANSFORM_OPERATIONS = ["crop", "rotate", "resize"] as const;
+export type MediaTransformOperation = (typeof MEDIA_TRANSFORM_OPERATIONS)[number];
+
+/** A generous but real ceiling — this is a crop/resize tool, not a canvas. */
+export const MAX_TRANSFORM_DIMENSION = 4000;
+
+export interface CropTransformParams {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+export interface RotateTransformParams {
+  degrees: number;
+}
+export type ResizeFit = "cover" | "contain" | "inside" | "fill";
+export interface ResizeTransformParams {
+  width?: number;
+  height?: number;
+  fit: ResizeFit;
+}
+
+export type MediaTransformInput =
+  | { operation: "crop"; params: CropTransformParams }
+  | { operation: "rotate"; params: RotateTransformParams }
+  | { operation: "resize"; params: ResizeTransformParams };
+
+export type MediaTransformParseResult = { ok: true; value: MediaTransformInput } | { ok: false; error: string };
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/**
+ * Validate a transform request body with no I/O: every rule the route
+ * enforces about what a legal crop/rotate/resize even looks like lives here,
+ * so it is testable without an image, a database, or sharp.
+ */
+export function parseMediaTransformInput(input: unknown): MediaTransformParseResult {
+  if (typeof input !== "object" || input === null) return { ok: false, error: "bad_request" };
+  const body = input as { operation?: unknown; params?: unknown };
+  const params = typeof body.params === "object" && body.params !== null ? (body.params as Record<string, unknown>) : {};
+
+  if (body.operation === "crop") {
+    const { x, y, width, height } = params;
+    if (
+      !isFiniteNumber(x) || !isFiniteNumber(y) || !isFiniteNumber(width) || !isFiniteNumber(height) ||
+      !Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(width) || !Number.isInteger(height)
+    ) {
+      return { ok: false, error: "invalid_crop" };
+    }
+    if (x < 0 || y < 0 || width < 1 || height < 1) return { ok: false, error: "invalid_crop" };
+    if (width > MAX_TRANSFORM_DIMENSION || height > MAX_TRANSFORM_DIMENSION) return { ok: false, error: "invalid_crop" };
+    return { ok: true, value: { operation: "crop", params: { x, y, width, height } } };
+  }
+
+  if (body.operation === "rotate") {
+    const { degrees } = params;
+    if (!isFiniteNumber(degrees) || degrees === 0) return { ok: false, error: "invalid_rotate" };
+    if (degrees < -360 || degrees > 360) return { ok: false, error: "invalid_rotate" };
+    return { ok: true, value: { operation: "rotate", params: { degrees } } };
+  }
+
+  if (body.operation === "resize") {
+    const { width, height } = params;
+    const fitRaw = params.fit;
+    const fit: ResizeFit = fitRaw === "cover" || fitRaw === "contain" || fitRaw === "fill" ? fitRaw : "inside";
+    const hasWidth = width !== undefined;
+    const hasHeight = height !== undefined;
+    if (!hasWidth && !hasHeight) return { ok: false, error: "invalid_resize" };
+    if (hasWidth && (!isFiniteNumber(width) || !Number.isInteger(width) || width < 1 || width > MAX_TRANSFORM_DIMENSION)) {
+      return { ok: false, error: "invalid_resize" };
+    }
+    if (hasHeight && (!isFiniteNumber(height) || !Number.isInteger(height) || height < 1 || height > MAX_TRANSFORM_DIMENSION)) {
+      return { ok: false, error: "invalid_resize" };
+    }
+    return {
+      ok: true,
+      value: {
+        operation: "resize",
+        params: { width: hasWidth ? (width as number) : undefined, height: hasHeight ? (height as number) : undefined, fit },
+      },
+    };
+  }
+
+  return { ok: false, error: "unsupported_operation" };
+}
+
+export const MEDIA_TRANSFORM_LABELS: Record<MediaTransformOperation, string> = {
+  crop: "برش",
+  rotate: "چرخش",
+  resize: "تغییر اندازه",
+};
 
 export interface FolderNode {
   id: string;

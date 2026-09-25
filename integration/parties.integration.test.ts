@@ -209,6 +209,60 @@ describe("creating a party", () => {
   });
 });
 
+describe("profile image validation (server-side trust boundary)", () => {
+  // A real PNG signature — the byte-signature check (hasMatchingMediaSignature,
+  // shared with the Media Library) only inspects the header, so this is
+  // enough without pulling in a real decodable image for the test.
+  const pngBytes = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(32, 7),
+  ]);
+  const realPngDataUrl = `data:image/png;base64,${pngBytes.toString("base64")}`;
+
+  it("accepts a data URL whose bytes really are the image it claims to be", async () => {
+    const party = await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "آواتار معتبر",
+      profileImage: realPngDataUrl,
+    });
+    expect(party.profileImage).toBe(realPngDataUrl);
+  });
+
+  it("accepts an https:// linked avatar (no bytes to check)", async () => {
+    const party = await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "آواتار لینک‌شده",
+      profileImage: "https://example.com/avatar.png",
+    });
+    expect(party.profileImage).toBe("https://example.com/avatar.png");
+  });
+
+  it("refuses a data URL declaring image/png whose bytes are not a PNG at all — the trust boundary this session added", async () => {
+    const fakePng = `data:image/png;base64,${Buffer.from("this is not a png").toString("base64")}`;
+    await expect(
+      parties.createParty(biz.id, { role: "Customer", displayName: "آواتار جعلی", profileImage: fakePng }),
+    ).rejects.toMatchObject({ code: "invalid_image", field: "profileImage" });
+  });
+
+  it("refuses a value that is not a data URL or an http(s) link at all", async () => {
+    await expect(
+      parties.createParty(biz.id, {
+        role: "Customer",
+        displayName: "آواتار بی‌شکل",
+        profileImage: "javascript:alert(1)",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_image", field: "profileImage" });
+  });
+
+  it("also enforces the byte signature on update, not just create", async () => {
+    const created = await parties.createParty(biz.id, { role: "Customer", displayName: "به‌روزرسانی آواتار" });
+    const fakeJpeg = `data:image/jpeg;base64,${Buffer.from("not a jpeg either").toString("base64")}`;
+    await expect(
+      parties.updateParty(biz.id, created.id, { profileImage: fakeJpeg }),
+    ).rejects.toMatchObject({ code: "invalid_image", field: "profileImage" });
+  });
+});
+
 describe("updating a party", () => {
   it("leaves a tab the request did not name alone", async () => {
     const created = await parties.createParty(biz.id, {

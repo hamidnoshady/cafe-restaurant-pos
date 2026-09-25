@@ -114,7 +114,7 @@ app.prepare().then(async () => {
   const { assertRlsEffective, closeDatabasePool } = await import("./src/lib/db");
   const { describeDeploymentRole } = await import("./src/lib/deployment-role");
   const { runWebsiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS } = await import("./src/lib/website/billing-service");
-  const { runMediaBillingTick } = await import("./src/lib/media-service");
+  const { runMediaBillingTick, runMediaTrashPurgeTick } = await import("./src/lib/media-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
   const { runWebsiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/website/sync-service");
@@ -305,6 +305,15 @@ app.prepare().then(async () => {
   const mediaBillingTick = () =>
     runMediaBillingTick().catch((err) => console.error("media billing tick failed:", err));
   scheduleBackgroundTick(mediaBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS, 95_000);
+
+  // Phase 2 (media library trash): purge assets that have sat in the trash
+  // longer than MEDIA_TRASH_RETENTION_DAYS. Runs on the same hourly cadence
+  // as the billing tick — the exact hour never matters, only that a business
+  // which soft-deleted something a month ago eventually has it, and its
+  // stored bytes, actually removed.
+  const mediaTrashPurgeTick = () =>
+    runMediaTrashPurgeTick().catch((err) => console.error("media trash purge tick failed:", err));
+  scheduleBackgroundTick(mediaTrashPurgeTick, WEBSITE_BILLING_TICK_INTERVAL_MS, 97_000);
 
   // Migration 0139: the website platform's control plane. Two jobs in one tick —
   // refresh the mirror of every site on eshobe-cms (on the operator's configured

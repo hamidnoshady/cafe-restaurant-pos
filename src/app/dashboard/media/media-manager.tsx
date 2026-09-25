@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { toPersianDigits } from "@/lib/digits";
 import { MEDIA_KIND_LABELS, MEDIA_SORTS, MEDIA_SORT_LABELS, type MediaKind, type MediaSort } from "@/lib/media";
 import { EmptyState, SectionCard, SectionCardSkeleton, StatusBadge, cardClass } from "../page-chrome";
@@ -57,6 +58,13 @@ interface MediaAssetUsageRef {
 interface MediaAssetUsage {
   menuItems: MediaAssetUsageRef[];
   inventoryItems: MediaAssetUsageRef[];
+}
+
+interface CollectionRow {
+  id: string;
+  name: string;
+  description: string | null;
+  assetCount: number;
 }
 
 interface LibraryPayload {
@@ -123,6 +131,22 @@ export function MediaManager() {
   const [movingFolderId, setMovingFolderId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // Trash — a second view over the same grid, not a second screen: the
+  // library's own filters (folder/kind/category/tag) do not apply to a view
+  // whose only questions are "what did I recently delete" and "restore or
+  // purge it".
+  const [viewMode, setViewMode] = useState<"library" | "trash">("library");
+
+  // Collections — an ad hoc set an asset can belong to any number of,
+  // distinct from the (single-parent) folder tree above.
+  const [collections, setCollections] = useState<CollectionRow[]>([]);
+  const [collectionId, setCollectionId] = useState<string | null>(null);
+
+  // Multi-select bulk actions.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
   const abortRef = useRef<AbortController | null>(null);
   const requestRef = useRef(0);
 
@@ -144,13 +168,18 @@ export function MediaManager() {
       else setLoading(true);
 
       const params = new URLSearchParams();
-      if (folderId) params.set("folderId", folderId);
-      if (kind !== "all") params.set("kind", kind);
-      if (category) params.set("category", category);
-      if (tag) params.set("tag", tag);
-      if (source !== "all") params.set("source", source);
+      if (viewMode === "trash") {
+        params.set("trashed", "1");
+      } else {
+        if (folderId) params.set("folderId", folderId);
+        if (kind !== "all") params.set("kind", kind);
+        if (category) params.set("category", category);
+        if (tag) params.set("tag", tag);
+        if (source !== "all") params.set("source", source);
+        if (collectionId) params.set("collectionId", collectionId);
+        if (pendingOnly) params.set("aiStatus", "pending_review");
+      }
       if (search) params.set("search", search);
-      if (pendingOnly) params.set("aiStatus", "pending_review");
       if (sort !== "newest") params.set("sort", sort);
       params.set("limit", String(PAGE_SIZE));
       params.set("offset", String(offset));
@@ -171,18 +200,44 @@ export function MediaManager() {
         },
       );
     },
-    [folderId, kind, category, tag, source, search, pendingOnly, sort],
+    [viewMode, folderId, kind, category, tag, source, collectionId, search, pendingOnly, sort],
   );
 
-  // Any filter/sort/search change resets to the first page; the effect
+  // Any filter/sort/search/view change resets to the first page; the effect
   // itself is the single place a fresh (non-append) load happens.
   useEffect(() => {
     load(0, false);
     return () => abortRef.current?.abort();
   }, [load]);
 
+  const loadCollections = useCallback(() => {
+    api<{ collections: CollectionRow[] }>("/api/media/collections").then(({ ok, data }) => {
+      if (ok) setCollections(data.collections);
+    });
+  }, []);
+
+  useEffect(() => {
+    loadCollections();
+  }, [loadCollections]);
+
   function reload() {
     load(0, false);
+    loadCollections();
+  }
+
+  // Leaving select mode, switching views, or changing the filters that
+  // reshuffle the grid all invalidate whatever was checked.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [viewMode, folderId, kind, category, tag, source, collectionId, search, sort]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function upload(files: FileList | null) {
@@ -266,6 +321,109 @@ export function MediaManager() {
     reload();
   }
 
+  async function restoreAsset(assetId: string) {
+    setBusy(true);
+    const { ok, data } = await api<{ message?: string }>(`/api/media/${assetId}/restore`, { method: "POST" });
+    setBusy(false);
+    if (!ok) {
+      setError(data.message ?? "بازیابی فایل ناموفق بود.");
+      return;
+    }
+    setNotice("فایل از سطل زباله بازیابی شد.");
+    reload();
+  }
+
+  async function purgeAsset(assetId: string) {
+    if (!window.confirm("این فایل برای همیشه حذف شود؟ این کار قابل بازگشت نیست.")) return;
+    setBusy(true);
+    const { ok, data } = await api<{ message?: string }>(`/api/media/${assetId}?purge=1`, { method: "DELETE" });
+    setBusy(false);
+    if (!ok) {
+      setError(data.message ?? "حذف همیشگی ناموفق بود.");
+      return;
+    }
+    setNotice("فایل برای همیشه حذف شد.");
+    reload();
+  }
+
+  async function createCollection() {
+    const name = window.prompt("نام مجموعهٔ جدید")?.trim();
+    if (!name) return;
+    const { ok, data } = await api<{ message?: string }>("/api/media/collections", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    if (!ok) {
+      setError(data.message ?? "ساخت مجموعه ناموفق بود.");
+      return;
+    }
+    loadCollections();
+  }
+
+  async function deleteCollection(collection: CollectionRow) {
+    if (!window.confirm(`مجموعهٔ «${collection.name}» حذف شود؟ فایل‌های داخل آن حذف نمی‌شوند، فقط از این مجموعه خارج می‌شوند.`)) return;
+    const { ok, data } = await api<{ message?: string }>(`/api/media/collections/${collection.id}`, {
+      method: "DELETE",
+    });
+    if (!ok) {
+      setError(data.message ?? "حذف مجموعه ناموفق بود.");
+      return;
+    }
+    if (collectionId === collection.id) setCollectionId(null);
+    loadCollections();
+  }
+
+  // Bulk actions — every one iterates the selection sequentially and reports
+  // how many succeeded, the same "N ذخیره شد / M ..." shape as multi-file upload.
+  async function bulkDelete() {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`${toPersianDigits(selectedIds.size)} مورد به سطل زباله منتقل شود؟`)) return;
+    setBulkBusy(true);
+    let done = 0;
+    for (const id of selectedIds) {
+      const { ok } = await api(`/api/media/${id}`, { method: "DELETE" });
+      if (ok) done += 1;
+    }
+    setBulkBusy(false);
+    setSelectedIds(new Set());
+    setNotice(`${toPersianDigits(done)} مورد به سطل زباله منتقل شد.`);
+    reload();
+  }
+
+  async function bulkMoveToFolder(targetFolderId: string | null) {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(true);
+    let done = 0;
+    for (const id of selectedIds) {
+      const { ok } = await api(`/api/media/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ folderId: targetFolderId }),
+      });
+      if (ok) done += 1;
+    }
+    setBulkBusy(false);
+    setSelectedIds(new Set());
+    setNotice(`${toPersianDigits(done)} مورد جابه‌جا شد.`);
+    reload();
+  }
+
+  async function bulkAddToCollection(targetCollectionId: string) {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(true);
+    let done = 0;
+    for (const id of selectedIds) {
+      const { ok } = await api(`/api/media/collections/${targetCollectionId}/items`, {
+        method: "POST",
+        body: JSON.stringify({ assetId: id }),
+      });
+      if (ok) done += 1;
+    }
+    setBulkBusy(false);
+    setSelectedIds(new Set());
+    setNotice(`${toPersianDigits(done)} مورد به مجموعه اضافه شد.`);
+    loadCollections();
+  }
+
   const folders = payload?.folders ?? [];
   const currentFolder = folderId && folderId !== "root" ? folders.find((f) => f.id === folderId) : null;
   const visibleFolders = folders.filter((f) =>
@@ -344,7 +502,90 @@ export function MediaManager() {
       {error ? <ErrorBox>{error}</ErrorBox> : null}
       {notice ? <InfoBox>{notice}</InfoBox> : null}
 
+      {/* View switch: the library, or the trash — and, inside the library,
+          the multi-select bulk-action bar. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1 rounded-xl border border-border p-1">
+          <button
+            type="button"
+            onClick={() => setViewMode("library")}
+            className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${viewMode === "library" ? "bg-amber-100 text-amber-950 dark:bg-amber-500/20 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}
+          >
+            کتابخانه
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("trash")}
+            className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${viewMode === "trash" ? "bg-amber-100 text-amber-950 dark:bg-amber-500/20 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}
+          >
+            سطل زباله
+          </button>
+        </div>
+        {viewMode === "library" ? (
+          <Button
+            size="sm"
+            variant={selectMode ? "default" : "outline"}
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelectedIds(new Set());
+            }}
+          >
+            {selectMode ? "پایان انتخاب چندتایی" : "انتخاب چندتایی"}
+          </Button>
+        ) : null}
+      </div>
+
+      {selectMode && selectedIds.size > 0 ? (
+        <SectionCard title={`${toPersianDigits(selectedIds.size)} مورد انتخاب‌شده`}>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className={inputClass}
+              disabled={bulkBusy}
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) bulkMoveToFolder(e.target.value === "root" ? null : e.target.value);
+                e.target.value = "";
+              }}
+            >
+              <option value="" disabled>
+                انتقال به پوشه…
+              </option>
+              <option value="root">ریشه (بدون پوشه)</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            {collections.length > 0 ? (
+              <select
+                className={inputClass}
+                disabled={bulkBusy}
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) bulkAddToCollection(e.target.value);
+                  e.target.value = "";
+                }}
+              >
+                <option value="" disabled>
+                  افزودن به مجموعه…
+                </option>
+                {collections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <Button size="sm" variant="destructive" disabled={bulkBusy} onClick={bulkDelete}>
+              {bulkBusy ? "در حال انجام…" : "حذف موارد انتخاب‌شده"}
+            </Button>
+          </div>
+        </SectionCard>
+      ) : null}
+
       {/* Folders + filters */}
+      {viewMode === "library" ? (
       <SectionCard
         title="پوشه‌ها و فیلترها"
         actions={
@@ -582,14 +823,56 @@ export function MediaManager() {
           />
           فقط موارد در انتظار تأیید برچسب هوشمند
         </label>
+
+        {/* Collections — an ad hoc set, not a tree slot: any asset can be in
+            any number of these, unlike the single-parent folders above. */}
+        <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-border pt-3 text-sm">
+          <span className="text-muted-foreground">مجموعه‌ها:</span>
+          <button
+            type="button"
+            onClick={() => setCollectionId(null)}
+            className={`rounded-lg px-2 py-1 transition-colors ${collectionId === null ? "bg-amber-100 text-amber-950 dark:bg-amber-500/20 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}
+          >
+            همه
+          </button>
+          {collections.map((c) => (
+            <span key={c.id} className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCollectionId(c.id)}
+                className={`rounded-lg px-2 py-1 transition-colors ${collectionId === c.id ? "bg-amber-100 text-amber-950 dark:bg-amber-500/20 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}
+              >
+                {c.name} <span className="text-xs text-muted-foreground">({toPersianDigits(c.assetCount)})</span>
+              </button>
+              <button
+                type="button"
+                aria-label={`حذف مجموعهٔ ${c.name}`}
+                className="rounded-lg px-1 text-xs text-destructive hover:bg-muted"
+                onClick={() => deleteCollection(c)}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            className="rounded-lg px-2 py-1 text-xs text-primary hover:bg-muted"
+            onClick={createCollection}
+          >
+            + مجموعهٔ جدید
+          </button>
+        </div>
       </SectionCard>
+      ) : null}
 
       {/* Grid */}
-      <SectionCard title={`فایل‌ها (${toPersianDigits(total)})`}>
+      <SectionCard title={viewMode === "trash" ? `سطل زباله (${toPersianDigits(total)})` : `فایل‌ها (${toPersianDigits(total)})`}>
         {loading ? (
           <SectionCardSkeleton rows={3} />
         ) : assets.length === 0 ? (
-          search || category || tag || source !== "all" || pendingOnly ? (
+          viewMode === "trash" ? (
+            <EmptyState>سطل زباله خالی است.</EmptyState>
+          ) : search || category || tag || source !== "all" || pendingOnly || collectionId ? (
             <EmptyState>موردی با این فیلترها پیدا نشد. فیلترها را پاک کنید یا عبارت جست‌وجو را تغییر دهید.</EmptyState>
           ) : currentFolder ? (
             <EmptyState>این پوشه خالی است.</EmptyState>
@@ -602,53 +885,85 @@ export function MediaManager() {
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {assets.map((asset) => (
-                <button
+                <div
                   key={asset.id}
-                  type="button"
-                  onClick={() => setSelected(asset)}
-                  className="group flex flex-col overflow-hidden rounded-xl border border-border text-start transition-colors hover:bg-muted"
+                  className="group relative flex flex-col overflow-hidden rounded-xl border border-border text-start transition-colors hover:bg-muted"
                 >
-                  <span className="relative block aspect-square w-full overflow-hidden bg-muted">
-                    {asset.kind === "image" && asset.mimeType !== "image/svg+xml" ? (
-                      <img
-                        src={`/api/media/${asset.id}/file`}
-                        alt={asset.fileName}
-                        loading="lazy"
-                        className="size-full object-cover"
+                  {selectMode && viewMode === "library" ? (
+                    <label className="absolute start-1 top-1 z-10 grid size-6 place-items-center rounded-md bg-background/90 shadow">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-amber-600"
+                        checked={selectedIds.has(asset.id)}
+                        onChange={() => toggleSelected(asset.id)}
+                        aria-label={`انتخاب ${asset.fileName}`}
                       />
-                    ) : (
-                      <span className="flex size-full items-center justify-center text-3xl" aria-hidden>
-                        {asset.kind === "video" ? "🎬" : "📄"}
-                      </span>
-                    )}
-                    {asset.aiStatus === "pending_review" ? (
-                      <span className="absolute start-1 top-1">
-                        <StatusBadge tone="active">در انتظار تأیید</StatusBadge>
-                      </span>
-                    ) : null}
-                    {asset.variant === "enhanced" ? (
-                      <span className="absolute end-1 top-1">
-                        <StatusBadge tone="positive">استاندارد</StatusBadge>
-                      </span>
-                    ) : null}
-                    {/* Phase G — where this asset came from. A generated image is
-                        AI-authored; an attachment came from a chat. */}
-                    {asset.createdByAi ? (
-                      <span className="absolute bottom-1 start-1">
-                        <StatusBadge tone="active">ساختهٔ دستیار</StatusBadge>
-                      </span>
-                    ) : asset.source === "ai_attachment" ? (
-                      <span className="absolute bottom-1 start-1">
-                        <StatusBadge tone="neutral">از گفت‌وگو</StatusBadge>
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="block truncate px-2 pt-2 text-xs font-medium">{asset.fileName}</span>
-                  <span className="block px-2 pb-2 text-[11px] text-muted-foreground">
-                    {MEDIA_KIND_LABELS[asset.kind]} · {formatBytes(asset.byteSize)}
-                    {asset.category ? ` · ${asset.category}` : ""}
-                  </span>
-                </button>
+                    </label>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (viewMode === "trash") return; // trashed items are edited by restoring, not in the drawer
+                      if (selectMode) toggleSelected(asset.id);
+                      else setSelected(asset);
+                    }}
+                    className="flex flex-col text-start"
+                  >
+                    <span className="relative block aspect-square w-full overflow-hidden bg-muted">
+                      {/* A trashed asset's file is not servable (readMediaObject
+                          excludes it, same as a hard delete would) — show the
+                          kind icon rather than a request that can only 404. */}
+                      {viewMode === "library" && asset.kind === "image" && asset.mimeType !== "image/svg+xml" ? (
+                        <img
+                          src={`/api/media/${asset.id}/file`}
+                          alt={asset.fileName}
+                          loading="lazy"
+                          className="size-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex size-full items-center justify-center text-3xl" aria-hidden>
+                          {asset.kind === "video" ? "🎬" : asset.kind === "image" ? "🖼️" : "📄"}
+                        </span>
+                      )}
+                      {asset.aiStatus === "pending_review" ? (
+                        <span className="absolute start-1 top-1">
+                          <StatusBadge tone="active">در انتظار تأیید</StatusBadge>
+                        </span>
+                      ) : null}
+                      {asset.variant === "enhanced" ? (
+                        <span className="absolute end-1 top-1">
+                          <StatusBadge tone="positive">استاندارد</StatusBadge>
+                        </span>
+                      ) : null}
+                      {/* Phase G — where this asset came from. A generated image is
+                          AI-authored; an attachment came from a chat. */}
+                      {asset.createdByAi ? (
+                        <span className="absolute bottom-1 start-1">
+                          <StatusBadge tone="active">ساختهٔ دستیار</StatusBadge>
+                        </span>
+                      ) : asset.source === "ai_attachment" ? (
+                        <span className="absolute bottom-1 start-1">
+                          <StatusBadge tone="neutral">از گفت‌وگو</StatusBadge>
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="block truncate px-2 pt-2 text-xs font-medium">{asset.fileName}</span>
+                    <span className="block px-2 pb-2 text-[11px] text-muted-foreground">
+                      {MEDIA_KIND_LABELS[asset.kind]} · {formatBytes(asset.byteSize)}
+                      {asset.category ? ` · ${asset.category}` : ""}
+                    </span>
+                  </button>
+                  {viewMode === "trash" ? (
+                    <div className="flex gap-1 border-t border-border p-1.5">
+                      <Button size="sm" variant="outline" className="flex-1" disabled={busy} onClick={() => restoreAsset(asset.id)}>
+                        بازیابی
+                      </Button>
+                      <Button size="sm" variant="destructive" className="flex-1" disabled={busy} onClick={() => purgeAsset(asset.id)}>
+                        حذف همیشگی
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               ))}
             </div>
             {assets.length < total ? (
@@ -666,6 +981,7 @@ export function MediaManager() {
         <AssetDrawer
           asset={selected}
           folders={folders}
+          collections={collections}
           enhancePriceRial={payload.storage.enhancePriceRial}
           onClose={() => setSelected(null)}
           onUpdated={(updated) => {
@@ -685,6 +1001,7 @@ export function MediaManager() {
 function AssetDrawer({
   asset,
   folders,
+  collections,
   enhancePriceRial,
   onClose,
   onUpdated,
@@ -692,6 +1009,7 @@ function AssetDrawer({
 }: {
   asset: AssetRow;
   folders: FolderRow[];
+  collections: CollectionRow[];
   enhancePriceRial: number;
   onClose: () => void;
   onUpdated: (asset: AssetRow) => void;
@@ -705,6 +1023,44 @@ function AssetDrawer({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [usage, setUsage] = useState<MediaAssetUsage | null>(null);
+  const [assetCollections, setAssetCollections] = useState<{ id: string; name: string }[] | null>(null);
+
+  const loadAssetCollections = useCallback(() => {
+    api<{ collections: { id: string; name: string }[] }>(`/api/media/${asset.id}/collections`).then(
+      ({ ok, data }) => {
+        if (ok) setAssetCollections(data.collections);
+      },
+    );
+  }, [asset.id]);
+
+  useEffect(() => {
+    setAssetCollections(null);
+    loadAssetCollections();
+  }, [loadAssetCollections]);
+
+  async function addToCollection(collectionId: string) {
+    if (!collectionId) return;
+    const { ok, data } = await api<{ message?: string }>(`/api/media/collections/${collectionId}/items`, {
+      method: "POST",
+      body: JSON.stringify({ assetId: asset.id }),
+    });
+    if (!ok) {
+      setError(data.message ?? "افزودن به مجموعه ناموفق بود.");
+      return;
+    }
+    loadAssetCollections();
+  }
+
+  async function removeFromCollection(collectionId: string) {
+    const { ok, data } = await api<{ message?: string }>(`/api/media/collections/${collectionId}/items/${asset.id}`, {
+      method: "DELETE",
+    });
+    if (!ok) {
+      setError(data.message ?? "حذف از مجموعه ناموفق بود.");
+      return;
+    }
+    loadAssetCollections();
+  }
 
   // Local fields track the asset prop when a fresh row lands (e.g. after
   // save/confirm/reject) so the form always reflects what is actually saved.
@@ -803,8 +1159,33 @@ function AssetDrawer({
     onUpdated(asset);
   }
 
+  // The lightweight, free (no AI, no wallet) crop/rotate/resize tier —
+  // migration 0175. Every call produces a NEW 'transformed' asset; the
+  // original this drawer is showing is never modified.
+  const [resizeWidth, setResizeWidth] = useState("");
+
+  async function transform(operation: "rotate" | "resize", params: Record<string, unknown>) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const { ok, data } = await api<{ message?: string }>(`/api/media/${asset.id}/transform`, {
+      method: "POST",
+      body: JSON.stringify({ operation, params }),
+    });
+    setBusy(false);
+    if (!ok) {
+      setError(data.message ?? "پردازش تصویر ناموفق بود.");
+      return;
+    }
+    setNotice("نسخهٔ جدید ساخته و به کتابخانه اضافه شد. آن را در فهرست ببینید.");
+    onUpdated(asset);
+  }
+
   async function remove(force = false) {
-    if (!force && !window.confirm("این فایل برای همیشه حذف شود؟")) return;
+    // A delete moves the asset to the trash (recoverable) rather than
+    // removing it outright — permanent removal is a separate "حذف همیشگی"
+    // action inside the trash view itself.
+    if (!force && !window.confirm("این فایل به سطل زباله منتقل شود؟")) return;
     setBusy(true);
     setError("");
     const { ok, status, data } = await api<{ message?: string; usage?: MediaAssetUsage }>(
@@ -815,7 +1196,7 @@ function AssetDrawer({
     if (!ok) {
       if (status === 409 && data.usage) {
         const names = [...data.usage.menuItems, ...data.usage.inventoryItems].map((r) => r.name).join("، ");
-        if (window.confirm(`این فایل هم‌اکنون استفاده می‌شود: ${names}. حذف قطعی شود؟`)) {
+        if (window.confirm(`این فایل هم‌اکنون استفاده می‌شود: ${names}. به سطل زباله منتقل شود؟`)) {
           await remove(true);
         }
         return;
@@ -903,6 +1284,74 @@ function AssetDrawer({
           </Field>
         </div>
 
+        {/* Collections — distinct from the tags above: a first-class, listable
+            object with its own membership, not a free-text label. */}
+        <div className="mb-4">
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">مجموعه‌ها</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(assetCollections ?? []).map((c) => (
+              <span key={c.id} className="flex items-center gap-1 rounded-lg bg-muted px-2 py-1 text-xs">
+                {c.name}
+                <button
+                  type="button"
+                  aria-label={`حذف از مجموعهٔ ${c.name}`}
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => removeFromCollection(c.id)}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+            {collections.length > 0 ? (
+              <select
+                className="rounded-lg border border-border bg-background px-2 py-1 text-xs"
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) addToCollection(e.target.value);
+                  e.target.value = "";
+                }}
+              >
+                <option value="" disabled>
+                  افزودن به مجموعه…
+                </option>
+                {collections
+                  .filter((c) => !(assetCollections ?? []).some((ac) => ac.id === c.id))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+              </select>
+            ) : null}
+          </div>
+        </div>
+
+        {isTaggableImage ? (
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border p-2">
+            <span className="text-xs text-muted-foreground">ابزارهای سبک (رایگان، بدون هوش مصنوعی):</span>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => transform("rotate", { degrees: 90 })}>
+              چرخش ۹۰° راست
+            </Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => transform("rotate", { degrees: -90 })}>
+              چرخش ۹۰° چپ
+            </Button>
+            <PersianNumberInput
+              className="w-24 rounded-lg border border-border bg-background px-2 py-1 text-xs"
+              placeholder="عرض (پیکسل)"
+              value={resizeWidth}
+              onChange={(e) => setResizeWidth(e.target.value)}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || !resizeWidth || Number(resizeWidth) < 1}
+              onClick={() => transform("resize", { width: Number(resizeWidth), fit: "inside" })}
+            >
+              تغییر اندازه به این عرض
+            </Button>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-2">
           <Button disabled={busy} onClick={() => save()}>
             {busy ? "در حال ذخیره…" : "ذخیره"}
@@ -922,7 +1371,7 @@ function AssetDrawer({
           ) : null}
           <span className="flex-1" />
           <Button variant="destructive" disabled={busy} onClick={() => remove(false)}>
-            حذف
+            انتقال به سطل زباله
           </Button>
         </div>
       </div>

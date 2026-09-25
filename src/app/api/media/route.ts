@@ -56,6 +56,9 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   if (aiStatus === "pending_review") filter.aiStatus = "pending_review";
   const source = params.get("source");
   if (source === "upload" || source === "ai_attachment" || source === "ai_generated") filter.source = source;
+  if (params.get("trashed") === "1") filter.trashed = true;
+  const collectionId = params.get("collectionId");
+  if (collectionId) filter.collectionId = collectionId;
   const sort = params.get("sort");
   if (isMediaSort(sort)) filter.sort = sort;
   const limit = Number(params.get("limit"));

@@ -1,7 +1,7 @@
 # Media Library — Session Report
 
 **Branch:** `arena/01a0d95b-cafe-restaurant-pos`
-**Commit:** `6e37921` (on top of `81c29c4`, `main`)
+**Base:** `81c29c4` (`main`)
 **Scope of the originating request:** a complete, platform-wide, end-to-end Media
 architecture rebuild (audit → schema → services → folders/collections/tags →
 search/filters → upload/picker/lightbox → AI editing/generation → OCR/document
@@ -10,347 +10,572 @@ removal → full test pyramid → CI → two audits → final report).
 
 ## A. Executive summary — read this first
 
-**This session did not execute the full mandated scope.** It performed a real,
-verified, test-covered **bug-fix and consolidation pass over the existing Media
-Library**, not the ground-up platform rebuild the prompt describes. Concretely:
+**This is not the ground-up platform rebuild the original prompt describes**, and this
+report does not claim it is. What shipped across this multi-session effort is a real,
+test-covered, materially-more-consolidated Media Library than the one this branch
+started from — with specific, named gaps that are listed honestly in Section V rather
+than folded into vague "limitations" language.
 
-- Fixed a genuine, user-impacting production bug (POS/menu images breaking for
-  cashier/waiter/kitchen roles).
-- Fixed a genuine pagination ceiling bug (media list was effectively capped at one
-  page / 60 rows, with no sort or source filtering).
-- Added tenant-scoped SHA-256 duplicate detection to uploads (both in the manager and
-  in the universal picker), with a documented user override.
-- Added usage-reference-aware ("safe") delete for assets, and cycle/depth-guarded
-  folder moves.
-- Added a wallet balance preflight in front of the paid AI "enhance" provider call.
-- Rewrote the media manager and the universal picker dialog around a shared, tested
-  debounce/cancel/pagination pattern.
-- Added 10 new unit tests and 5 new integration-test `describe` blocks; fixed one
-  test-suite regression this work introduced (documented below); re-ran and confirmed
-  the **entire** existing unit suite, the **entire** DB-backed integration suite, and
-  a production `next build` all pass.
+What actually changed, in the order it was built:
 
-It did **not** touch: the canonical-asset-schema redesign, naming-system rebuild,
-collections-vs-folders-vs-tags distinction, AI tagging review workflow states, visual
-folder explorer/mobile drawer, rich filter chips, multi-select bulk actions, bounded
-concurrency/retry uploader, byte-signature/MIME rule centralization beyond what already
-existed, storage orphan reconciliation, trash/soft-delete, non-destructive
-parent/child version UI, AI crop/rotate/resize/bg-removal/upscale/variations as new
-operations, OCR/document-intelligence consolidation for Accounting/CRM/Workspace, the
-WordPress `wordpress_media_mapping` view-over-central-media migration, migrating every
-remaining app-specific upload/picker path onto the canonical picker, a new numbered SQL
-migration, dead-route removal, E2E/RTL/mobile/accessibility/performance tests, or CI
-config changes. Section V lists these as genuine open work, not as "limitations" to
-gloss over — they are unfinished requested scope.
+1. **Bug-fix and consolidation pass** (first session, commit `6e37921`): fixed the named
+   permission bug (cashier/waiter/kitchen images breaking), the pagination ceiling, added
+   tenant-scoped SHA-256 duplicate detection, usage-aware safe delete, cycle-guarded
+   folder moves, a wallet preflight in front of the paid AI enhance call, and rewrote the
+   media manager and the universal picker around a shared debounce/cancel/pagination
+   pattern.
+2. **Phase 2 schema + features** (migration `0174`): trash/soft-delete with a retention
+   purge tick, collections as a first-class concept distinct from folders and tags, and a
+   `wordpress_media_mapping` table recording which canonical asset corresponds to which
+   connection's remote WordPress attachment. All three are wired end-to-end at the
+   service layer and (trash, collections) in the manager UI; the WordPress mapping table
+   is real, tested, RLS-protected schema with tested service functions, but has **no
+   route or UI consumer yet** — see Section K.
+3. **Deterministic transforms** (migration `0175`, this session): crop/rotate/resize as a
+   free, local, non-AI tier (`sharp`), producing new `transformed` derived assets with
+   `source_asset_id` provenance and `transform_ops` history, wired into
+   `POST /api/media/[id]/transform` and into the manager UI (rotate + resize; see Section
+   L for why crop has no UI entry point yet).
+4. **Storage orphan reconciliation** (this session): `scripts/media-reconcile-orphans.ts`,
+   a real, runnable, tested maintenance script — not a placeholder — that finds bucket
+   objects no row claims (the two documented crash windows in
+   `storeMediaAsset`/`deleteMediaAsset` that can produce one) and objects a row claims
+   that no longer exist, without ever deleting a database row.
+5. **MIME/byte-signature centralization audit** (this session): found and removed two
+   real instances of duplicated byte-signature-check logic (`business-logo.ts`,
+   `website/content-service.ts`) by delegating to the canonical
+   `hasMatchingMediaSignature` in `src/lib/media.ts`; found and fixed one genuine,
+   previously-unguarded trust-boundary gap — a CRM party's profile image had **zero**
+   server-side format/signature validation before this session (client-side `file.type`
+   checks only, trivially bypassable) — see Section O.2.
 
-Why: the requested scope is a multi-week, multi-team program (new schema + data
-migration across 8+ subsystems, new OCR pipeline, new AI-editing operations, a new
-test pyramid, CI changes) that cannot be honestly claimed "done" inside one working
-session without producing exactly the kind of false-completion report the task
-explicitly forbids. Given the choice between (a) shipping a shallow, unverified pass
-across the entire list and calling it complete, or (b) shipping a narrow, deeply
-verified set of real fixes and stating the rest honestly as not done, this session took
-(b), per the standing instruction: *"the final report must be an honest accounting —
-not a claim of literal 100% completion if genuine constraints prevented it."*
+It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
+`0174`/`0175`, a full naming-system rebuild, AI-tagging review-workflow states
+(`pending_review`/`confirmed`/`rejected` semantics), a visual folder explorer with a
+mobile drawer, rich filter-chip UI, a bounded-concurrency/retry/cancel upload manager, a
+WordPress push route/UI built on top of the new mapping table, centralized
+OCR/document-intelligence consumption by Accounting/CRM/Workspace, new AI editing
+operations beyond crop/rotate/resize (background removal, upscale, variations), a new
+numbered migration beyond `0174`/`0175`, dead-route removal, or E2E/mobile/accessibility/
+performance tests/CI changes. Section V lists these as genuine open work.
 
-## B. Audit findings acted on this session
+Why the scope stopped where it did: the requested scope is a multi-week, multi-team
+program. Given the choice between (a) shipping a shallow, unverified pass across the
+entire list and calling it complete, or (b) shipping a narrower set of real,
+deeply-verified fixes and stating the rest honestly as not done, this effort took (b) —
+consistently, across every session — per the standing instruction that *"the final
+report must be an honest accounting — not a claim of literal 100% completion if genuine
+constraints prevented it."*
 
-1. **Permission bug (the named bug in the prompt):** `GET /api/media/[id]/file`
-   unconditionally required `media.view`. Cashier/waiter/kitchen roles hold
-   `menu.view`/`inventory.view` but not `media.view`, so a menu item's or inventory
-   item's own photo — which those roles are otherwise fully authorized to see — failed
-   to load for them. Confirmed by reading `src/lib/permissions.ts` role grants against
-   the route's original guard.
-2. **Pagination ceiling:** `GET /api/media` had no `limit`/`sort` handling exposed to
-   the client and the manager UI never advanced past the first page — in practice the
-   library was capped at the first ~60 rows regardless of collection size.
-3. **No duplicate detection:** `POST /api/media` always inserted a new asset row and a
-   new storage object, even for byte-identical re-uploads within the same tenant.
-4. **Unsafe delete:** `DELETE /api/media/[id]` deleted unconditionally, including
-   assets referenced by live menu items or inventory items, silently breaking their
-   images app-wide.
-5. **Unsafe folder move:** `PATCH /api/media/folders/[id]` only supported rename; nothing
-   in the codebase guarded against moving a folder into its own descendant (cycle) or
-   into itself.
-6. **AI enhance had no cost preflight:** `POST /api/media/[id]/enhance` invoked the paid
-   AI provider before checking wallet balance, risking a charge with no funds to cover
-   it (inconsistent with the wallet-preflight convention used elsewhere in the AI
-   surfaces).
-7. **`detect` route dropped its own result:** `POST /api/media/[id]/detect` ran AI label
-   detection and persisted tag/category proposals, but the response never included the
-   refreshed asset, so the manager UI's `onUpdated` callback had nothing to apply.
-8. **Universal picker had no debounce/cancel/pagination**, unlike the manager, and could
-   race stale search responses onto the screen; it also could not detect that an
-   uploaded file was a duplicate, unlike (once fixed) the manager.
+## B. Audit findings acted on (all sessions)
 
-## C. Architecture — unchanged, targeted fixes only
+1. **Permission bug (the prompt's named bug):** `GET /api/media/[id]/file` unconditionally
+   required `media.view`. Cashier/waiter/kitchen roles hold `menu.view`/`inventory.view`
+   but not `media.view`, so a menu/inventory item's own photo failed to load for them.
+   Fixed by making the route usage-aware (Section O.1).
+2. **Pagination ceiling:** `GET /api/media` had no `limit`/`sort` exposed and the manager
+   never advanced past page one — the library was effectively capped at ~60 rows.
+3. **No duplicate detection:** every upload created a new row and object, even for
+   byte-identical re-uploads in the same tenant.
+4. **Unsafe delete:** assets referenced by a live menu/inventory item could be deleted,
+   silently breaking their images app-wide.
+5. **Unsafe folder move:** nothing guarded against moving a folder into its own
+   descendant or itself.
+6. **AI enhance had no wallet preflight:** the paid provider was called before checking
+   the wallet could cover it.
+7. **`detect` route dropped its own result:** AI label detection persisted but the
+   response never returned the refreshed asset.
+8. **Universal picker had no debounce/cancel/pagination** and could not detect
+   duplicates, unlike the manager.
+9. **No soft-delete tier:** every delete was a hard delete with no recovery window
+   (fixed by `0174`'s trash).
+10. **No grouping concept distinct from folders/tags:** the original audit's own
+    "این‌ها همه برای کمپین تابستانه‌اند" example — an ad hoc cross-cutting set with no tree
+    position — had no home (fixed by `0174`'s collections).
+11. **No lightweight image editing at all:** the only image transformation in the whole
+    codebase was the paid AI "enhance" call — no free crop/rotate/resize existed (fixed
+    by `0175`'s deterministic transforms).
+12. **No storage orphan detection:** `deleteMediaAsset` deletes the row **then**
+    `s3Delete`s the object and explicitly swallows that second call's failure (by
+    design, documented at its call site: "the row is gone... a stranded object costs
+    storage, never data exposure") — meaning a transient S3 error already, silently,
+    strands an object. `storeMediaAsset` similarly `s3Put`s **before** its `INSERT`, so a
+    crash between those two lines strands an object with no row at all. Nothing found
+    these. Fixed by `scripts/media-reconcile-orphans.ts`.
+13. **Duplicated byte-signature logic:** the exact PNG/JPEG/WebP magic-byte checks were
+    hand-copied into three files (`media.ts`, `business-logo.ts`,
+    `website/content-service.ts`) — `media.ts`'s own comment already said "extends
+    business-logo.ts's rule," acknowledging it. A future hardening change (e.g. closing
+    an SVG vector) would have had to be applied three times by hand, or would silently
+    diverge. Fixed by de-duplication (Section O.2 / this section, item 14).
+14. **Missing server-side validation on a CRM field that reaches `<img src>`:** a party's
+    `profileImage` was validated client-side only (`file.type`, spoofable) and had
+    **zero** format or byte-signature check on the write path
+    (`normalizePartyWrite` in `parties-service.ts` just did `textOf(...)`, no shape or
+    signature check) despite the shared pure validator (`isProfileImageValue`) already
+    existing in `src/lib/parties.ts` for the client form. A hand-crafted API request
+    could store `profileImage: "javascript:alert(1)"` (harmless in a modern browser's
+    `<img src>`, but the DB-level "this is a validated image" invariant was simply
+    false) or a byte stream that does not match its claimed image type at all. Fixed —
+    see Section O.2.
 
-The canonical `media_assets`/`media_folders` schema from `migrations/0149_media_library.sql`
-and `migrations/0161_media_asset_provenance.sql` was **not redesigned**. All fixes in
-this session work within that existing schema. No new migration file was added (would
-have been `0174_*`); everything shipped is code-only (routes, services, UI, tests).
+## C. Architecture
+
+The canonical `media_assets`/`media_folders` schema from `migrations/0149` and
+`0161_media_asset_provenance.sql` was extended, not redesigned, by two additive
+migrations this program produced:
+
+- **`0174_media_library_phase2.sql`** — `media_assets.deleted_at` (trash), two new
+  tables (`media_collections`, `media_collection_items`), and a new table
+  (`wordpress_media_mapping`). All three are additive: no existing column changed type,
+  every new column is nullable or defaulted, and every list/read path was updated in the
+  service layer to filter `deleted_at IS NULL` by default so nothing that existed before
+  this migration silently changed meaning.
+- **`0175_media_deterministic_transforms.sql`** — widens the `media_assets_variant_check`
+  CHECK constraint (`original`/`enhanced` → `+ 'transformed'`) and adds
+  `media_assets.transform_ops jsonb NOT NULL DEFAULT '[]'::jsonb`.
+
+No table was dropped, renamed, or had a column's meaning changed. Every asset ID that
+existed before this program still resolves to the same row with the same data.
 
 ## D. Database changes
 
-**None.** No new migration was written this session. The existing schema already had
-the columns needed (`sha256`, `source`, `folder_id`, etc.) for the fixes made; the gaps
-were in the service/route layer and the UI, not the schema.
+Two new migration files, both applied and verified against a real local Postgres
+(`npx tsx scripts/migrate.ts`, both forward-apply and the standard
+`migrations.integration.test.ts` upgrade-from-a-stale-snapshot path):
+
+| Migration | Adds |
+|---|---|
+| `0174_media_library_phase2.sql` | `media_assets.deleted_at`; `media_collections`; `media_collection_items`; `wordpress_media_mapping`; two partial indexes for trash/non-trash listing |
+| `0175_media_deterministic_transforms.sql` | Widens `media_assets_variant_check` to include `'transformed'`; adds `media_assets.transform_ops jsonb NOT NULL DEFAULT '[]'` |
+
+Both are RLS-protected with the standard `tenant_isolation` policy pattern
+(`app_rls_bypass() OR business_id = app_current_business()`), `FORCE ROW LEVEL SECURITY`,
+matching every other tenant-scoped table in the schema.
 
 ## E. Naming system
 
-Not touched this session. Existing `original_file_name`/`display_name`/
-`normalized_name`/safe storage-key logic in `src/lib/media.ts` is unchanged and remains
-covered only by its pre-existing tests, plus the new normalization tests added this
-session (see Section T) which cover `normalizeSearchTerm`, a related-but-distinct helper
-used for search, not for stored names.
+Not rebuilt as a formal system this program. The existing
+`original_file_name`/`display_name`/`normalized_name`/safe-storage-key logic in
+`src/lib/media.ts` is unchanged in shape; `normalizeSearchTerm` (search-time Arabic/
+Persian character folding, added in the first session) is a related but distinct helper
+— it never rewrites a stored name, only how a search term is matched against one.
 
 ## F. Folders
 
-`PATCH /api/media/folders/[id]` now accepts an optional `parentId` in addition to
-`name`, and moves are rejected with `circular_move` (self-parent or move-into-own-
-descendant) or `too_deep` (exceeds the existing max-depth constant) before any row is
-written. Folder tree safety is backed by two pure, now-unit-tested helpers in
-`src/lib/media.ts`: `folderDepthOf` and `folderMoveCreatesCycle` (including a guard
-against infinite-looping on an already-corrupt cycle in the input data). No mobile
-drawer, visual explorer, or collections concept was added.
+`PATCH /api/media/folders/[id]` accepts an optional `parentId` in addition to `name`, and
+rejects a move with `circular_move` (self-parent or move-into-own-descendant) or
+`too_deep` (exceeds the max-depth constant) before any row is written, backed by two
+pure, unit-tested helpers: `folderDepthOf` and `folderMoveCreatesCycle` (including a
+guard against infinite-looping on an already-corrupt cycle in the input data). No visual
+tree explorer or mobile drawer was built — folders are still a flat picker list in the
+manager UI.
 
-## G. Tags / auto-tagging
+## G. Collections — distinct from folders and tags
 
-Not rebuilt. The existing AI tag/category `detect` route now correctly returns the
-persisted result (Section B.7), but the pending_review/confirmed/rejected review-
-workflow semantics called for in the original task were not implemented — tags are
-still applied directly, with no review-state field added to the schema this session.
+`migrations/0174` added `media_collections`/`media_collection_items`: a named, ad hoc,
+renamable set an asset can belong to any number of (or none), with no tree position of
+its own — deliberately distinct from a folder (a tree position an asset holds exactly
+one of) and from a tag (a free-text label with no first-class identity). Full CRUD is
+wired: `GET/POST /api/media/collections`, `PATCH/DELETE /api/media/collections/[id]`,
+`POST/DELETE /api/media/collections/[id]/items[/[assetId]]`, `GET /api/media/[id]/collections`
+(which collections one asset belongs to). The manager UI lets an operator filter the
+library by collection, create/rename/delete a collection, and add/remove the current
+selection to/from one via the bulk-action bar. Membership counts follow non-trashed
+assets only (verified by an integration test). Tenant-scoped uniqueness on
+`(business_id, name)` means two businesses can each have their own "کمپین تابستانه"
+without collision.
 
-## H. Search / filters / sort
+## H. Tags / auto-tagging
 
-`GET /api/media` gained `sort` (via the new `MEDIA_SORTS`/`mediaSortOrderBy` mapping in
-`src/lib/media.ts`) and `source` (`upload` | `ai_attachment` | `ai_generated`) query
-parameters, both validated server-side against literal allow-lists before reaching SQL.
-`listMediaAssets` in `src/lib/media-service.ts` now applies both. Search-term handling
-was centralized into `normalizeSearchTerm` (trims, collapses whitespace, caps length at
-120, and folds Arabic ي/ك to Persian ی/ک so a search for either script matches the same
-stored value) and `mediaSearchExpression` (wraps the column reference in a matching
-`translate(...)` SQL expression so the folding happens consistently at the database
-level, not just in test data). No rich filter-chip UI, and no filters beyond
-`source`/`sort`/text search were added.
+Not rebuilt. The `detect` route now correctly returns its own persisted result (bug 7
+above), but the `pending_review`/`confirmed`/`rejected` review-workflow semantics called
+for in the original request were never implemented — no such column exists, and tags are
+still applied directly by the AI detection call with no human-review gate.
 
-## I. Upload
+## I. Search / filters / sort
 
-`POST /api/media` now computes a SHA-256 of the uploaded bytes and looks up
-`findMediaAssetByHash` scoped to the caller's tenant before creating a new asset. If a
-match exists, the endpoint returns the existing asset with `duplicate: true` and HTTP
-200 (unless the caller passes an `allowDuplicate` form field to force a genuine second
-copy); a new upload still returns 201. Both the media manager and the universal picker
-surface this: the picker auto-selects the existing asset with a Persian toast
-("این تصویر از قبل در کتابخانه بود؛ همان انتخاب شد."). No bounded-concurrency queue,
-retry, or cancel-in-flight upload manager was built — uploads remain one-at-a-time as
-before.
+`GET /api/media` supports `sort` (`MEDIA_SORTS`/`mediaSortOrderBy`), `source`
+(`upload`/`ai_attachment`/`ai_generated`), `trashed`, and `collectionId`, all validated
+server-side against literal allow-lists. Search-term handling is centralized in
+`normalizeSearchTerm` (trim/collapse whitespace/cap at 120 chars/fold Arabic ي‌ك to
+Persian ی‌ک) and `mediaSearchExpression` (the matching `translate(...)` SQL wrapper, so
+the folding is consistent at the database level, not just in application code). No rich
+filter-chip UI was built; filtering is still a set of dropdowns/toggles in the manager,
+not removable chips.
 
-## J. Media Picker / picker consumers
+## J. Upload
 
-`src/app/dashboard/media/media-picker.tsx` was rewritten: 300ms-debounced search,
-`abortRef`/`requestRef` stale-response cancellation (mirroring the manager's pattern),
-`PAGE_SIZE=40` with a "نمایش بیشتر" (show more) button rather than the previous
-unbounded/first-page-only fetch, `image/svg+xml` filtered out of the pickable grid, and
-a storage-not-configured empty state. `MediaImageField` (the thumbnail +
-انتخاب/حذف wrapper used by consumers) keeps its existing external API and behavior —
-**no other app surface was migrated onto it this session.** Product/Menu/WordPress/CMS/
-Accounting/CRM/Workspace/AI-Chat upload paths were not audited or converted in this
-pass; whatever independent picker/upload code they had before this session, they still
-have.
+`POST /api/media` computes a SHA-256 of the uploaded bytes and looks up
+`findMediaAssetByHash` scoped to the caller's tenant before creating a new asset; a match
+returns the existing asset with `duplicate: true` and HTTP 200 (an `allowDuplicate` form
+field forces a genuine second copy). Both the manager and the universal picker surface
+this with a Persian toast. **No bounded-concurrency/retry/cancel upload manager was
+built** — uploads remain one-at-a-time, sequential, with no client-side retry on a
+transient failure and no cancel-in-flight affordance. This is the single largest
+concretely-scoped piece of the original request that was never attempted.
 
 ## K. WordPress
 
-Not touched. No `wordpress_media_mapping` table, no migration, no view-over-central-
-media work was done. `src/app/(app)/websites/wp/media*` and
-`src/app/api/integrations/wp-manager/media/` are exactly as they were before this
-session.
+`migrations/0174` added `wordpress_media_mapping` (canonical asset ↔ one connection's
+remote attachment, unique per `(connection_id, media_asset_id)` so a re-push updates the
+existing row rather than duplicating it on the WordPress side) and four service functions
+(`recordWordPressMediaPush`, `confirmWordPressMediaSync`, `failWordPressMediaSync`,
+`getWordPressMediaMapping`/`listWordPressMappingsForAsset`), all covered by integration
+tests against a real database (pending push → confirmed sync; re-push updates in place;
+failed push recorded distinctly from synced).
+
+**This is schema and service-layer plumbing with no consumer.** `grep`-confirmed: no
+route and no UI component calls any of these four functions. `src/app/(app)/websites/wp/`
+and `src/app/api/integrations/wp-manager/media/` — the actual WordPress media mirror a
+user interacts with today — are unchanged; they still run their own independent mirror,
+not a view over the canonical Media Library. Turning WordPress media into "a view over
+central Media" (the original request's exact phrase) needs: a route that lets an
+operator push a canonical asset out to a connected WordPress site (calling
+`recordWordPressMediaPush`, then an outbox job that actually uploads bytes via the
+WordPress REST API and calls `confirmWordPressMediaSync` on the plugin's webhook
+confirmation), and a UI affordance in the wp-manager screens showing "already pushed to
+this site" using the mapping table instead of (or alongside) the existing independent
+mirror. None of that exists yet.
 
 ## L. AI media (editing / generation)
 
-Only the wallet-preflight fix (Section B.6) and the `detect`-response fix (Section B.7)
-were made to `src/app/api/media/[id]/enhance/route.ts` and
-`src/app/api/media/[id]/detect/route.ts`. No new AI editing operations (crop, rotate,
-resize, background removal, upscale, variations) were added, and no parent/child
-derived-asset version UI was built. `src/lib/ai-media.ts`, `ai-media-service.ts`, and
-`ai-media-persist.ts` are unchanged.
+- **AI-provider operations** (`enhance`): unchanged this session beyond the earlier
+  wallet-preflight and `detect`-response fixes. No background removal, upscale, or
+  variations operation was added.
+- **Deterministic (non-AI) operations** — new this session, migration `0175`:
+  `POST /api/media/[id]/transform` accepts `{operation: "crop"|"rotate"|"resize", ...}`,
+  validated by `parseMediaTransformInput` (crop: integer x/y/width/height, 1..4000px;
+  rotate: finite non-zero degrees, ±360; resize: at least one of width/height, 1..4000px,
+  `fit` ∈ cover/contain/inside/fill, default `inside`), executed by
+  `applyMediaTransform` (`sharp`, always emits PNG bytes, throws `MediaTransformError`
+  with a `code` the route maps to 422/400/500), and stored as a new `variant:
+  "transformed"` asset with `source_asset_id` pointing at the original (which is never
+  modified) and `transform_ops` recording exactly which operation produced it — the
+  same non-destructive parent/child shape as `enhance`. No wallet cost: this is local
+  CPU work, not a provider call, and the route does not touch the wallet at all.
+  **UI reach is partial**: the manager's asset drawer has a "چرخش ۹۰° راست/چپ" (rotate)
+  pair of buttons and a width field with "تغییر اندازه به این عرض" (resize); there is
+  **no crop UI** — no interactive crop-rectangle selector was built, so `crop` is
+  reachable only by calling the route directly (it is fully implemented, validated, and
+  tested, just not wired to a click target). There is also no version-history UI showing
+  a transformed asset's lineage back to its source beyond what the asset drawer's
+  existing "usage" panel exposes incidentally.
+- **AI generation**: unchanged — `ai_generated` provenance already existed before this
+  program and is unaffected.
 
 ## M. OCR / document intelligence
 
-Not touched. `ai-invoice-ocr*`, `ai-receipt.ts`, `ai-inventory-vision*` and any
-Accounting/CRM/Workspace consumption of them are exactly as they were before this
-session. No centralization or new consumer wiring was done.
+Not touched. `ai-invoice-ocr*`, `ai-receipt.ts`, `ai-inventory-vision*` are exactly as
+they were. `ai-receipt.ts`'s own header comment documents a deliberate, narrower design
+(the receipt image is a client-supplied data URL used for exactly one AI provider call
+and is never written to any table or object storage) — this was read and left alone as
+an intentional exception, not a bug, because centralizing it into the Media Library would
+mean persisting every receipt photo a cashier ever snaps for a one-shot OCR read, a
+storage/retention policy question the original design explicitly opted out of and this
+session did not have the standing to reverse. No Accounting/CRM/Workspace consumption of
+a centralized OCR pipeline exists, because no centralized OCR pipeline was built.
 
-## N. Per-app migration status (unchanged from before this session)
+## N. Per-app migration status
 
 | App | Uses canonical Media Library? |
 |---|---|
-| Menu items (`menu-item-image.tsx`) | Yes (pre-existing) — now also benefits from the permission fix (B.1) |
-| Inventory items | Yes (pre-existing) — same permission-fix benefit |
-| Product | Not audited this session |
-| WordPress/CMS | Independent — not migrated |
-| Accounting (invoices/receipts) | Independent — not migrated |
-| CRM | Independent — not migrated |
-| Workspace | Independent — not migrated |
-| AI Chat attachments | Uses `media_assets` with `source='ai_attachment'` (pre-existing); no picker/UI migration done this session |
+| Menu items (`menu-manager.tsx`) | **Yes** — `MediaImageField`/`MediaPickerDialog`; benefits from the permission fix (B.1) |
+| Inventory items (`items-section.tsx`) | **Yes** — same components, same permission-fix benefit |
+| Product | No separate module — "Product" in this app's dashboard is a view over menu/inventory items, both already covered above |
+| AI Chat attachments | **Yes** (pre-existing) — `source='ai_attachment'` via `ai-media-persist.ts` → `storeMediaAsset` |
+| AI-generated images | **Yes** (pre-existing) — `source='ai_generated'` |
+| WordPress/CMS media mirror | **No** — independent mirror; a mapping table exists with no consumer (Section K) |
+| Website builder (`website/content-service.ts`, distinct first-party CMS, not WordPress) | **No** — pushes bytes to an external headless-CMS adapter by design (not this app's own storage); its byte-signature check now delegates to the canonical one (Section O.2), but its upload target is genuinely external, not a duplicate of local storage |
+| Accounting (invoice/receipt OCR) | **No** — deliberately ephemeral, not persisted anywhere (Section M) |
+| CRM (party profile image) | **No** — inline `data:` URL on the party row, same architecture as the business logo (not S3-backed); this session added the server-side validation it was missing (Section O.2) but did not migrate it onto the Media Library |
+| Workspace | Not audited this session |
 
-## O. Permissions
+## O. Permissions & security
 
-The only permission-model change this session is the fix in Section B.1: `GET
-/api/media/[id]/file` now authorizes by **asset usage** rather than unconditionally by
+### O.1 The named permission bug
+
+`GET /api/media/[id]/file` now authorizes by **asset usage**, not unconditionally by
 `media.view`:
 - Document-kind assets still always require `media.view` (unchanged, conservative).
 - Image/video assets are servable if the caller has `media.view`, **or** has
-  `menu.view` and the asset is the `image_media_id` of a menu item, **or** has
-  `inventory.view` and the asset is the `image_media_id` of an inventory item — checked
-  per request against the database (`getMediaAssetUsage`), not by role name.
+  `menu.view` and the asset is a menu item's `image_media_id`, **or** has
+  `inventory.view` and the asset is an inventory item's `image_media_id` — checked per
+  request against the database, not by role name.
 
-This is a narrower, more correct rule than "any authenticated member can fetch any
-file," and it does not weaken tenant isolation: the usage lookup itself is
-tenant-scoped by the existing RLS policies, and a caller must still separately hold the
-relevant `*.view` permission.
+This does not weaken tenant isolation: the usage lookup is itself tenant-scoped by RLS,
+and a caller must still separately hold the relevant `*.view` permission.
+`src/app/api/api-guards.test.ts`'s general "every `requireMember`-guarded route scopes
+its work to `session.sub`" invariant does not describe this route (it is "every member
+reaches the gate; the real decision is a per-request usage/permission check"), so it was
+added to that test's existing, documented exemption list with a comment explaining why,
+rather than weakened.
 
-`requireMember`-scoping test note: `src/app/api/api-guards.test.ts` statically asserts
-every `requireMember`-guarded route scopes its work to `session.sub` ("every member acts
-only on their own rows"), which does not describe this route (it is "every member
-reaches the gate; the real decision is a per-request usage/permission check"). Rather
-than weaken that test's general invariant, this session added `media/[id]/file` to its
-existing, documented exemption list (alongside `notifications/public-key` and
-`knowledge*`) with a comment explaining why — see the diff in
-`src/app/api/api-guards.test.ts`.
+### O.2 This session's security fixes (found during the MIME/byte-signature audit)
+
+1. **De-duplicated byte-signature logic.** `hasMatchingMediaSignature`
+   (`src/lib/media.ts`) is the canonical check; `business-logo.ts`'s
+   `hasMatchingLogoSignature` now delegates to it entirely (its four MIME types are an
+   exact subset), and `website/content-service.ts`'s `hasMatchingImageSignature`
+   delegates to it for jpeg/png/webp and keeps only its own genuine extension (gif,
+   which the Media Library does not accept). Both files' existing unit tests pass
+   unchanged, proving the delegation is behavior-preserving. One ruleset, not three.
+2. **Closed a real server-side validation gap.** A CRM party's `profileImage` — later
+   rendered as `<img src>` in the party form — had a shared pure validator
+   (`isProfileImageValue` in `src/lib/parties.ts`) that was called **only** from the
+   client-side form (`validatePartyForm`), never from the server write path
+   (`normalizePartyWrite` in `parties-service.ts`, which just did `textOf(...)` with no
+   shape check at all). Fixed: `normalizePartyWrite` now calls a new
+   `validatedProfileImage` helper that (a) runs the existing shape check and (b), for a
+   `data:` URL specifically, decodes the base64 and runs it through
+   `hasMatchingMediaSignature` — so a value claiming `image/png` whose bytes are not a
+   PNG is now rejected with `PartyValidationError("invalid_image", "profileImage")` on
+   **both** create and update, at the one place all party writes go through (confirmed
+   by `grep` — no other file writes `parties.profile_image`). An `https://` linked
+   avatar has no bytes to check and is accepted as before. Verified with 5 new
+   integration tests against a real database (valid PNG accepted, valid https link
+   accepted, a fake PNG rejected on create, a non-image string rejected, a fake JPEG
+   rejected on update).
+
+No security control was removed or weakened anywhere in this program; every change in
+this section either added a check that did not exist or moved an existing check to a
+single shared implementation.
 
 ## P. Storage / orphan handling
 
-Not touched. No orphan reconciliation job, no trash/soft-delete state, was added. Delete
-became **usage-aware** (Section Q) but is still a hard delete once permitted — there is
-no soft-delete/trash tier to recover from afterward.
+`scripts/media-reconcile-orphans.ts` (new, this session; `npm run media:reconcile-orphans`)
+is a real, runnable, tested maintenance script:
 
-## Q. Route changes (this session)
+- **Dry run by default.** Lists every object under the platform's configured bucket
+  prefix (`s3List`, already existed for backups), loads every `media_assets.storage_key`
+  (trashed rows included — a trashed asset still legitimately owns its object until the
+  retention purge), and reports (a) orphaned objects — no row claims them, and they are
+  older than a one-hour grace period (so a concurrent in-flight upload's object is never
+  mistaken for an orphan), (b) malformed keys (never auto-deleted, flagged for manual
+  review), and (c) broken references — a row whose `storage_key` resolves to nothing in
+  the bucket, which the script only ever reports, never acts on, because deleting that
+  row is a data-loss decision a maintenance script should not make unattended.
+- **`--apply --backup-confirmed`** (both required, mirroring the existing
+  `reconcile-opening-inventory.ts` convention) deletes exactly the safely-shaped orphaned
+  objects and nothing else — never a database row.
+- **Verified against a real database and a real in-memory S3-compatible mock** (not a
+  hand-wave): 6 new integration tests in
+  `integration/media-reconcile-orphans.integration.test.ts`, invoking the script as an
+  actual child process the way an operator or a cron job would, covering: storage not
+  configured, dry-run detection with the grace period respected, `--apply` refused
+  without `--backup-confirmed` (deletes nothing), `--apply --backup-confirmed` deletes
+  exactly the orphan and leaves the claimed object alone, a broken reference is reported
+  without touching the row, and a trashed asset's object is correctly treated as claimed.
+  All 6 passed on the first real run against the mock bucket.
+- **Note on a pre-existing, unrelated repo issue found while building this**: the
+  existing `scripts/reconcile-opening-inventory.ts` uses top-level `await`, which fails
+  outright when run via `npx tsx` in this environment (`Top-level await is currently not
+  supported with the "cjs" output format` — confirmed by actually running it, not by
+  inspection) because the root `package.json` declares `"type": "commonjs"`. This is a
+  latent, real bug in an unrelated inventory script, discovered as a side effect of this
+  work; it was **not** fixed (out of scope for a Media session, and changing the root
+  module type is a repo-wide decision this session should not make unilaterally). The
+  new `media-reconcile-orphans.ts` avoids the same trap by wrapping its body in an
+  `async function main()` instead of top-level `await`, so it actually runs.
+
+Beyond this script, there is still no trash-*independent* orphan sweep triggered
+automatically (it is a manually-run maintenance script, not a scheduled tick) — the
+scheduled tick that does exist (`runMediaTrashPurgeTick`, wired into `server.ts` on the
+same hourly cadence as the billing tick) purges expired trash rows, which is a different
+concern (soft-deleted rows past retention) from orphaned bucket objects with no row at
+all.
+
+## Q. Route changes (cumulative, all sessions)
 
 | Route | Change |
 |---|---|
-| `GET /api/media` | + `sort`, `limit`, `source` query params |
+| `GET /api/media` | + `sort`, `limit`, `source`, `trashed`, `collectionId` query params |
 | `POST /api/media` | + tenant-scoped SHA-256 dedup, `allowDuplicate` override, 200-vs-201 split |
-| `DELETE /api/media/[id]` | + usage check, `?force=1` override, 409 `asset_in_use` with usage payload |
+| `DELETE /api/media/[id]` | now a soft delete (trash) by default; usage check; `?force=1` override; 409 `asset_in_use` with usage payload |
+| `POST /api/media/[id]/restore` **(new)** | restores a trashed asset |
 | `POST /api/media/[id]/detect` | response now includes the refreshed `asset` |
 | `POST /api/media/[id]/enhance` | + wallet balance preflight → 402 `insufficient_funds` |
+| `POST /api/media/[id]/transform` **(new)** | deterministic crop/rotate/resize; no wallet cost |
+| `GET/POST /api/media/[id]/collections` **(new)** | which collections an asset belongs to; add to one |
+| `GET/POST /api/media/collections` **(new)** | list/create collections |
+| `PATCH/DELETE /api/media/collections/[id]` **(new)** | rename/delete a collection |
+| `POST/DELETE /api/media/collections/[id]/items[/[assetId]]` **(new)** | add/remove membership |
 | `PATCH /api/media/folders/[id]` | + `parentId` (folder move), cycle/depth guards |
-| `GET /api/media/[id]/file` | permission model changed from unconditional `media.view` to usage-based (Section O) |
-| `GET /api/media/[id]/usage` **(new)** | exposes an asset's usage references for the manager's delete-confirmation UI |
+| `GET /api/media/[id]/file` | permission model changed from unconditional `media.view` to usage-based (Section O.1) |
+| `GET /api/media/[id]/usage` **(new, first session)** | asset usage references for the delete-confirmation UI |
 
 No routes were removed.
 
 ## R. Dead code / route removal
 
-**None removed this session.** No dead-code audit pass for Media was performed beyond
-what naturally surfaced while reading the touched files.
+**None removed.** No dead-code audit pass targeting route/component removal was
+performed; everything found during the MIME-centralization audit (Section O.2) was a
+duplication to consolidate, not dead code to delete.
 
-## S. Bugs fixed (see Section B for detail)
+## S. Bugs fixed (cumulative — see Sections B and O.2 for detail)
 
 1. Cashier/waiter/kitchen image-permission bug (the prompt's named bug).
 2. Media list pagination ceiling / missing sort & source filters.
-3. No duplicate detection on upload (storage and row bloat from repeat uploads).
-4. Unsafe delete of in-use assets.
-5. Unsafe folder move (no cycle/self-parent/depth guard existed at all before).
+3. No duplicate detection on upload.
+4. Unsafe delete of in-use assets (now further superseded by trash as the default).
+5. Unsafe folder move (no cycle/self-parent/depth guard existed at all).
 6. AI enhance spent before checking wallet balance.
 7. `detect` route silently dropped its own result from the response.
-8. Universal picker had no debounce/cancel/pagination and could not detect duplicate
-   uploads (inconsistent with the manager, and a source of racy stale-result UI bugs).
+8. Universal picker had no debounce/cancel/pagination and could not detect duplicates.
+9. Storage orphans from the two documented crash windows in
+   `storeMediaAsset`/`deleteMediaAsset` had no detection or cleanup mechanism at all.
+10. Byte-signature-check logic was hand-duplicated in three files with no single source
+    of truth.
+11. A CRM party's profile image had no server-side format/signature validation at all —
+    the only real bug fixed this session with a genuine (if narrow) security dimension.
 
-## T. Tests added / changed this session
+## T. Tests added / changed (cumulative)
 
-- `src/lib/media.test.ts`: **+10 tests** (29 total, was 19) — `mediaSortOrderBy`/
-  `isMediaSort` including SQL-injection-shaped garbage input, `normalizeSearchTerm`
-  (trim/collapse/cap, Arabic→Persian folding), `mediaSearchExpression` shape, and
-  `folderDepthOf`/`folderMoveCreatesCycle` (self-move, descendant-move, unrelated moves,
-  corrupt-cycle non-infinite-loop).
-- `integration/media-library.integration.test.ts`: **+5 `describe` blocks** — tenant-
-  scoped duplicate detection, sort orders, the `source` filter, end-to-end search
-  normalization (Arabic query matches Persian-named asset; stored name never rewritten),
-  and usage references (seeds real `menu_items`/`inventory_items` rows pointing at an
-  asset, verifies `getMediaAssetUsage`/`mediaAssetUsageIsEmpty`, and verifies
-  `deleteMediaAsset` triggers the existing FK `SET NULL` so catalogue rows survive a
-  delete while only their image pointer clears).
-- `src/app/api/api-guards.test.ts`: **+1 documented exemption entry** (Section O) — a
-  test-suite fix, not new coverage, required because this session's own route change
-  needed it.
+- `src/lib/media.test.ts`: 34 tests total (was 19 before this program) — sort/search
+  normalization/folder-cycle helpers (first session) + 5 new this session for
+  `parseMediaTransformInput` (crop/rotate/resize valid & invalid shapes, the
+  `fit: "inside"` default, unknown-operation and non-object-body rejection).
+- `src/lib/media-transform.test.ts` **(new file, this session)**: 6 tests against real
+  synthetic PNGs generated with `sharp` — crop dimensions, crop out-of-bounds rejection,
+  rotate 90° dimension swap, resize `fit: "inside"` bound check, resize `fit: "fill"`
+  exact dimensions, non-image bytes rejected via `MediaTransformError`.
+- `integration/media-library.integration.test.ts`: 40 tests total — the first session's
+  +5 `describe` blocks (dedup, sort, source filter, search normalization, usage
+  references), the phase-2 work's trash/collections/WordPress-mapping blocks, and 3 new
+  tests this session for the deterministic-transform feature (a `transformed` asset's
+  round-trip through `getMediaAsset` including `sourceAssetId`/`transformOps`; a
+  crop-then-resize chain recording only its own op at each step, not accumulated
+  history; a transformed asset appearing in a filtered library listing next to its
+  source).
+- `integration/media-reconcile-orphans.integration.test.ts` **(new file, this session)**:
+  6 tests, described in Section P.
+- `integration/parties.integration.test.ts`: +5 tests this session for the
+  `profileImage` server-side validation fix (Section O.2) — valid PNG accepted, valid
+  https link accepted, fake PNG rejected on create, non-image string rejected, fake JPEG
+  rejected on update.
+- `src/app/api/api-guards.test.ts`: +1 documented exemption entry (the `media/[id]/file`
+  usage-based-permission route, Section O.1) — a test-suite correction, not new coverage.
 
-No tests were skipped, stubbed, or marked as TODO. No E2E, RTL, mobile, or accessibility
-tests were added this session — that layer of the requested test pyramid was not
-attempted.
+No tests were skipped, stubbed, or marked as TODO anywhere in this program. No E2E,
+RTL-specific-to-media, mobile, or accessibility tests were added — that layer of the
+requested test pyramid was never attempted for Media (the repo's existing generic
+design/RTL/dark-mode lint suites, which run against every dashboard page including the
+media manager, were re-run and pass, but that is not the same as dedicated Media
+component/RTL/a11y coverage).
 
-## U. Verification results (all commands actually run this session, in order)
+## U. Verification results (commands actually run this session, in order)
 
-1. `npx tsc --noEmit -p tsconfig.json` → 2 errors found (a generic-constraint mismatch
-   introduced by this session's own `MediaAssetUsageRef` change) → fixed → **re-run: 0
-   errors.**
-2. `npx eslint src/lib/media.ts src/lib/media-service.ts src/app/api/media --max-warnings=0` → **clean.**
-3. `npx eslint src/app/dashboard/media --max-warnings=0` → **clean.**
-4. `npx vitest run src/lib/media.test.ts …` (targeted) → passed, confirmed no standalone
-   `media-service.test.ts` exists (service layer is covered by the DB integration suite
-   per repo convention).
-5. `npx vitest run src/lib/media.test.ts` after adding new tests → **29/29 passed.**
-6. `npx vitest run --config vitest.db.config.ts integration/media-library.integration.test.ts`
-   (against local Postgres) → **29/29 passed** (3.49s).
-7. `npx tsc --noEmit -p tsconfig.json` (full repo, post integration-test edits) → **clean.**
-8. `npx eslint integration/media-library.integration.test.ts src/lib/media.test.ts --max-warnings=0` → **clean.**
-9. `npx eslint .` (whole repo) → **clean** (38.3s).
-10. `npx vitest run` (full unit suite) → **1 file failed**: `src/app/api/api-guards.test.ts`
-    (423/424 files, 5960/5961 tests). Root-caused to the permission-model fix in Section
-    O; fixed with the documented exemption (Section O/T).
-11. `npx vitest run src/app/api/api-guards.test.ts` after the fix → **663/663 passed.**
-12. `npx vitest run` (full unit suite, final) → **424/424 files passed, 5961/5961 tests
-    passed, 0 failed.**
-13. `DATABASE_URL=... npx vitest run --config vitest.db.config.ts` (**full** DB
-    integration suite, all 132 files, not just the Media one) → **132/132 files passed,
-    1528/1529 tests passed, 1 skipped (pre-existing, unrelated to this session),
-    0 failed.** Duration 665s.
-14. `npm run build` (production `next build`) → first attempt hit an out-of-memory crash
-    in the sandbox during Next's type-checking phase (a 3.8 GB-RAM sandbox limit, not a
-    code defect — `tsc --noEmit` had already passed clean against the same code); re-run
-    with `NODE_OPTIONS=--max-old-space-size=3200` → **compiled successfully, full route
-    manifest generated**, including `/media`, `/platform/media`, `/websites/wp/media`,
-    and every `/api/media*` route. Non-fatal, pre-existing warnings about `jose`'s use of
-    `CompressionStream`/`DecompressionStream` in the Edge runtime are unrelated to this
-    session's changes.
+1. `npx tsc --noEmit -p tsconfig.json` → clean, run after every substantive change in
+   this session (media-service wiring, the transform route, `media-transform.ts`'s
+   `sharp.Sharp` → `Sharp` type fix, the orphan script, the MIME delegation, the parties
+   fix) — always re-run to green before moving on, never left red between steps.
+2. `npx eslint <touched files>` → clean after every substantive change; `npx eslint
+   scripts/media-reconcile-orphans.ts`, `src/lib/parties-service.ts`,
+   `src/lib/business-logo.ts`, `src/lib/website/content-service.ts`,
+   `integration/*.test.ts` → all clean, `--max-warnings=0`.
+3. `npx vitest run src/lib/media.test.ts src/lib/media-transform.test.ts` → 40/40 passed.
+4. `npx vitest run src/lib/business-logo.test.ts src/lib/website/content-service.test.ts`
+   → 9/9 passed (proves the byte-signature delegation is behavior-preserving).
+5. `npx vitest run src/lib/parties*.test.ts src/app/dashboard/parties/*.test.ts` →
+   129/129 passed (no regression from the `profileImage` validation change).
+6. `npx vitest run` (full unit suite) → **425/425 files passed, 5979/5979 tests
+   passed**, run twice this session (once mid-session, once as the final check after
+   every change below was in place) — both green.
+7. `DATABASE_URL=... npx vitest run --config vitest.db.config.ts` (**full** DB
+   integration suite, all files) → run three times this session as changes accumulated:
+   132/132 files, 1536/1537 (first run, before this session's new tests existed) →
+   132/132, 1539/1540 (after the transform-feature integration tests were added) →
+   **133/133 files, 1550/1551 tests passed, 0 failed** (final run, after the
+   orphan-reconciliation script, the MIME-signature delegation, and the parties
+   `profileImage` fix were all in place — the file count rose from 132 to 133 because
+   `media-reconcile-orphans.integration.test.ts` is a new file). Every individual new
+   test file (`media-library`, `media-reconcile-orphans`, `parties`) was also run
+   standalone and passed cleanly before this final full run. The 1 skipped test
+   throughout is pre-existing and unrelated to Media.
+8. `npx tsx scripts/media-reconcile-orphans.ts` (against the local dev database, storage
+   not configured) → correctly printed "nothing to reconcile" and exited 0, proving the
+   script is actually runnable, not just type-checked.
+9. `npx tsc --noEmit` / `npx eslint .` (whole repo, prior sessions and re-confirmed at
+   the very end of this session) → clean.
+10. `npm run build` — **attempted 4 times this session, all 4 killed by the sandbox's
+    OOM killer** (`dmesg` confirms a real `oom-kill`, not a code error: the build
+    process's anon-rss reached ~3.3 GB against this container's ~3.8 GB total before
+    being killed). This is a change from an earlier session in this same program, which
+    reports this exact command succeeding once, before the codebase grew further.
+    Diagnosed, not just retried blindly: (a) tried `--max-old-space-size` at 3200 and
+    2600 — same outcome both times, so the ceiling is not the V8 heap setting; (b)
+    added `sharp` to `serverExternalPackages` (a legitimate, kept improvement — native
+    addons should never be webpack-bundled — see the diff in `next.config.ts`) in case
+    tracing its native bindings was the spike — no change; (c) as a pure diagnostic,
+    temporarily set `typescript.ignoreBuildErrors`/`eslint.ignoreDuringBuilds` to `true`
+    to isolate whether the duplicate type-check/lint pass inside `next build` was the
+    cause — still OOM-killed, so it is the webpack compilation of this app's ~440
+    routes itself that no longer fits in this sandbox's memory ceiling; **this
+    diagnostic change was reverted immediately** and is not part of the shipped diff.
+    `npx tsc --noEmit` (which performs the same type-check `next build` would) is clean,
+    and every route file touched this session (`transform`, `collections`, `restore`,
+    `usage`, etc.) passed `eslint` individually — this is a sandbox resource ceiling,
+    not a code defect, but it is a real gap in this session's own verification chain and
+    is reported as such rather than assumed away.
 
-Net effect on the test suite: **+10 unit tests, +5 integration describe-blocks (net new
-assertions), 0 net regressions** (the 1 mid-session regression was self-introduced and
-fixed within the same session, and is fully accounted for above rather than hidden).
+Net effect on the test suite across this whole program: **+21 unit tests
+(`media.test.ts` 19→34, `media-transform.test.ts` 0→6), +14 integration tests this
+session alone (3 transform + 6 orphan-reconciliation + 5 parties), plus the phase-2
+trash/collections/WordPress-mapping integration coverage from the middle of this
+program — 0 net regressions** at every checkpoint where the full suite was re-run.
 
 ## V. Second audit / genuine remaining work
 
-A second, post-cleanup audit pass in the sense the original task means (re-run tests
-after further dead-code removal) does not apply, because no dead-code removal was
-performed this session (Section R) — there is nothing to re-audit for regressions from
-a cleanup step that didn't happen.
+A dead-code removal pass was never performed (Section R), so there is no
+"re-run tests after cleanup" step to report beyond what Section U already shows: every
+full-suite re-run this session, after every change, was green.
 
-**Genuinely remaining, requested-but-not-done work (not "limitations" — open scope):**
+**Before closing, an honest list of what remains — not "limitations," open scope:**
 
-- Canonical schema/naming-system rebuild (original vs. display vs. normalized vs. safe
-  storage-key as a formal system, beyond what already existed).
-- Collections as a concept distinct from folders and tags.
-- Tag review-workflow states (`pending_review` / `confirmed` / `rejected`).
-- Visual folder explorer with a mobile drawer.
-- Rich filter-chip UI and multi-select bulk actions.
-- Central uploader with bounded concurrency, retry, and cancel.
-- Byte-signature/MIME rule centralization beyond the existing helpers.
-- Storage orphan reconciliation and a trash/soft-delete tier.
-- Non-destructive image processing with parent/child asset relations and a version UI.
-- New AI editing operations (crop/rotate/resize/bg-removal/upscale/variations) as
-  derived child assets.
-- Centralized OCR/document intelligence and its consumption by Accounting/CRM/
-  Workspace.
-- WordPress `wordpress_media_mapping` table and turning WordPress media into a real
-  view over the central library.
-- Migrating Product/Inventory/Accounting/CRM/Workspace/CMS/AI-Chat upload and picker UI
-  onto the universal `MediaPickerDialog`/`MediaImageField` components.
-- Dead code/route removal audit for Media-adjacent surfaces.
-- E2E, RTL, mobile, and accessibility test coverage for Media.
-- CI configuration changes.
-- A new numbered SQL migration (`0174_*` or later) for any of the above, should the
-  schema work above be undertaken.
+- **Central uploader** with bounded concurrency, retry, and cancel — uploads are still
+  one at a time with no retry or cancel affordance (Section J). This is the largest
+  single piece of concretely-scoped, named work never attempted.
+- **WordPress as "a view over central Media"** — the mapping table and its service
+  functions exist and are tested, but nothing pushes a canonical asset to a connected
+  WordPress site through them yet, and the existing independent WordPress media mirror
+  is untouched (Section K).
+- **Crop has no UI entry point** — implemented, validated, and tested at the
+  route/service layer, but only rotate and resize are reachable by a click in the
+  manager (Section L).
+- **AI tag review-workflow states** (`pending_review`/`confirmed`/`rejected`) — never
+  implemented; tags apply directly with no human gate (Section H).
+- **Visual folder explorer / mobile drawer, rich filter-chip UI** — the manager still
+  uses flat dropdown/list controls, not the tree-explorer/chip UI the original request
+  described (Sections F, I).
+- **New AI editing operations** beyond crop/rotate/resize — no background removal,
+  upscale, or variations operation exists.
+- **Centralized OCR/document intelligence** for Accounting/CRM/Workspace — not built;
+  `ai-receipt.ts` remains a deliberately ephemeral, single-purpose helper by its own
+  documented design (Section M).
+- **CRM party avatars and the website builder's own media** are still independent of the
+  canonical Media Library's S3-backed storage (by different, individually-documented
+  reasons in each case — Section N) — not migrated onto `MediaImageField`/
+  `MediaPickerDialog`, only hardened where a genuine security gap was found (Section
+  O.2).
+- **Workspace** files were not audited this session at all.
+- **E2E, mobile, and accessibility test coverage specific to Media** — never attempted;
+  only the repo's pre-existing generic design-lint/RTL/dark-mode suites (which happen to
+  cover every dashboard page, including media) were re-run.
+- **CI configuration** — untouched; no new CI job or gate was added for any of this
+  program's new tests (they run under the same `npm test`/`npm run test:db` commands CI
+  already invokes, but no new named CI step highlights them specifically).
+- **`npm run build` could not be completed in this sandbox this session** — it was
+  attempted 4 times and OOM-killed every time (confirmed by `dmesg`, not inferred), even
+  after lowering the heap limit, externalizing `sharp`, and (as a reverted diagnostic
+  only) disabling the build's internal type-check/lint pass. `tsc --noEmit` and `eslint`
+  are both clean against the exact same code, which is the strongest available signal
+  short of an actual production bundle, but a completed `next build` is a genuinely
+  unverified step this session, named here rather than assumed to still pass because it
+  once did earlier in this program.
+- **A pre-existing, unrelated bug was found and left unfixed on purpose**:
+  `scripts/reconcile-opening-inventory.ts` cannot actually run via `npx tsx` in this
+  environment (top-level `await` vs. the repo's `"type": "commonjs"`) — out of scope
+  for a Media-focused session, noted in Section P instead of silently ignored.
 
-These remain open. This report does not claim them as done, partially done, or
-low-priority — they are exactly the parts of the original request this session did not
-reach.
+These are exactly the parts of the original request this program did not reach, or
+reached only partially. Nothing above is hidden in vaguer language than this.
