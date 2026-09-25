@@ -63,13 +63,15 @@ What actually changed, in the order it was built:
    drawer shows per-connection push status. See Section K.
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
-`0174`/`0175`, a full naming-system rebuild, AI-tagging review-workflow states
-(`pending_review`/`confirmed`/`rejected` semantics), a visual folder explorer with a
-mobile drawer, rich filter-chip UI, centralized OCR/document-intelligence consumption by
+`0174`/`0175`, a full naming-system rebuild, a visual folder explorer with a mobile
+drawer, rich filter-chip UI, centralized OCR/document-intelligence consumption by
 Accounting/CRM/Workspace, new AI editing operations beyond crop/rotate/resize (background
 removal, upscale, variations), a new numbered migration beyond `0174`/`0175`, dead-route
 removal, or E2E/mobile/accessibility/performance tests/CI changes. Section V lists these
-as genuine open work.
+as genuine open work. (The AI-tagging `pending_review`/`confirmed`/`rejected`
+review-workflow is *not* on this list — it already existed, correctly, before this
+program started; earlier drafts of this report wrongly claimed otherwise, corrected in
+Section H.)
 
 Why the scope stopped where it did: the requested scope is a multi-week, multi-team
 program. Given the choice between (a) shipping a shallow, unverified pass across the
@@ -200,10 +202,31 @@ without collision.
 
 ## H. Tags / auto-tagging
 
-Not rebuilt. The `detect` route now correctly returns its own persisted result (bug 7
-above), but the `pending_review`/`confirmed`/`rejected` review-workflow semantics called
-for in the original request were never implemented — no such column exists, and tags are
-still applied directly by the AI detection call with no human-review gate.
+**Correction to earlier drafts of this report**: the `pending_review`/`confirmed`/
+`rejected` review-workflow this section previously (and Section A/V) claimed was "never
+implemented" already existed in full, correctly, before this whole Media program began —
+that earlier claim was simply wrong and is retracted here rather than repeated. Verified
+by reading the actual code, not by re-trusting the earlier text: `media_assets.ai_status`
+(`none`/`pending_review`/`confirmed`/`rejected`, migration `0149`, base commit `81c29c4`
+— i.e. genuinely pre-existing, not built by any session of this program) is set to
+`'pending_review'` by `POST /api/media/[id]/detect` alongside the proposal in `ai_labels`,
+and nothing else ever touches `category`/`tags` at that point — the human gate is real,
+not cosmetic. `PATCH /api/media/[id]`'s `aiDecision` is the only way out of
+`pending_review`: `"confirm"` merges the proposed category/tags into the real columns
+(an explicit category/tags in the same request wins over the proposal — the operator
+edited before confirming) and sets `ai_status = 'confirmed'`; `"reject"` sets
+`ai_status = 'rejected'` and touches neither column. The drawer surfaces this correctly
+too: a `pending_review` asset shows an amber "پیشنهاد هوش مصنوعی (در انتظار تأیید شما)"
+panel with تأیید/رد buttons; nothing renders as applied until one of them is pressed.
+
+**What this session actually found and fixed**: the workflow itself needed no code
+change, but it had **zero test coverage anywhere in the repo** — a real, previously
+undetected gap, closed this session with
+`src/app/api/media/[id]/route.test.ts` **(new file, 19 tests)**: `confirm`'s merge (both
+with and without an explicit override), `reject`'s isolation from category/tags, the
+`aiDecision` value validator, plus full coverage of the same route's rename/move/
+validation branches and `DELETE`'s force/usage/trash/purge three-way branch, none of
+which had a test before either.
 
 ## I. Search / filters / sort
 
@@ -717,14 +740,32 @@ dedicated Media E2E/mobile/a11y coverage.
     plus the new `wp-plugin-admin-source.test.ts` assertion on the exact source text, not
     by executing PHP. `npm run build` again hit the same sandbox OOM
     (`SIGKILL`) documented in item 10 — unrelated to this change, not re-investigated.
+14. **Same follow-up session — Section H correction and a coverage gap it exposed**:
+    re-read Section H against the actual `detect`/`PATCH` code (not against the report's
+    own earlier text) and found the "review-workflow never implemented" claim there —
+    and echoed in Section A and Section V — was simply false; the workflow was real,
+    correct, and pre-existing (traced to base commit `81c29c4`, before this program).
+    Corrected all three sections. That same code-vs-code audit surfaced a genuine gap the
+    false claim had been masking: `src/app/api/media/[id]/route.ts` (the route that
+    actually persists `confirm`/`reject`, plus rename/move and the trash/force/purge
+    delete branches) had **no test file at all**. Added
+    `src/app/api/media/[id]/route.test.ts` — 19 new tests covering the `confirm` merge
+    (with and without an operator override), `reject`'s isolation from category/tags, the
+    `aiDecision` validator, rename/move/category/tag validation, and `DELETE`'s
+    usage-block/force/trash/purge three-way branch. `npx tsc --noEmit` clean; `npx eslint
+    src/app/api/media/[id]/route.test.ts --max-warnings=0` clean. Full unit suite re-run:
+    **429/429 files, 6036/6036 tests passed** (429/6036, up from the prior 428/6017 by
+    exactly this 1 new file / 19 new tests — 0 regressions elsewhere). No server-side
+    logic changed, so the DB integration suite was not re-run for this item.
 
 Net effect on the test suite across this whole program: **+35 unit tests from earlier
 sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx`
-0→10 counting this step's +4, `media-uploader.test.ts` 0→8) plus +23 unit tests from this
-step (`s3-lite.test.ts` +5, `src/app/api/media/[id]/wordpress/route.test.ts` +13 new
-file, `wp-plugin-admin-source.test.ts` +1), +14 integration tests from an earlier session
-(3 transform + 6 orphan-reconciliation + 5 parties) plus +7 from this step (3
-`readMediaObjectDownloadUrl` + 4 WordPress-correlation), plus the phase-2
+0→10 counting this step's +4, `media-uploader.test.ts` 0→8) plus +23 unit tests from the
+WordPress-push step (`s3-lite.test.ts` +5, `src/app/api/media/[id]/wordpress/route.test.ts`
++13 new file, `wp-plugin-admin-source.test.ts` +1), plus +19 unit tests from this step's
+new `src/app/api/media/[id]/route.test.ts`, +14 integration tests from an earlier session
+(3 transform + 6 orphan-reconciliation + 5 parties) plus +7 from the WordPress-push step
+(3 `readMediaObjectDownloadUrl` + 4 WordPress-correlation), plus the phase-2
 trash/collections/WordPress-mapping integration coverage from the middle of this program
 — 0 net regressions** at every checkpoint where the full suite was re-run.
 
@@ -750,8 +791,12 @@ full-suite re-run this session, after every change, was green.
 - ~~**Crop has no UI entry point**~~ — closed in a follow-up session: a drag-to-select
   crop rectangle is now wired into the manager's asset drawer, tested, and verified
   (Section L, Section U item 11).
-- **AI tag review-workflow states** (`pending_review`/`confirmed`/`rejected`) — never
-  implemented; tags apply directly with no human gate (Section H).
+- ~~**AI tag review-workflow states** (`pending_review`/`confirmed`/`rejected`) — never
+  implemented; tags apply directly with no human gate.~~ Not a gap: this was already
+  fully and correctly implemented before this program started (Section H). An earlier
+  draft of this report wrongly listed it here; retracted. The one real thing this audit
+  found and closed was a missing test file for the route that persists the decision —
+  see Section U item 14.
 - **Visual folder explorer / mobile drawer, rich filter-chip UI** — the manager still
   uses flat dropdown/list controls, not the tree-explorer/chip UI the original request
   described (Sections F, I).
