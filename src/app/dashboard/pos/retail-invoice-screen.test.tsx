@@ -49,6 +49,18 @@ const CASH_METHOD = {
   requiresReference: false,
 };
 
+const BANK_METHOD = {
+  id: "pm-bank",
+  code: "card",
+  name: "کارت‌خوان",
+  settlement: "card",
+  sortOrder: 1,
+  isActive: true,
+  isBuiltin: true,
+  opensDrawer: false,
+  requiresReference: false,
+};
+
 const ACCESSORY_ITEM = {
   id: "item-1",
   parentName: null,
@@ -224,6 +236,75 @@ describe("RetailInvoiceScreen — submitting a sale", () => {
     expect(receiptArg).toEqual(CANONICAL_RECEIPT);
     expect((receiptArg as ReceiptData).discount).toBe(5_000);
     expect((receiptArg as ReceiptData).issuedAt).toBe("2021-05-01T08:00:00.000Z");
+
+    // A plain (unsplit) sale sends one open tender — no `amount` at all, so
+    // the server's own total (promotions included) decides what it covers,
+    // exactly as this screen has always behaved.
+    const postCall = fetchMock.mock.calls.find(
+      (call: unknown[]) => call[0] === "/api/sales/invoices" && (call[1] as RequestInit | undefined)?.method === "POST",
+    ) as [string, RequestInit];
+    const body = JSON.parse(postCall[1].body as string);
+    expect(body.tenders).toEqual([{ method: "cash", paymentMethodId: "pm-cash", reference: null }]);
+  });
+
+  it("splits the payment across two ways and sends every slice's exact amount", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/api/payment-methods")) {
+        return new Response(JSON.stringify({ paymentMethods: [CASH_METHOD, BANK_METHOD] }), { status: 200 });
+      }
+      if (url.includes("/api/sales/invoices") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ invoice: { orderId: "order-9", orderNumber: 42, total: "104000" } }),
+          { status: 200 },
+        );
+      }
+      const [match] = routeFor(url);
+      if (match) return new Response(JSON.stringify(match.body), { status: 200 });
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RetailInvoiceScreen industry="accessories" />);
+    await flush();
+    await scanAndFlush("KEY-1");
+
+    const splitToggle = screen.getByRole("button", { name: /تقسیم بین چند روش/ });
+    act(() => {
+      splitToggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    const waySelects = screen.getAllByLabelText(/روش پرداخت ردیف/) as HTMLSelectElement[];
+    expect(waySelects).toHaveLength(2);
+    act(() => {
+      fireEvent.change(waySelects[1], { target: { value: "pm-bank" } });
+    });
+    await flush();
+
+    const amountInputs = screen.getAllByLabelText(/مبلغ ردیف/);
+    expect(amountInputs).toHaveLength(2);
+    // Typed in the display unit (تومان) — 5,000 تومان is 50,000 ریال.
+    act(() => {
+      fireEvent.change(amountInputs[0], { target: { value: "5000" } });
+    });
+    await flush();
+    // The second row is left blank on purpose — «باقی‌مانده».
+
+    press(submitButton());
+    advance(2000);
+    release(submitButton());
+    await flush();
+    await flush();
+
+    const postCall = fetchMock.mock.calls.find(
+      (call: unknown[]) => call[0] === "/api/sales/invoices" && (call[1] as RequestInit | undefined)?.method === "POST",
+    ) as [string, RequestInit];
+    expect(postCall).toBeTruthy();
+    const body = JSON.parse(postCall[1].body as string);
+    expect(body.tenders).toEqual([
+      { method: "cash", paymentMethodId: "pm-cash", reference: null, amount: 50_000 },
+      { method: "bank", paymentMethodId: "pm-bank", reference: null },
+    ]);
   });
 
   it("still shows the sale as completed when the print-data fetch fails, and warns instead of blocking", async () => {

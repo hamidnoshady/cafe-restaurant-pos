@@ -189,7 +189,7 @@ describe("a jewellery invoice", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "jewelry",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [
         {
           kind: "gold",
@@ -240,7 +240,7 @@ describe("a jewellery invoice", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "jewelry",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [
         {
           kind: "gold",
@@ -305,7 +305,7 @@ describe("a jewellery invoice", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "jewelry",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [
         { ...line, itemId: a.id },
         { ...line, itemId: b.id },
@@ -346,7 +346,7 @@ describe("a jewellery invoice", () => {
         businessId: biz.id,
         locationId: biz.locationId,
         industry: "jewelry",
-        paymentMethod: "cash",
+        tenders: [{ method: "cash" }],
         lines: [
           { ...line, itemId: sellable.id },
           { ...line, itemId: broken.id },
@@ -374,7 +374,7 @@ describe("a jewellery invoice", () => {
         businessId: biz.id,
         locationId: biz.locationId,
         industry: "jewelry",
-        paymentMethod: "cash",
+        tenders: [{ method: "cash" }],
         lines: [{ kind: "accessory", itemId: randomUUID(), quantity: "1", vatPercent: 9 }],
       }),
     ).rejects.toThrow(invoiceService.RetailInvoiceError);
@@ -386,7 +386,7 @@ describe("a jewellery invoice", () => {
         businessId: biz.id,
         locationId: biz.locationId,
         industry: "jewelry",
-        paymentMethod: "cash",
+        tenders: [{ method: "cash" }],
         lines: [],
       }),
     ).rejects.toThrow(invoiceService.RetailInvoiceError);
@@ -399,7 +399,7 @@ describe("a jewellery invoice", () => {
         businessId: biz.id,
         locationId: biz.locationId,
         industry: "jewelry",
-        paymentMethod: "credit",
+        tenders: [{ method: "credit" }],
         customerId: null,
         lines: [
           {
@@ -440,7 +440,7 @@ describe("an accessories invoice", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "accessories",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [{ kind: "accessory", itemId: variant.id, quantity: "3", vatPercent: 9 }],
     });
 
@@ -477,7 +477,7 @@ describe("an accessories invoice", () => {
         businessId: biz.id,
         locationId: biz.locationId,
         industry: "accessories",
-        paymentMethod: "cash",
+        tenders: [{ method: "cash" }],
         lines: [{ kind: "accessory", itemId: variant.id, quantity: "5", vatPercent: 9 }],
       }),
     ).rejects.toThrow();
@@ -496,14 +496,14 @@ describe("invoice numbering", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "jewelry",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [{ ...line, itemId: (await makeBracelet("1", "4000000")).id }],
     });
     const second = await invoice({
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "jewelry",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [{ ...line, itemId: (await makeBracelet("1", "4000000")).id }],
     });
     expect(second.orderNumber).toBe(first.orderNumber + 1);
@@ -540,7 +540,7 @@ describe("read-service / print-data — historical fidelity", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "accessories",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       customerId,
       lines: [{ kind: "accessory", itemId: variant.id, quantity: "3", discount: 15_000, vatPercent: 9 }],
     });
@@ -605,7 +605,7 @@ describe("read-service / print-data — historical fidelity", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "accessories",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [{ kind: "accessory", itemId: variant.id, quantity: "2", vatPercent: 9 }],
     });
 
@@ -636,7 +636,7 @@ describe("read-service / print-data — historical fidelity", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "accessories",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [{ kind: "accessory", itemId: variant.id, quantity: "1", vatPercent: 9 }],
     });
 

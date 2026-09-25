@@ -8,6 +8,14 @@
  */
 import { query } from "../db";
 
+/** One settlement method an invoice was actually paid with, for display. */
+export interface RetailInvoicePaymentMethodSummary {
+  /** The ledger/payment_method enum value ('card' for a bank way). */
+  method: string;
+  /** The business's own name for the way, or the Persian fallback for a legacy row with none. */
+  name: string;
+}
+
 export interface RetailInvoiceListRow {
   id: string;
   orderNumber: number;
@@ -16,8 +24,15 @@ export interface RetailInvoiceListRow {
   closedAt: string | null;
   customerName: string | null;
   lineCount: number;
-  paymentMethod: string | null;
-  paymentMethodName: string | null;
+  /**
+   * Every distinct way this invoice was actually settled with — a split
+   * payment (retail-tenders.ts) can post more than one `payments` row per
+   * invoice, so this is never just the first one. Empty for a legacy row with
+   * no payment recorded at all. Reversal rows (a void's negative slices)
+   * don't add a method here — this is what the customer originally paid
+   * with, not the invoice's current net position.
+   */
+  paymentMethods: RetailInvoicePaymentMethodSummary[];
   creditTotal: number;
   hasInstallmentPlan: boolean;
 }
@@ -40,6 +55,20 @@ export interface ListRetailInvoicesInput {
   pageSize: number;
 }
 
+/** The Persian fallback name for a payment enum value with no named way on the row (legacy data). */
+function fallbackMethodName(method: string): string {
+  switch (method) {
+    case "cash":
+      return "نقدی";
+    case "card":
+      return "کارت‌خوان";
+    case "credit":
+      return "نسیه";
+    default:
+      return method;
+  }
+}
+
 export async function listRetailInvoices(
   input: ListRetailInvoicesInput,
 ): Promise<{ invoices: RetailInvoiceListRow[]; count: number }> {
@@ -53,18 +82,24 @@ export async function listRetailInvoices(
     closed_at: string | null;
     customer_name: string | null;
     line_count: string;
-    pay_method: string | null;
-    payment_method_name: string | null;
+    payment_methods: { method: string; name: string | null }[];
     credit_total: string;
     has_installment_plan: boolean;
     result_count: string;
   }>(
-    `WITH invoice_rows AS (
+    `WITH payment_summary AS (
+       SELECT p.order_id,
+              jsonb_agg(DISTINCT jsonb_build_object('method', p.method::text, 'name', pm.name)) AS methods
+         FROM payments p
+         LEFT JOIN payment_methods pm ON pm.id = p.payment_method_id
+        WHERE p.amount > 0
+        GROUP BY p.order_id
+     ),
+     invoice_rows AS (
        SELECT o.id, o.order_number, o.status, o.total, o.closed_at,
               c.name AS customer_name,
               (SELECT count(*) FROM order_items oi WHERE oi.order_id = o.id) AS line_count,
-              tender.method::text AS pay_method,
-              pm.name AS payment_method_name,
+              COALESCE(ps.methods, '[]'::jsonb) AS payment_methods,
               COALESCE((SELECT sum(p.amount) FROM payments p
                           WHERE p.order_id = o.id AND p.method = 'credit'), 0)::text AS credit_total,
               EXISTS (SELECT 1 FROM installments ip
@@ -72,19 +107,17 @@ export async function listRetailInvoices(
          FROM orders o
          JOIN locations l ON l.id = o.location_id
          LEFT JOIN parties c ON c.id = o.customer_id
-         LEFT JOIN LATERAL (
-           SELECT p.method, p.payment_method_id
-             FROM payments p
-            WHERE p.order_id = o.id
-            ORDER BY p.received_at, p.id
-            LIMIT 1
-         ) tender ON true
-         LEFT JOIN payment_methods pm ON pm.id = tender.payment_method_id
+         LEFT JOIN payment_summary ps ON ps.order_id = o.id
         WHERE o.location_id = $1
           AND o.type = 'retail'
           AND o.status IN ('completed', 'voided')
           AND ($3 = '' OR c.name ILIKE '%' || $3 || '%' OR o.order_number::text LIKE '%' || $3 || '%')
-          AND ($4 = '' OR tender.method::text = $4)
+          -- A split-payment invoice can carry more than one payments row
+          -- (retail-tenders.ts); the filter matches an invoice that used this
+          -- method at all, not only whichever row happened to post first.
+          AND ($4 = '' OR EXISTS (
+                SELECT 1 FROM payments p2 WHERE p2.order_id = o.id AND p2.amount > 0 AND p2.method::text = $4
+              ))
           AND ($8 = '' OR o.status::text = $8)
           -- A Jalali date range on the screen, stored and compared as plain
           -- ISO calendar dates against the branch's own business day
@@ -122,26 +155,19 @@ export async function listRetailInvoices(
     closedAt: r.closed_at,
     customerName: r.customer_name,
     lineCount: Number(r.line_count),
-    // The API deliberately exposes settlement vocabulary, not the underlying
-    // payment enum (`card` is what a retail bank payment stores).
-    paymentMethod:
-      r.pay_method === "card"
-        ? "bank"
-        : r.pay_method === "cash" || r.pay_method === "credit"
-          ? r.pay_method
-          : r.pay_method,
-    paymentMethodName:
-      r.payment_method_name ??
-      (r.pay_method === "cash"
-        ? "نقدی"
-        : r.pay_method === "card"
-          ? "کارت‌خوان"
-          : r.pay_method === "credit"
-            ? "نسیه"
-            : r.pay_method),
+    paymentMethods: [...r.payment_methods]
+      .sort((a, b) => a.method.localeCompare(b.method))
+      .map((m) => ({
+        // The API deliberately exposes settlement vocabulary, not the
+        // underlying payment enum (`card` is what a retail bank payment
+        // stores) — same public contract the singular field used to keep.
+        method: m.method === "card" ? "bank" : m.method,
+        name: m.name ?? fallbackMethodName(m.method),
+      })),
     creditTotal: Number(r.credit_total),
     hasInstallmentPlan: r.has_installment_plan,
   }));
 
   return { invoices, count: rows[0] ? Number(rows[0].result_count) : 0 };
 }
+

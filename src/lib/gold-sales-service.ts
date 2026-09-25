@@ -28,6 +28,7 @@ import { getConsignment } from "./consignment-service";
 import { emitDomainEvent } from "./posting-engine";
 import type { RialText } from "./inventory-exact";
 import type { SettlementMethod } from "./ledger";
+import { resolveLineTenders, type RetailTender, type RetailTenderQueueEntry } from "./retail-tenders";
 // Side-effect import registers the gold.* posting rules; goldSoldCost is the
 // shared cost-basis helper the COGS rule and the commission margin basis both use.
 import { goldSoldCost } from "./gold-posting-rules";
@@ -40,7 +41,10 @@ export interface SellWeightedItemInput {
   makingCharge: MakingCharge;
   profitPercent: number;
   vatPercent: number;
-  paymentMethod: SettlementMethod;
+  /** The whole piece paid one way — every pre-split caller (the jewelry quick-sell panel). */
+  paymentMethod?: SettlementMethod;
+  /** A retail invoice's shared tender queue (retail-tenders.ts) — mutually exclusive with `paymentMethod`. */
+  tenders?: RetailTenderQueueEntry[];
   createdBy?: string | null;
   /** Defaults to today — the gold-price lookup date, in case a sale is backdated. */
   priceDate?: string;
@@ -109,6 +113,8 @@ export async function sellWeightedItem(
         unitCostPerGram: weightAttrs.unitCostPerGram ?? "0",
       });
 
+  const lineTenders: RetailTender[] = resolveLineTenders(input, breakdown.total);
+
   let revenueEntryId: string | null;
   let cogsEntryId: string | null = null;
 
@@ -124,7 +130,7 @@ export async function sellWeightedItem(
         profit: breakdown.profit,
         vat: breakdown.vat,
         total: breakdown.total,
-        paymentMethod: input.paymentMethod,
+        tenders: lineTenders,
       },
       sourceType: "gold_consignment_sale",
       sourceId: input.itemId,
@@ -145,7 +151,7 @@ export async function sellWeightedItem(
         makingChargePlusProfit,
         vat: breakdown.vat,
         total: breakdown.total,
-        paymentMethod: input.paymentMethod,
+        tenders: lineTenders,
       },
       sourceType: "gold_sale",
       sourceId: input.itemId,

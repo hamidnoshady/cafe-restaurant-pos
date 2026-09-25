@@ -44,6 +44,17 @@ interface RetailInvoiceLineSnapshotBase {
   net: Money;
   /** net + vat. */
   total: Money;
+  /**
+   * The journal entries this line's sale actually posted (revenue, COGS —
+   * whichever the industry's sell service returned), captured at sale time
+   * so a later void can reverse *exactly* these entries. There is no
+   * reliable way to re-derive them afterwards: they are keyed by a
+   * per-sale-unique posting identity (see RETAIL_POS_ENGINEERING_REPORT.md
+   * §12/§13), never by the order or the item. Absent on a line sold before
+   * this field existed — `retail-invoice-void-service.ts` refuses to void
+   * such a line automatically rather than leave it unreversed.
+   */
+  ledgerEntryIds?: string[];
 }
 
 export interface GoldLineSnapshot extends RetailInvoiceLineSnapshotBase {

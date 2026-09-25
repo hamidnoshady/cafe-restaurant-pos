@@ -114,3 +114,151 @@ describe("InvoiceManagementView filters", () => {
     ).toBeTruthy();
   });
 });
+
+describe("InvoiceManagementView split-payment display", () => {
+  function pageWithSplitInvoice() {
+    return new Response(
+      JSON.stringify({
+        invoices: [
+          {
+            id: "inv-1",
+            orderNumber: 101,
+            status: "completed",
+            total: 4_500_000,
+            closedAt: new Date().toISOString(),
+            customerName: "مشتری تست",
+            lineCount: 1,
+            paymentMethods: [
+              { method: "bank", name: "کارت‌خوان" },
+              { method: "cash", name: "نقدی" },
+            ],
+          },
+        ],
+        count: 1,
+        timeZone: "Asia/Tehran",
+      }),
+      { status: 200 },
+    );
+  }
+
+  it("shows every tendered method on a split-payment invoice's row, joined together", async () => {
+    fetchMock.mockImplementation(async () => pageWithSplitInvoice());
+    render(<InvoiceManagementView />);
+    await flush();
+
+    expect(screen.getAllByText("کارت‌خوان، نقدی").length).toBeGreaterThan(0);
+  });
+
+  it("marks a credit-tendered invoice's payment badge distinctly, even when it's one of several methods", async () => {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            invoices: [
+              {
+                id: "inv-2",
+                orderNumber: 102,
+                status: "completed",
+                total: 1_000_000,
+                closedAt: new Date().toISOString(),
+                customerName: null,
+                lineCount: 1,
+                paymentMethods: [
+                  { method: "cash", name: "نقدی" },
+                  { method: "credit", name: "نسیه" },
+                ],
+              },
+            ],
+            count: 1,
+            timeZone: "Asia/Tehran",
+          }),
+          { status: 200 },
+        ),
+    );
+    render(<InvoiceManagementView />);
+    await flush();
+
+    const badges = screen.getAllByText("نقدی، نسیه");
+    expect(badges.length).toBeGreaterThan(0);
+  });
+});
+
+describe("InvoiceManagementView export", () => {
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:mock");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  afterEach(() => {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  });
+
+  function pageWithOneInvoice() {
+    return new Response(
+      JSON.stringify({
+        invoices: [
+          {
+            id: "inv-1",
+            orderNumber: 55,
+            status: "completed",
+            total: 1_000_000,
+            closedAt: new Date().toISOString(),
+            customerName: "مشتری",
+            lineCount: 1,
+            paymentMethods: [{ method: "cash", name: "نقدی" }],
+          },
+        ],
+        count: 1,
+        timeZone: "Asia/Tehran",
+      }),
+      { status: 200 },
+    );
+  }
+
+  it("requests a page-scoped CSV, with the current filters and pagination, when «خروجی این صفحه» is clicked", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes("format=csv")) return new Response("csv-body", { status: 200 });
+      return pageWithOneInvoice();
+    });
+    render(<InvoiceManagementView />);
+    await flush();
+
+    click("خروجی این صفحه");
+    await flush();
+
+    const csvCall = fetchMock.mock.calls.find((c) => String(c[0]).includes("format=csv"));
+    expect(csvCall).toBeDefined();
+    const url = new URL(String(csvCall![0]), "http://localhost");
+    expect(url.searchParams.get("format")).toBe("csv");
+    expect(url.searchParams.get("page")).toBe("1");
+    expect(url.searchParams.has("all")).toBe(false);
+  });
+
+  it("requests the full filtered set, ignoring pagination, when «خروجی کامل» is clicked", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes("format=csv")) return new Response("csv-body", { status: 200 });
+      return pageWithOneInvoice();
+    });
+    render(<InvoiceManagementView />);
+    await flush();
+
+    click("باطل‌شده");
+    await flush();
+
+    const exportButton = screen.getByRole("button", { name: /خروجی کامل/ });
+    fireEvent.click(exportButton);
+    await flush();
+
+    const csvCall = fetchMock.mock.calls.find((c) => String(c[0]).includes("format=csv"));
+    expect(csvCall).toBeDefined();
+    const url = new URL(String(csvCall![0]), "http://localhost");
+    expect(url.searchParams.get("format")).toBe("csv");
+    expect(url.searchParams.get("all")).toBe("true");
+    // The full export must carry the same filter the screen is showing.
+    expect(url.searchParams.get("status")).toBe("voided");
+  });
+});

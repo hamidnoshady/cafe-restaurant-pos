@@ -19,7 +19,7 @@ import { PersianNumberInput } from "@/components/ui/persian-number-input";
  * confirm back.
  */
 import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react";
-import { PlusIcon, PrinterIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon, PrinterIcon, RefreshCwIcon, SplitIcon, Trash2Icon, XIcon } from "lucide-react";
 import { formatQuantity, toPersianDigits } from "@/lib/digits";
 import { useMoney } from "@/components/money/money-context";
 import { normalizePosSearchText } from "@/lib/pos-selection";
@@ -40,6 +40,7 @@ import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
+import { MAX_RETAIL_TENDERS } from "@/lib/retail-tenders";
 import { safeRandomId } from "@/lib/client-id";
 import { HoldToConfirmButton } from "../hold-to-confirm-button";
 import { kickDrawer, printReceipt } from "@/lib/printing/client";
@@ -142,6 +143,18 @@ function newKey(): string {
   return safeRandomId();
 }
 
+/** One slice of a split retail payment, as the screen holds it. Blank `amount` means «باقی‌مانده». */
+interface TenderRow {
+  key: string;
+  wayId: string;
+  amount: string;
+  reference: string;
+}
+
+function newTenderRow(wayId: string, amount = ""): TenderRow {
+  return { key: newKey(), wayId, amount, reference: "" };
+}
+
 /** Numeric inputs are editable text. A pasted currency symbol or a half-typed
  * value must make the line unavailable, not throw during render and blank the
  * whole invoice screen. */
@@ -155,7 +168,14 @@ function safeMoneyInput(parse: (value: string) => number, value: string): number
   }
 }
 
-export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
+export function RetailInvoiceScreen({
+  industry,
+  canVoidInvoice = false,
+}: {
+  industry: Industry;
+  /** `PERMISSIONS.ordersAmendClosed` — threaded down to «مدیریت فاکتورها»'s void button. */
+  canVoidInvoice?: boolean;
+}) {
   const money = useMoney();
   const [weightItems, setWeightItems] = useState<WeightItem[]>([]);
   const [prices, setPrices] = useState<GoldPrice[]>([]);
@@ -183,6 +203,15 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   // to run without a real selection.
   const paymentMethod = selectedWay ? ledgerSettlementFor(selectedWay.settlement) : null;
   const [paymentReference, setPaymentReference] = useState("");
+  // «تقسیم بین چند روش» — an invoice still posts through the per-line
+  // domain-event engine (one destination per *line*, drawn from a shared
+  // queue; see retail-tenders.ts), but the till can hand over cash+card for
+  // one bill. Off (the ordinary sale) sends one open tender, exactly as
+  // before. On, every row sends its own amount and at most one may stay
+  // blank — «باقی‌مانده» — to absorb whatever the server's own total comes to
+  // (promotions are only known once the transaction runs).
+  const [splitPayment, setSplitPayment] = useState(false);
+  const [tenderRows, setTenderRows] = useState<TenderRow[]>([]);
   const [note, setNote] = useState("");
 
   const [loading, setLoading] = useState(true);
@@ -240,6 +269,46 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
     [lines],
   );
 
+  // Split-payment helpers. A row without a recognised way is treated as
+  // unpicked (blocks submit); the preview below is best-effort against the
+  // client's own line preview, which is why the exact-match check ultimately
+  // happens on the server (see the submit-time comment below).
+  function tenderRowWay(row: TenderRow) {
+    return settlementWays.find((way) => way.id === row.wayId);
+  }
+  const blankTenderRows = tenderRows.filter((row) => !row.amount.trim());
+  const typedTenderTotal = tenderRows.reduce((sum, row) => {
+    const parsed = safeMoneyInput(money.parse, row.amount);
+    return sum + (parsed ?? 0);
+  }, 0);
+  const tenderRemaining = totals.total - typedTenderTotal;
+  const requiresCustomer = splitPayment
+    ? tenderRows.some((row) => tenderRowWay(row) && ledgerSettlementFor(tenderRowWay(row)!.settlement) === "credit")
+    : paymentMethod === "credit";
+
+  function startSplit() {
+    const firstWayId = selectedWay?.id ?? settlementWays[0]?.id ?? "";
+    setSplitPayment(true);
+    setTenderRows([newTenderRow(firstWayId), newTenderRow("")]);
+  }
+
+  function stopSplit() {
+    setSplitPayment(false);
+    setTenderRows([]);
+  }
+
+  function addTenderRow() {
+    setTenderRows((rows) => (rows.length >= MAX_RETAIL_TENDERS ? rows : [...rows, newTenderRow("")]));
+  }
+
+  function removeTenderRow(key: string) {
+    setTenderRows((rows) => (rows.length <= 2 ? rows : rows.filter((row) => row.key !== key)));
+  }
+
+  function patchTenderRow(key: string, patch: Partial<Pick<TenderRow, "wayId" | "amount" | "reference">>) {
+    setTenderRows((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  }
+
   function addLine(line: CartLine) {
     setDone(null);
     setError(null);
@@ -252,17 +321,60 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
   async function submit() {
     if (lines.length === 0) return;
-    if (!selectedWay || !paymentMethod) {
-      setError("روش پرداخت را انتخاب کنید.");
-      return;
-    }
-    if (selectedWay.requiresReference && !paymentReference.trim()) {
-      setError("برای این روش پرداخت، واردکردن شماره پیگیری الزامی است.");
-      return;
+
+    let tendersBody: { method: string; amount?: number; paymentMethodId: string; reference: string | null }[];
+    if (!splitPayment) {
+      if (!selectedWay || !paymentMethod) {
+        setError("روش پرداخت را انتخاب کنید.");
+        return;
+      }
+      if (selectedWay.requiresReference && !paymentReference.trim()) {
+        setError("برای این روش پرداخت، واردکردن شماره پیگیری الزامی است.");
+        return;
+      }
+      // No amount: the whole invoice, whatever the server's own total comes
+      // to — exactly what this screen has always sent for a single-way sale.
+      tendersBody = [
+        { method: paymentMethod, paymentMethodId: selectedWay.id, reference: paymentReference.trim() || null },
+      ];
+    } else {
+      if (tenderRows.length < 2) {
+        setError("برای تقسیم پرداخت، حداقل دو روش لازم است.");
+        return;
+      }
+      if (blankTenderRows.length > 1) {
+        setError("فقط یکی از روش‌های پرداخت می‌تواند بدون مبلغ (باقی‌مانده) باشد.");
+        return;
+      }
+      const built: { method: string; amount?: number; paymentMethodId: string; reference: string | null }[] = [];
+      for (const row of tenderRows) {
+        const way = tenderRowWay(row);
+        const method = way ? ledgerSettlementFor(way.settlement) : null;
+        if (!way || !method) {
+          setError("روش پرداخت را برای همهٔ ردیف‌ها انتخاب کنید.");
+          return;
+        }
+        if (way.requiresReference && !row.reference.trim()) {
+          setError("برای این روش پرداخت، واردکردن شماره پیگیری الزامی است.");
+          return;
+        }
+        const amountText = row.amount.trim();
+        let amount: number | undefined;
+        if (amountText) {
+          const parsed = safeMoneyInput(money.parse, amountText);
+          if (parsed === null || parsed <= 0) {
+            setError("مبلغ یکی از روش‌های پرداخت معتبر نیست.");
+            return;
+          }
+          amount = parsed;
+        }
+        built.push({ method, paymentMethodId: way.id, reference: row.reference.trim() || null, amount });
+      }
+      tendersBody = built;
     }
     // Server-enforced too (createRetailInvoice) — this just saves the round
     // trip: a نسیه sale needs someone to owe the receivable to.
-    if (paymentMethod === "credit" && !customerId) {
+    if (requiresCustomer && !customerId) {
       setError("برای فروش نسیه، انتخاب مشتری الزامی است.");
       return;
     }
@@ -280,9 +392,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       method: "POST",
       body: JSON.stringify({
         lines: lines.map((l) => l.payload),
-        paymentMethod,
-        paymentMethodId: selectedWay.id,
-        paymentReference: paymentReference.trim() || null,
+        tenders: tendersBody,
         customerId: customerId || null,
         note: note.trim() || null,
       }),
@@ -294,6 +404,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       setLines([]);
       setCustomerId("");
       setPaymentReference("");
+      stopSplit();
       setNote("");
       void load();
 
@@ -301,7 +412,9 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       // best-effort presentation. A failure fetching the print document (or
       // printing it) must never look like the sale itself failed; it only
       // ever surfaces as a non-blocking toast, same as "printer not configured".
-      const openedDrawer = selectedWay?.opensDrawer ?? false;
+      const openedDrawer = splitPayment
+        ? tenderRows.some((row) => tenderRowWay(row)?.opensDrawer === true)
+        : (selectedWay?.opensDrawer ?? false);
       void (async () => {
         // The same builder the reprint endpoint calls (`getRetailInvoicePrintData`)
         // — so the first print can never drift from a later reprint of the same
@@ -487,7 +600,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
               <Field
                 label="مشتری"
                 hint={
-                  paymentMethod === "credit" && !customerId
+                  requiresCustomer && !customerId
                     ? "برای فروش نسیه، انتخاب مشتری الزامی است."
                     : undefined
                 }
@@ -502,50 +615,152 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
                   ]}
                 />
               </Field>
-              {/* `as="div"`, not a label: this wraps a *group* of buttons, and a
-                  <label> forwards a click on its own whitespace (or the hint
-                  text) to the first labelable descendant — silently switching
-                  the payment way to whichever button happens to be first. The
-                  group names itself via `role="radiogroup"`/`aria-label` below. */}
-              <Field label="روش پرداخت" as="div">
-                {!paymentWaysLoaded ? (
-                  <LoadingSkeleton rows={3} compact label="در حال بارگذاری روش‌های پرداخت" />
-                ) : settlementWays.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                    روشی برای دریافت وجه تعریف نشده است؛ از تنظیمات یک روش پرداخت اضافه کنید.
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="روش پرداخت">
-                    {settlementWays.map((way) => (
-                      <button
-                        key={way.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={selectedWay?.id === way.id}
-                        onClick={() => setPaymentWayId(way.id)}
-                        className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 ${
-                          selectedWay?.id === way.id
-                            ? "border-amber-500 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 font-medium text-amber-900 dark:text-amber-200"
-                            : "border-border text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40"
-                        }`}
-                      >
-                        {way.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </Field>
-              {selectedWay?.requiresReference ? (
-                <Field label="شماره پیگیری" hint="برای ثبت این روش پرداخت الزامی است.">
-                  <input
-                    className={inputClass}
-                    value={paymentReference}
-                    maxLength={120}
-                    onChange={(event) => setPaymentReference(event.target.value)}
-                    placeholder="شماره پیگیری یا مرجع تراکنش"
-                  />
-                </Field>
-              ) : null}
+
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-foreground">روش پرداخت</span>
+                {settlementWays.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => (splitPayment ? stopSplit() : startSplit())}
+                    aria-pressed={splitPayment}
+                    className={`inline-flex min-h-9 items-center gap-1 rounded-lg border px-2 text-xs font-bold transition ${
+                      splitPayment
+                        ? "border-amber-500 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 text-amber-900 dark:text-amber-200"
+                        : "border-border/80 text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <SplitIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                    {splitPayment ? "پرداخت یکجا" : "تقسیم بین چند روش"}
+                  </button>
+                ) : null}
+              </div>
+
+              {!splitPayment ? (
+                <div className="mb-4">
+                  {/* Not a <label>: this wraps a *group* of buttons, and a
+                      <label> forwards a click on its own whitespace to the
+                      first labelable descendant — silently switching the
+                      payment way to whichever button happens to be first.
+                      The group names itself via `role="radiogroup"` below. */}
+                  {!paymentWaysLoaded ? (
+                    <LoadingSkeleton rows={3} compact label="در حال بارگذاری روش‌های پرداخت" />
+                  ) : settlementWays.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                      روشی برای دریافت وجه تعریف نشده است؛ از تنظیمات یک روش پرداخت اضافه کنید.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="روش پرداخت">
+                      {settlementWays.map((way) => (
+                        <button
+                          key={way.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selectedWay?.id === way.id}
+                          onClick={() => setPaymentWayId(way.id)}
+                          className={`min-h-11 flex-1 rounded-xl border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 ${
+                            selectedWay?.id === way.id
+                              ? "border-amber-500 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/15 font-medium text-amber-900 dark:text-amber-200"
+                              : "border-border text-foreground/80 hover:border-amber-300 dark:hover:border-amber-500/40"
+                          }`}
+                        >
+                          {way.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {selectedWay?.requiresReference ? (
+                    <Field label="شماره پیگیری" hint="برای ثبت این روش پرداخت الزامی است.">
+                      <input
+                        className={inputClass}
+                        value={paymentReference}
+                        maxLength={120}
+                        onChange={(event) => setPaymentReference(event.target.value)}
+                        placeholder="شماره پیگیری یا مرجع تراکنش"
+                      />
+                    </Field>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mb-4 space-y-2">
+                  {tenderRows.map((row, index) => {
+                    const way = tenderRowWay(row);
+                    const isLast = index === tenderRows.length - 1;
+                    return (
+                      <div key={row.key} className="rounded-xl border border-border/80 p-2.5">
+                        <div className="flex items-center gap-2">
+                          <select
+                            className={inputClass + " min-w-0 flex-1"}
+                            value={row.wayId}
+                            aria-label={`روش پرداخت ردیف ${index + 1}`}
+                            onChange={(event) => patchTenderRow(row.key, { wayId: event.target.value })}
+                          >
+                            <option value="">انتخاب روش…</option>
+                            {settlementWays.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.name}
+                              </option>
+                            ))}
+                          </select>
+                          <PersianNumberInput
+                            className={inputClass + " w-32 shrink-0 tabular-nums"}
+                            dir="ltr"
+                            inputMode="numeric"
+                            value={row.amount}
+                            onChange={(event) => patchTenderRow(row.key, { amount: event.target.value })}
+                            placeholder="باقی‌مانده"
+                            aria-label={`مبلغ ردیف ${index + 1}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeTenderRow(row.key)}
+                            disabled={tenderRows.length <= 2}
+                            aria-label={`حذف ردیف ${index + 1}`}
+                            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/80 text-muted-foreground hover:bg-muted disabled:opacity-40"
+                          >
+                            <XIcon aria-hidden="true" className="size-4" />
+                          </button>
+                        </div>
+                        {way?.requiresReference ? (
+                          <input
+                            className={inputClass + " mt-2"}
+                            value={row.reference}
+                            maxLength={120}
+                            onChange={(event) => patchTenderRow(row.key, { reference: event.target.value })}
+                            placeholder="شماره پیگیری یا مرجع تراکنش (الزامی)"
+                            aria-label={`شماره پیگیری ردیف ${index + 1}`}
+                          />
+                        ) : null}
+                        {isLast && !row.amount.trim() ? (
+                          <p className="mt-1.5 text-[11px] text-muted-foreground">
+                            بدون مبلغ: باقی‌ماندهٔ فاکتور با این روش دریافت می‌شود.
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={addTenderRow}
+                    disabled={tenderRows.length >= MAX_RETAIL_TENDERS}
+                    className="flex min-h-10 w-full items-center justify-center gap-1 rounded-xl border border-dashed border-border px-3 text-sm text-muted-foreground hover:bg-muted disabled:opacity-55"
+                  >
+                    <PlusIcon aria-hidden="true" className="size-4" />
+                    افزودن روش پرداخت
+                  </button>
+                  {blankTenderRows.length > 1 ? (
+                    <p className="text-xs font-medium text-rose-700 dark:text-rose-300">
+                      فقط یکی از روش‌ها می‌تواند بدون مبلغ (باقی‌مانده) باشد.
+                    </p>
+                  ) : blankTenderRows.length === 0 && tenderRemaining !== 0 ? (
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                      {tenderRemaining > 0
+                        ? `باقی‌مانده تقریبی: ${money.format(tenderRemaining)}`
+                        : `مازاد تقریبی: ${money.format(-tenderRemaining)}`}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+
               <Field label="توضیح">
                 <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} />
               </Field>
@@ -557,7 +772,11 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
               holdingLabel="نگه دارید…"
               cancelledMessage="برای ثبت فاکتور، دکمه را ۲ ثانیه نگه دارید."
               busy={busy}
-              disabled={lines.length === 0 || !paymentMethod}
+              disabled={
+                lines.length === 0 ||
+                (!splitPayment && !paymentMethod) ||
+                (splitPayment && (tenderRows.length < 2 || blankTenderRows.length > 1))
+              }
               onComplete={() => void submit()}
               className="min-h-12 w-full rounded-xl bg-amber-500 dark:bg-amber-400 px-4 text-sm font-bold text-amber-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-55"
             />
@@ -565,7 +784,7 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
         </aside>
       </div>
       ) : (
-        <InvoiceManagementView />
+        <InvoiceManagementView canVoidInvoice={canVoidInvoice} />
       )}
       </TabPanel>
     </PageShell>

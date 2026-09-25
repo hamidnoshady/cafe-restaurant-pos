@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+import { rialText } from "../src/lib/inventory-exact";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
@@ -77,6 +78,8 @@ afterAll(async () => {
 
 const ACCOUNT_SEED: [string, string, string, string][] = [
   ["cash", "1100", "Cash", "asset"],
+  // Needed once a test tenders "bank" — gold-posting-rules debits WELL_KNOWN_CODES.bankClearing (1120) for it.
+  ["bankClearing", "1120", "Bank Clearing", "asset"],
   ["goldSalesRevenue", "4500", "Gold Sales Revenue", "revenue"],
   ["makingChargeRevenue", "4600", "Making Charge Revenue", "revenue"],
   ["vatPayable", "2200", "VAT Payable", "liability"],
@@ -183,7 +186,7 @@ describe("listRetailInvoices", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "jewelry",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [
         { kind: "gold", itemId: bracelet.id, makingChargeType: "percent", makingChargeValue: 7, profitPercent: 10, vatPercent: 9 },
       ],
@@ -209,7 +212,7 @@ describe("listRetailInvoices", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "jewelry",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [
         { kind: "gold", itemId: bracelet1.id, makingChargeType: "percent", makingChargeValue: 7, profitPercent: 10, vatPercent: 9 },
       ],
@@ -223,7 +226,7 @@ describe("listRetailInvoices", () => {
       businessId: biz.id,
       locationId: biz.locationId,
       industry: "jewelry",
-      paymentMethod: "cash",
+      tenders: [{ method: "cash" }],
       lines: [
         { kind: "gold", itemId: bracelet2.id, makingChargeType: "percent", makingChargeValue: 7, profitPercent: 10, vatPercent: 9 },
       ],
@@ -250,7 +253,7 @@ describe("listRetailInvoices", () => {
         businessId: biz.id,
         locationId: biz.locationId,
         industry: "jewelry",
-        paymentMethod: "cash",
+        tenders: [{ method: "cash" }],
         lines: [
           { kind: "gold", itemId: bracelet.id, makingChargeType: "percent", makingChargeValue: 7, profitPercent: 10, vatPercent: 9 },
         ],
@@ -264,5 +267,90 @@ describe("listRetailInvoices", () => {
     const secondPage = await listService.listRetailInvoices(baseInput({ pageSize: 2, page: 2 }));
     expect(secondPage.invoices).toHaveLength(1);
     expect(secondPage.count).toBe(3);
+  });
+
+  it("surfaces every method on a split-payment invoice, and matches the method filter on any of them", async () => {
+    const bracelet = await makeBracelet("1", "4000000");
+    const split = await invoice({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      industry: "jewelry",
+      tenders: [
+        { method: "cash", amount: rialText("1000000") },
+        // The open (amount-less) tender always settles last — this proves the
+        // list/filter reflects it too, not just whichever tender posted first.
+        { method: "bank" },
+      ],
+      lines: [
+        { kind: "gold", itemId: bracelet.id, makingChargeType: "percent", makingChargeValue: 7, profitPercent: 10, vatPercent: 9 },
+      ],
+    });
+
+    const cashOnlyItem = await makeBracelet("1", "4000000");
+    const cashOnlyInvoice = await invoice({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      industry: "jewelry",
+      tenders: [{ method: "cash" }],
+      lines: [
+        { kind: "gold", itemId: cashOnlyItem.id, makingChargeType: "percent", makingChargeValue: 7, profitPercent: 10, vatPercent: 9 },
+      ],
+    });
+
+    const all = await listService.listRetailInvoices(baseInput());
+    const splitRow = all.invoices.find((row) => row.orderNumber === split.orderNumber);
+    expect(splitRow).toBeDefined();
+    // Sorted alphabetically by method (bank < cash) in the row mapper.
+    expect(splitRow!.paymentMethods.map((m) => m.method)).toEqual(["bank", "cash"]);
+    expect(splitRow!.paymentMethods.every((m) => typeof m.name === "string" && m.name.length > 0)).toBe(true);
+
+    // Filtering on either tender of the split invoice must return it — the
+    // old query only matched whichever payments row happened to post first.
+    const byCash = await listService.listRetailInvoices(baseInput({ method: "cash" }));
+    const cashOrderNumbers = byCash.invoices.map((r) => r.orderNumber);
+    expect(cashOrderNumbers).toContain(split.orderNumber);
+    expect(cashOrderNumbers).toContain(cashOnlyInvoice.orderNumber);
+
+    // The service layer (unlike the route) speaks the raw payments.method
+    // enum, where a retail bank payment is stored as "card" — see
+    // route.ts's dbMethod translation and list-service.ts's own mapping.
+    const byBank = await listService.listRetailInvoices(baseInput({ method: "card" }));
+    const bankOrderNumbers = byBank.invoices.map((r) => r.orderNumber);
+    expect(bankOrderNumbers).toContain(split.orderNumber);
+    // The single-tender cash invoice must not show up under "bank".
+    expect(bankOrderNumbers).not.toContain(cashOnlyInvoice.orderNumber);
+  });
+
+  it("keeps showing the original tender on a voided invoice, unaffected by the reversal's negative payment row", async () => {
+    const bracelet = await makeBracelet("1", "4000000");
+    const created = await invoice({
+      businessId: biz.id,
+      locationId: biz.locationId,
+      industry: "jewelry",
+      tenders: [{ method: "cash" }],
+      lines: [
+        { kind: "gold", itemId: bracelet.id, makingChargeType: "percent", makingChargeValue: 7, profitPercent: 10, vatPercent: 9 },
+      ],
+    });
+
+    // Simulate a void's reversal payment row directly (a negative-amount
+    // payment on the same order/method) without depending on the void
+    // engine's gold-blocking rule, which is out of scope for this query test.
+    const orderRow = await db.query<{ total: string }>("SELECT total FROM orders WHERE id = $1", [created.orderId]);
+    await db.query(
+      `INSERT INTO payments (order_id, location_id, method, amount, received_at)
+       VALUES ($1, $2, 'cash', $3, now())`,
+      [created.orderId, biz.locationId, `-${orderRow.rows[0].total}`],
+    );
+    await db.query("UPDATE orders SET status = 'voided' WHERE id = $1", [created.orderId]);
+
+    const voided = await listService.listRetailInvoices(baseInput({ status: "voided" }));
+    const row = voided.invoices.find((r) => r.orderNumber === created.orderNumber);
+    expect(row).toBeDefined();
+    // The reversal's negative-amount row must not contribute a (duplicate or
+    // otherwise) method — the invoice should still show only the one way the
+    // customer originally tendered with.
+    expect(row!.paymentMethods).toHaveLength(1);
+    expect(row!.paymentMethods[0].method).toBe("cash");
   });
 });

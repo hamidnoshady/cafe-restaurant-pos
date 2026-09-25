@@ -42,6 +42,13 @@ import type { MakingChargeType } from "./gold-pricing";
 import type { SettlementMethod } from "./ledger";
 import type { Industry } from "./industries";
 import type { RetailInvoiceLineSnapshotStored } from "./retail-invoice/types";
+import {
+  assertTendersExhausted,
+  buildTenderQueue,
+  resolveTenderAmounts,
+  type RetailTenderInput,
+  type RetailTenderQueueEntry,
+} from "./retail-tenders";
 
 /** One line of a retail invoice, discriminated by how its industry prices things. */
 export type RetailInvoiceLineInput =
@@ -90,15 +97,26 @@ export type RetailInvoiceLineInput =
       vatPercent: number;
     };
 
+/**
+ * One slice of the invoice's payment — ۲۰۰٬۰۰۰ نقدی plus ۳۰۰٬۰۰۰ کارت‌خوان is
+ * two of these. `amount` may be omitted on at most one tender per invoice
+ * ("whatever this comes to"), which is how a single, unsplit payment (still
+ * the overwhelming common case, and every caller that predates this) pays
+ * without the caller ever computing the invoice's total itself.
+ */
+export interface CreateRetailInvoiceTenderInput extends RetailTenderInput {
+  /** Named payment way and optional operator-entered reference, retained for history — per slice. */
+  paymentMethodId?: string | null;
+  reference?: string | null;
+}
+
 export interface CreateRetailInvoiceInput {
   businessId: string;
   locationId: string;
   industry: Industry;
   lines: RetailInvoiceLineInput[];
-  paymentMethod: SettlementMethod;
-  /** Named payment way and optional operator-entered reference, retained for history. */
-  paymentMethodId?: string | null;
-  paymentReference?: string | null;
+  /** 1–10 slices; see CreateRetailInvoiceTenderInput. */
+  tenders: CreateRetailInvoiceTenderInput[];
   customerId?: string | null;
   note?: string | null;
   /** Branch business date supplied by the route for loyalty-point expiry. */
@@ -172,12 +190,18 @@ export async function createRetailInvoice(
   if (input.lines.length === 0) {
     throw new RetailInvoiceError("فاکتور بدون کالا قابل ثبت نیست.");
   }
-  // A نسیه (credit) sale creates a receivable someone must owe. Without a
-  // customer there is nobody for that balance to belong to — it would sit on
-  // the books uncollectable and unreportable per-customer. Cash and card
-  // sales settle in full at the register and stay anonymous-customer-safe.
-  if (input.paymentMethod === "credit" && !input.customerId) {
+  // A نسیه (credit) tender creates a receivable someone must owe — even a
+  // partial one ("نصف نقد، نصف نسیه"). Without a customer there is nobody
+  // for that balance to belong to. Cash/card slices settle in full at the
+  // register and stay anonymous-customer-safe.
+  if (input.tenders.some((t) => t.method === "credit") && !input.customerId) {
     throw new RetailInvoiceError("برای فروش نسیه، انتخاب مشتری الزامی است.");
+  }
+  let tenderQueue: RetailTenderQueueEntry[];
+  try {
+    tenderQueue = buildTenderQueue(input.tenders);
+  } catch (err) {
+    throw new RetailInvoiceError(err instanceof Error ? err.message : "پرداخت نامعتبر است.");
   }
   const allowed = LINE_KINDS_BY_INDUSTRY[input.industry];
   for (const line of input.lines) {
@@ -234,7 +258,7 @@ export async function createRetailInvoice(
 
   for (let lineIndex = 0; lineIndex < input.lines.length; lineIndex++) {
     const line = input.lines[lineIndex];
-    const settled = await settleLine(client, input, line, promotionDiscounts[lineIndex] ?? 0);
+    const settled = await settleLine(client, input, line, promotionDiscounts[lineIndex] ?? 0, tenderQueue);
 
     const { rows: itemRows } = await client.query<{ id: string }>(
       `INSERT INTO order_items
@@ -306,6 +330,16 @@ export async function createRetailInvoice(
   const tax = sum(lines.map((l) => l.vat));
   const total = sum(lines.map((l) => l.total));
 
+  // Every line has now drawn its own total off the shared queue; a bounded
+  // tender left over here means the cashier's slices added up to more than
+  // the invoice (a shortfall would already have thrown mid-draw, inside
+  // settleLine, the moment a line ran out of money to draw from).
+  try {
+    assertTendersExhausted(tenderQueue);
+  } catch (err) {
+    throw new RetailInvoiceError(err instanceof Error ? err.message : "پرداخت نامعتبر است.");
+  }
+
   await client.query(
     `UPDATE orders
         SET subtotal = $2, discount = $3, tax = $4, total = $5,
@@ -321,25 +355,44 @@ export async function createRetailInvoice(
     ],
   );
 
-  // The payment row the orders list, the shift reconciliation and the
-  // receipt all read. The ledger side was already posted by the per-line
-  // service, so this records *how* it was collected, not a second posting.
-  await client.query(
-    `INSERT INTO payments (location_id, order_id, method, amount, reference, payment_method_id, received_by)
-     VALUES ($1, $2, $3::payment_method, $4, $5, $6, $7)`,
-    [
-      input.locationId,
-      orderId,
-      // The ledger's SettlementMethod and the payment_method enum overlap on
-      // every value the retail screen offers ('cash', 'card', 'credit');
-      // 'bank' is the ledger's name for what the till calls a card payment.
-      input.paymentMethod === "bank" ? "card" : input.paymentMethod,
-      rialBigInt(total).toString(),
-      input.paymentReference?.trim() || null,
-      input.paymentMethodId ?? null,
-      input.createdBy ?? null,
-    ],
-  );
+  // The payment rows the orders list, the shift reconciliation and the
+  // receipt all read — one per slice the cashier actually entered (not
+  // however the per-line ledger draw happened to fragment things). The
+  // ledger side was already posted by the per-line service, so this records
+  // *how* it was collected, not a second posting. The open slice (if any)
+  // resolves to the exact remainder now that `total` is known; a slice that
+  // ended up contributing nothing (the bounded ones already covered the
+  // invoice) is left out rather than recorded as a zero payment.
+  // `uq_payments_one_positive_per_order` (migration 0092) keys on
+  // `(order_id, settlement_seq)`, not `order_id` alone, precisely so one
+  // checkout can write more than one live positive row — each slice of this
+  // invoice's settlement is stamped 1..N here, exactly like the café's own
+  // split-payment insert in api/orders/[id]/pay/route.ts.
+  const resolvedTenders = resolveTenderAmounts(input.tenders, total);
+  let settlementSeq = 0;
+  for (let i = 0; i < input.tenders.length; i++) {
+    const amount = resolvedTenders[i].amount;
+    if (rialBigInt(amount) <= 0n) continue;
+    const tender = input.tenders[i];
+    settlementSeq += 1;
+    await client.query(
+      `INSERT INTO payments (location_id, order_id, method, amount, reference, payment_method_id, received_by, settlement_seq)
+       VALUES ($1, $2, $3::payment_method, $4, $5, $6, $7, $8)`,
+      [
+        input.locationId,
+        orderId,
+        // The ledger's SettlementMethod and the payment_method enum overlap on
+        // every value the retail screen offers ('cash', 'card', 'credit');
+        // 'bank' is the ledger's name for what the till calls a card payment.
+        tender.method === "bank" ? "card" : tender.method,
+        rialBigInt(amount).toString(),
+        tender.reference?.trim() || null,
+        tender.paymentMethodId ?? null,
+        input.createdBy ?? null,
+        settlementSeq,
+      ],
+    );
+  }
 
   // Phase 27 Wave 5 — a retail sale to a known customer earns loyalty points
   // per the business's default program, in the same transaction, so the
@@ -450,6 +503,7 @@ async function settleLine(
   input: CreateRetailInvoiceInput,
   line: RetailInvoiceLineInput,
   promotionDiscount: number,
+  tenderQueue: RetailTenderQueueEntry[],
 ): Promise<SettledLine> {
   if (line.kind === "gold") {
     const item = await getItem(line.itemId, client);
@@ -463,7 +517,7 @@ async function settleLine(
       makingCharge: { type: line.makingChargeType, value: line.makingChargeValue },
       profitPercent: line.profitPercent,
       vatPercent: line.vatPercent,
-      paymentMethod: input.paymentMethod,
+      tenders: tenderQueue,
       createdBy: input.createdBy ?? null,
     });
     const { breakdown, cost } = sale;
@@ -509,6 +563,7 @@ async function settleLine(
         makingCharge: breakdown.makingCharge,
         profit: breakdown.profit,
         consigned: sale.consigned,
+        ledgerEntryIds: [sale.revenueEntryId, sale.cogsEntryId].filter((id): id is string => id != null),
       },
     };
   }
@@ -531,17 +586,18 @@ async function settleLine(
     const serialRow = rows[0];
 
     const manualDiscount = line.discount ?? 0;
-    const { breakdown, cost, warranty } = await sellSerializedUnit(client, {
+    const watchSale = await sellSerializedUnit(client, {
       businessId: input.businessId,
       locationId: input.locationId,
       serialId: line.serialId,
       price: line.price,
       discount: manualDiscount + promotionDiscount,
       vatPercent: line.vatPercent,
-      paymentMethod: input.paymentMethod,
+      tenders: tenderQueue,
       warrantyMonths: line.warrantyMonths,
       createdBy: input.createdBy ?? null,
     });
+    const { breakdown, cost, warranty } = watchSale;
     return {
       itemId: serialRow.item_id,
       // The serial is what identifies the unit sold; a reprint has to show it.
@@ -574,6 +630,9 @@ async function settleLine(
           serialRow.condition_grade != null || serialRow.box_and_papers
             ? { conditionGrade: serialRow.condition_grade, boxAndPapers: serialRow.box_and_papers }
             : null,
+        ledgerEntryIds: [watchSale.revenueEntryId, watchSale.cogsEntryId].filter(
+          (id): id is string => id != null,
+        ),
       },
     };
   }
@@ -597,7 +656,7 @@ async function settleLine(
           unitPrice: line.unitPrice,
           discount: combinedDiscount,
           vatPercent: line.vatPercent,
-          paymentMethod: input.paymentMethod,
+          tenders: tenderQueue,
           createdBy: input.createdBy ?? null,
         })
       : null;
@@ -619,7 +678,7 @@ async function settleLine(
       unitPrice: line.unitPrice,
       discount: combinedDiscount,
       vatPercent: line.vatPercent,
-      paymentMethod: input.paymentMethod,
+      tenders: tenderQueue,
       createdBy: input.createdBy ?? null,
     });
     return {
@@ -644,6 +703,9 @@ async function settleLine(
         vat: tradeSale.breakdown.vat,
         net: tradeSale.breakdown.net,
         total: tradeSale.breakdown.total,
+        ledgerEntryIds: [tradeSale.revenueEntryId, tradeSale.cogsEntryId].filter(
+          (id): id is string => id != null,
+        ),
       },
     };
   }
@@ -658,10 +720,10 @@ async function settleLine(
           unitPrice: line.unitPrice,
           discount: combinedDiscount,
           vatPercent: line.vatPercent,
-          paymentMethod: input.paymentMethod,
+          tenders: tenderQueue,
           createdBy: input.createdBy ?? null,
         });
-  const { breakdown, cost } = sale;
+  const { breakdown, cost, revenueEntryId, cogsEntryId } = sale;
   const baseSnapshot = {
     quantity: line.quantity,
     unitPrice: line.unitPrice != null ? rialText(String(Math.round(line.unitPrice))) : null,
@@ -672,6 +734,7 @@ async function settleLine(
     vat: breakdown.vat,
     net: breakdown.net,
     total: breakdown.total,
+    ledgerEntryIds: [revenueEntryId, cogsEntryId].filter((id): id is string => id != null),
   } as const;
   return {
     itemId: line.itemId,

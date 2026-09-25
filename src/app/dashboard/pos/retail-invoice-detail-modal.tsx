@@ -12,7 +12,7 @@
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { PrinterIcon, XIcon } from "lucide-react";
+import { Ban, PrinterIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -27,7 +27,7 @@ import { useMoney } from "@/components/money/money-context";
 import { PAYMENT_METHOD_LABELS, CONDITION_GRADE_LABELS } from "@/lib/receipt-template";
 import { printReceipt } from "@/lib/printing/client";
 import { accountingSectionHref } from "@/app/(app)/accounting/accounting-routes";
-import { api, ErrorBox } from "../ui";
+import { api, ErrorBox, errorMessageOrRaw } from "../ui";
 import { StatusBadge, LoadingSkeleton } from "../page-chrome";
 import type { RetailInvoiceDetail, RetailInvoiceDetailLine } from "@/lib/retail-invoice/types";
 import type { ReceiptData } from "@/lib/receipt-template";
@@ -93,23 +93,26 @@ export function RetailInvoiceDetailModal({
   invoiceId,
   open,
   onOpenChange,
+  canVoid = false,
+  onVoided,
 }: {
   invoiceId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** `PERMISSIONS.ordersAmendClosed` — voiding a completed invoice, same gate as the café's own closed-order amendment. */
+  canVoid?: boolean;
+  /** Called after a void actually commits, so the invoice list behind this modal can refetch. */
+  onVoided?: () => void;
 }) {
   const money = useMoney();
   const [invoice, setInvoice] = useState<RetailInvoiceDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [printing, setPrinting] = useState(false);
+  const [voiding, setVoiding] = useState(false);
 
-  useEffect(() => {
-    if (!open || !invoiceId) {
-      setInvoice(null);
-      setError("");
-      return;
-    }
+  function loadInvoice() {
+    if (!invoiceId) return;
     setLoading(true);
     setError("");
     const controller = new AbortController();
@@ -122,7 +125,40 @@ export function RetailInvoiceDetailModal({
       setLoading(false);
     });
     return () => controller.abort();
+  }
+
+  useEffect(() => {
+    if (!open || !invoiceId) {
+      setInvoice(null);
+      setError("");
+      return;
+    }
+    return loadInvoice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, invoiceId]);
+
+  async function voidInvoice() {
+    if (!invoiceId) return;
+    const reason = window.prompt("دلیل ابطال فاکتور؟ (این فاکتور و ثبت‌های حسابداری آن به‌طور کامل برگشت می‌خورد)");
+    if (reason === null) return; // cancelled
+    if (reason.trim().length < 3) {
+      toast.error("دلیل ابطال باید حداقل ۳ نویسه باشد.");
+      return;
+    }
+    setVoiding(true);
+    const { ok, data } = await api<{ ok?: boolean; error?: string; message?: string }>(
+      `/api/sales/invoices/${invoiceId}/void`,
+      { method: "POST", body: JSON.stringify({ reason }) },
+    );
+    setVoiding(false);
+    if (ok) {
+      toast.success("فاکتور باطل شد و حسابداری آن برگشت خورد.");
+      loadInvoice();
+      onVoided?.();
+    } else {
+      toast.error(data.message || errorMessageOrRaw(data.error) || "ابطال فاکتور انجام نشد.");
+    }
+  }
 
   async function reprint() {
     if (!invoiceId) return;
@@ -189,6 +225,17 @@ export function RetailInvoiceDetailModal({
                 <PrinterIcon aria-hidden="true" className="size-4" />
                 {printing ? "در حال ارسال…" : "چاپ مجدد"}
               </button>
+              {canVoid && invoice?.status === "completed" ? (
+                <button
+                  type="button"
+                  onClick={() => void voidInvoice()}
+                  disabled={voiding}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-destructive/30 px-3 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <Ban aria-hidden="true" className="size-4" />
+                  {voiding ? "در حال ابطال…" : "ابطال فاکتور"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}

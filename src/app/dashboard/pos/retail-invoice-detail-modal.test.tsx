@@ -151,3 +151,95 @@ describe("RetailInvoiceDetailModal", () => {
     expect(within(panel).getByText("زهرا احمدی")).toBeTruthy();
   });
 });
+
+describe("RetailInvoiceDetailModal — void", () => {
+  it("shows no void button without canVoid, even on a completed invoice", async () => {
+    render(<RetailInvoiceDetailModal invoiceId="order-1" open onOpenChange={() => {}} />);
+    await flush();
+    expect(screen.queryByRole("button", { name: /ابطال فاکتور/ })).toBeNull();
+  });
+
+  it("shows no void button on an already-voided invoice, even with canVoid", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ invoice: { ...detail, status: "voided", voidedReason: "اشتباه صندوقدار" } }), {
+          status: 200,
+        }),
+      ),
+    );
+    render(<RetailInvoiceDetailModal invoiceId="order-1" open onOpenChange={() => {}} canVoid />);
+    await flush();
+    expect(screen.queryByRole("button", { name: /ابطال فاکتور/ })).toBeNull();
+    expect(screen.getByText("باطل‌شده")).toBeTruthy();
+  });
+
+  it("does nothing if the reason prompt is cancelled", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    render(<RetailInvoiceDetailModal invoiceId="order-1" open onOpenChange={() => {}} canVoid />);
+    await flush();
+    await userEvent.click(screen.getByRole("button", { name: /ابطال فاکتور/ }));
+    await flush();
+    // Only the one initial GET — no POST was attempted.
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts the reason, shows the server's Persian refusal, and never touches the order on failure", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("اشتباه صندوقدار");
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            error: "void_failed",
+            message: "این فاکتور شامل کالای طلا/سریال‌دار است و به دلیل وضعیت نهایی فروش، ابطال خودکار امکان‌پذیر نیست.",
+          }),
+          { status: 409 },
+        );
+      }
+      return new Response(JSON.stringify({ invoice: detail }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<RetailInvoiceDetailModal invoiceId="order-1" open onOpenChange={() => {}} canVoid />);
+    await flush();
+    await userEvent.click(screen.getByRole("button", { name: /ابطال فاکتور/ }));
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sales/invoices/order-1/void",
+      expect.objectContaining({ method: "POST" }),
+    );
+    // Still shows completed — a refused void never flips the badge.
+    expect(screen.getByText("تکمیل‌شده")).toBeTruthy();
+  });
+
+  it("on success, refetches the invoice and calls onVoided so the list behind it refreshes", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("اشتباه صندوقدار");
+    let voided = false;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        voided = true;
+        return new Response(JSON.stringify({ ok: true, amendmentId: "amend-1", reversedEntryIds: [] }), {
+          status: 200,
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          invoice: voided ? { ...detail, status: "voided", voidedReason: "اشتباه صندوقدار" } : detail,
+        }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const onVoided = vi.fn();
+
+    render(<RetailInvoiceDetailModal invoiceId="order-1" open onOpenChange={() => {}} canVoid onVoided={onVoided} />);
+    await flush();
+    await userEvent.click(screen.getByRole("button", { name: /ابطال فاکتور/ }));
+    await flush();
+
+    expect(onVoided).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("باطل‌شده")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /ابطال فاکتور/ })).toBeNull();
+  });
+});
