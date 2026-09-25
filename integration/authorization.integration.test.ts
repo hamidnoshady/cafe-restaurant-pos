@@ -20,13 +20,26 @@ import bcrypt from "bcryptjs";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runMigrations } from "../scripts/migrate";
+import { createAppRole } from "../scripts/create-app-role";
 
 const rootDatabaseUrl = process.env.DATABASE_URL;
 if (!rootDatabaseUrl) {
   throw new Error("DATABASE_URL is required for database integration tests");
 }
 
+/**
+ * The application pool must connect as a role row-level security actually
+ * applies to. Superusers and BYPASSRLS roles ignore RLS entirely, and both the
+ * stock docker-compose.yml and the CI service make `pos` a superuser — so
+ * seeding and asserting through the owner connection would make every
+ * isolation expectation below pass vacuously while proving nothing. Same
+ * reasoning, and the same helper, as tenant-isolation.integration.test.ts.
+ */
+const APP_ROLE = "pos_authz_test_role";
+const APP_PASSWORD = "authz-test-password";
+
 let databaseName: string;
+/** Owner connection: seeds fixtures, bypassing RLS on purpose. */
 let db: Client;
 
 let permissions: typeof import("../src/lib/permissions");
@@ -36,9 +49,13 @@ let dbLib: typeof import("../src/lib/db");
 const alpha = { businessId: "", locationId: "", secondLocationId: "", ownerId: "" };
 const beta = { businessId: "", locationId: "", secondLocationId: "", ownerId: "" };
 
-function urlFor(database: string): string {
+function urlFor(database: string, role?: { name: string; password: string }): string {
   const url = new URL(rootDatabaseUrl!);
   url.pathname = `/${database}`;
+  if (role) {
+    url.username = role.name;
+    url.password = role.password;
+  }
   return url.toString();
 }
 
@@ -95,8 +112,12 @@ async function seedMember(
   } = {},
 ): Promise<string> {
   const row = await db.query<{ id: string }>(
-    `INSERT INTO users (business_id, platform_user_id, role, full_name, location_scope, location_id, permissions)
-     VALUES ($1, NULL, $2, $3, COALESCE($4, 'home'), $5, COALESCE($6, '{}'::jsonb))
+    // pin_hash is not decoration: the users_credentials constraint (0022)
+     // requires an *active* member to have some way of signing in, and a
+     // PIN-only member's way is the PIN. Seeding without one would be seeding
+     // a row the product cannot create.
+     `INSERT INTO users (business_id, platform_user_id, role, full_name, location_scope, location_id, permissions, pin_hash)
+     VALUES ($1, NULL, $2, $3, COALESCE($4::location_scope, 'home'), $5, COALESCE($6, '{}'::jsonb), 'pin-hash-not-a-real-hash')
      RETURNING id`,
     [
       businessId,
@@ -122,8 +143,17 @@ beforeAll(async () => {
   }
 
   await runMigrations({ databaseUrl: urlFor(databaseName), quiet: true });
+  await createAppRole({
+    databaseUrl: urlFor(databaseName),
+    roleName: APP_ROLE,
+    password: APP_PASSWORD,
+    quiet: true,
+  });
 
-  process.env.DATABASE_URL = urlFor(databaseName);
+  // The library pool — everything the assertions go through — is the
+  // unprivileged role. `db` stays the owner so fixtures can be seeded across
+  // both tenants.
+  process.env.DATABASE_URL = urlFor(databaseName, { name: APP_ROLE, password: APP_PASSWORD });
   permissions = await import("../src/lib/permissions");
   locationAccess = await import("../src/lib/location-access");
   dbLib = await import("../src/lib/db");
@@ -141,6 +171,7 @@ afterAll(async () => {
   await maintenance.connect();
   try {
     await maintenance.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+    await maintenance.query(`DROP ROLE IF EXISTS ${APP_ROLE}`);
   } finally {
     await maintenance.end();
   }
@@ -196,6 +227,25 @@ async function reachFor(businessId: string, memberId: string): Promise<string[]>
     );
   });
 }
+
+describe("the isolation assertions are not vacuous", () => {
+  it("runs the application pool as a role row-level security applies to", async () => {
+    // Without this, every isolation expectation in the next describe would
+    // pass on a superuser connection that never consults a policy. This is the
+    // guard that makes the rest of the file mean something.
+    const { rows } = await dbLib.query<{
+      current_user: string;
+      rolsuper: boolean;
+      rolbypassrls: boolean;
+    }>(
+      `SELECT current_user, r.rolsuper, r.rolbypassrls
+         FROM pg_roles r WHERE r.rolname = current_user`,
+    );
+    expect(rows[0].current_user).toBe(APP_ROLE);
+    expect(rows[0].rolsuper).toBe(false);
+    expect(rows[0].rolbypassrls).toBe(false);
+  });
+});
 
 describe("tenant isolation is still the floor under the permission model", () => {
   it("does not show one business another's memberships, whatever the role", () => {
