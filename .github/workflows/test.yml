@@ -336,10 +336,11 @@ jobs:
         # The baselines are recorded against a production build, not `next dev`:
         # the dev server compiles routes on demand, so the first visit to each
         # screen races a webpack build and the shot can catch a half-rendered
-        # page. `BIND_ADDR` is required — the server refuses to boot a
-        # production "site" role on a non-loopback address without TLS.
+        # page. This fixture covers Cloud applications, so its runtime role is
+        # explicit rather than inheriting site-role inference from a loopback
+        # test host. `BIND_ADDR` remains explicit for deterministic binding.
         run: |
-          BIND_ADDR=127.0.0.1 PORT=3000 \
+          BIND_ADDR=127.0.0.1 PORT=3000 DEPLOYMENT_ROLE=central \
           DATABASE_URL=postgres://pos_app:ci-only-app-role-password@127.0.0.1:55432/pos \
           npm run start > server.log 2>&1 &
           for i in $(seq 1 60); do
