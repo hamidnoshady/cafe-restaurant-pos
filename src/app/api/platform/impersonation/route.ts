@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePlatformAdmin, withPlatformScope } from "@/lib/platform-auth";
+import { requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
 import { listGrants } from "@/lib/platform-service";
 
 /**
@@ -9,7 +9,7 @@ import { listGrants } from "@/lib/platform-service";
  * admin may see it, since accountability is the point.
  */
 export const GET = withPlatformScope(async (request: NextRequest) => {
-  const { error } = await requirePlatformAdmin();
+  const { error } = await requirePlatformCapability("businesses.read");
   if (error) return error;
 
   const businessId = request.nextUrl.searchParams.get("businessId") ?? undefined;

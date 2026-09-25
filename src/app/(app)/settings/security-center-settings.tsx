@@ -24,6 +24,7 @@
  * the sessions card below.
  */
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { RefreshCwIcon } from "lucide-react";
 import { formatJalali } from "@/lib/jalali";
 import { toPersianDigits } from "@/lib/digits";
@@ -197,6 +198,12 @@ export function SecurityCenterSettings() {
   return (
     <div className="space-y-6">
       <PhoneLoginCard />
+
+      <SectionCard
+        title="دسترسی پشتیبانی"
+        description="نشست‌های فعال و تاریخچهٔ ورود تیم پشتیبانی را ببینید، سیاست دسترسی را تعیین کنید یا یک نشست را فوراً پایان دهید."
+        actions={<Button asChild variant="outline"><Link href="/settings/security/support-access">مدیریت دسترسی پشتیبانی</Link></Button>}
+      />
 
       <SectionCard
         title={

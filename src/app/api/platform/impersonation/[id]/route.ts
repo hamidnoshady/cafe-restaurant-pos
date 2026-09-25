@@ -31,10 +31,11 @@ export const DELETE = withPlatformScope(async (request: NextRequest, ctx: Ctx) =
   if (action === "revoke") {
     const { session, error } = await requirePlatformCapability("impersonate.revoke");
     if (error) return error;
-    await revokeImpersonation(id, session.padmin);
+    const changed = await revokeImpersonation(id, session.padmin);
+    if (!changed) return NextResponse.json({ error: "support_session_not_active" }, { status: 409 });
     await platformAudit({
       adminId: session.padmin,
-      action: "impersonation.revoke",
+      action: "support_session.revoked",
       entity: "impersonation_grant",
       entityId: id,
     });
@@ -43,10 +44,11 @@ export const DELETE = withPlatformScope(async (request: NextRequest, ctx: Ctx) =
 
   const { session, error } = await requirePlatformAdmin();
   if (error) return error;
-  await endImpersonation(id, session.padmin);
+  const changed = await endImpersonation(id, session.padmin);
+  if (!changed) return NextResponse.json({ error: "support_session_not_active" }, { status: 409 });
   await platformAudit({
     adminId: session.padmin,
-    action: "impersonation.end",
+    action: "support_session.ended",
     entity: "impersonation_grant",
     entityId: id,
   });

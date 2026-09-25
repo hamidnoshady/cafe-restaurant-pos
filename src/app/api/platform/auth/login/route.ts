@@ -144,6 +144,7 @@ export async function POST(request: NextRequest) {
       fullName: usable.full_name,
       email: usable.email,
       tokenVersion: usable.token_version,
+      mfaVerified: false,
     });
 
     const res = NextResponse.json({
