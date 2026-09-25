@@ -44,7 +44,7 @@ const INVENTORY_PERMISSION = "inventory.adjust" as const;
  * catalogue tests, so those surfaces cannot silently drift apart.
  */
 export const SYNC_EVENT_REGISTRY = [
-  { type: "order.create", schemaVersion: 1, handler: "legacy.order.create", permission: ORDER_PERMISSION, effectClass: "order", locationRule: "event_location", dependencyErrors: [], payloadFields: ["type", "tableId", "customerId", "guestCount", "note", "discount", "items", "delivery"], legacy: true },
+  { type: "order.create", schemaVersion: 1, handler: "legacy.order.create", permission: ORDER_PERMISSION, effectClass: "order", locationRule: "event_location", dependencyErrors: [], payloadFields: ["orderId", "type", "tableId", "customerId", "guestCount", "note", "discount", "items", "delivery"], legacy: true },
   { type: "order.add_items", schemaVersion: 1, handler: "legacy.order.add_items", permission: ORDER_PERMISSION, effectClass: "order", locationRule: "event_location", dependencyErrors: ["order_not_found"], payloadFields: ["orderId", "items"], legacy: true },
   { type: "order_item.status", schemaVersion: 1, handler: "legacy.order_item.status", permission: ORDER_PERMISSION, effectClass: "order", locationRule: "event_location", dependencyErrors: ["item_not_found"], payloadFields: ["itemId", "status"], legacy: true },
 

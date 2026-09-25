@@ -230,11 +230,11 @@ describe("pairing round trip", () => {
       );
       expect(Number(accounts.rows[0].n)).toBeGreaterThan(0);
 
-      const mode = await query<{ value: { mode: string; pairedAt: string } }>(
-        `SELECT value FROM settings WHERE business_id = $1 AND key = 'deployment.mode'`,
+      const mode = await query<{ value: { profile: string; pairedAt: string } }>(
+        `SELECT value FROM settings WHERE business_id = $1 AND key = 'deployment.profile'`,
         [applied.businessId],
       );
-      expect(mode.rows[0].value.mode).toBe("connected");
+      expect(mode.rows[0].value.profile).toBe("hybrid");
       expect(typeof mode.rows[0].value.pairedAt).toBe("string");
 
       const progress = await query<{ value: { completedAt: string | null } }>(

@@ -64,7 +64,7 @@ export default async function ConnectionsPage({
         features={{
           integrations: Boolean(features.integrations),
           api_platform: Boolean(features.api_platform),
-          offline_mode: Boolean(features.offline_mode),
+          site_cloud_sync: Boolean(features.site_cloud_sync),
         }}
       />
     </PageShell>

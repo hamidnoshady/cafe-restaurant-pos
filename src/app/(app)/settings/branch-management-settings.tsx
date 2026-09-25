@@ -7,7 +7,7 @@ import { LocationsManager } from "@/app/dashboard/locations/locations-manager";
 import { SectionNav } from "@/app/dashboard/section-nav";
 
 type BranchManagementTabKey = "branches" | "sync";
-type BranchFeatureKey = "multi_location" | "offline_mode";
+type BranchFeatureKey = "multi_location" | "site_cloud_sync";
 
 interface BranchManagementSettingsProps {
   features: Record<string, boolean>;
@@ -19,7 +19,7 @@ const BRANCH_MANAGEMENT_TABS: Array<{
   requiredFeature: BranchFeatureKey;
 }> = [
   { key: "branches", label: "مدیریت شعب", requiredFeature: "multi_location" },
-  { key: "sync", label: "همگام‌سازی شعب", requiredFeature: "offline_mode" },
+  { key: "sync", label: "همگام‌سازی شعب", requiredFeature: "site_cloud_sync" },
 ];
 
 function requestedBranchManagementTab(
@@ -81,7 +81,7 @@ export function BranchManagementSettings({ features }: BranchManagementSettingsP
       return;
     }
     // A request for a tab this business cannot see (asking for «همگام‌سازی»
-    // without `offline_mode`) is not remembered, so it can't block the
+    // without `site_cloud_sync`) is not remembered, so it can't block the
     // fallback below from taking effect.
     appliedRequest.current = null;
     if (firstTab && !availableTabKeys.includes(tab)) {

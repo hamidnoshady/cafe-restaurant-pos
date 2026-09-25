@@ -419,7 +419,7 @@ export async function provisionBusiness(
         await client.query(
           `INSERT INTO settings (business_id, location_id, key, value)
            VALUES ($1, NULL, $2, $3)`,
-          [businessId, SETTING_KEYS.deploymentMode, JSON.stringify({ mode: "local", pairedAt: null })],
+          [businessId, SETTING_KEYS.deploymentProfile, JSON.stringify({ profile: "local", pairedAt: null })],
         );
         await disableFeatures(client, businessId, LOCAL_DISABLED_FEATURES);
 

@@ -87,6 +87,8 @@ import { BranchSwitcher } from "./branch-switcher";
 import { LockButton } from "./lock-screen";
 import { PlatformUserMenu } from "./platform-user-menu";
 import { ShiftButton } from "./shift-panel";
+import { DeploymentStatusIndicator } from "./deployment-status-indicator";
+import type { DeploymentProfile } from "@/lib/deployment-mode";
 
 /** Roles that sign in with a PIN (team.ts's PIN_ROLES) — the lock screen is a floor-terminal convenience for them. */
 const PIN_ROLES = ["cashier", "waiter", "kitchen"];
@@ -220,6 +222,7 @@ interface SidebarProps {
   industry?: Industry;
   /** Permission-filtered contextual Workspace entries from the server shell. */
   workspaceSections: readonly WorkspaceSidebarSection[];
+  deploymentProfile: DeploymentProfile;
 }
 
 /**
@@ -540,12 +543,14 @@ function DashboardSidebarFooter({
   navItems,
   bottomNavHrefs,
   onSaveBottomNav,
+  deploymentProfile,
 }: {
   role: string;
   fullName: string;
   navItems: NavItem[];
   bottomNavHrefs: string[];
   onSaveBottomNav: (hrefs: string[]) => void;
+  deploymentProfile: DeploymentProfile;
 }) {
   const { expandSidebar } = useSidebar();
   const isPinRole = PIN_ROLES.includes(role);
@@ -553,6 +558,7 @@ function DashboardSidebarFooter({
   return (
     <SidebarFooter className="border-border/80 bg-card group-data-[state=collapsed]/sidebar:p-2">
       <div className="space-y-2 group-data-[state=collapsed]/sidebar:hidden">
+        <DeploymentStatusIndicator profile={deploymentProfile} />
         {/* The branch switcher used to be here. It moved to the rail's header,
             beside the business name: it answers "where am I working", which is
             context for the whole screen rather than one of the account actions
@@ -699,28 +705,18 @@ function WorkspaceNavigation({
 function MobileDashboardHeader({
   navItems,
   pathname,
+  deploymentProfile,
 }: {
   /** Already flattened and contextual to the route currently open. */
   navItems: readonly { label: string; href: string }[];
   pathname: string;
+  deploymentProfile: DeploymentProfile;
 }) {
-  const [online, setOnline] = useState(true);
   const search = useSearchParams();
   // The longest matching href wins, so a detail page keeps its owning section
   // label instead of falling back to the platform home.
   const active = bestNavMatch([...navItems], (href) => isActive(pathname, href, search));
   const today = toPersianDigits(formatJalali(new Date(), { withMonthName: true }));
-
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
-    update();
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
-    return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
-    };
-  }, []);
 
   return (
     <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-border/80 bg-card/95 px-2 py-1 backdrop-blur md:hidden">
@@ -737,17 +733,7 @@ function MobileDashboardHeader({
           opened — the one place a mis-set branch does the most damage. */}
       <BranchSwitcher compact />
       <CreditBadge />
-      <span
-        className="flex min-h-11 min-w-8 items-center justify-center"
-        role="status"
-        aria-label={online ? "اتصال برقرار است" : "اتصال قطع است"}
-        title={online ? "اتصال برقرار است" : "اتصال قطع است"}
-      >
-        <span
-          className={`size-2.5 rounded-full ${online ? "bg-emerald-500 dark:bg-emerald-500" : "bg-destructive"}`}
-          aria-hidden="true"
-        />
-      </span>
+      <div className="max-w-36"><DeploymentStatusIndicator profile={deploymentProfile} /></div>
     </header>
   );
 }
@@ -966,6 +952,7 @@ export function DashboardSidebar({
   brandTitle,
   brandSubtitle,
   workspaceSections,
+  deploymentProfile,
 }: SidebarProps) {
   const pathname = usePathname();
   const [preference, setPreference] = useState<DashboardSidebarPreference>("expanded");
@@ -1076,7 +1063,7 @@ export function DashboardSidebar({
   return (
     <SidebarProvider open={mode === "expanded"} onOpenChange={setExpanded}>
       <CloseDrawerOnNavigate pathname={pathname} />
-      <MobileDashboardHeader navItems={headerNavItems} pathname={pathname} />
+      <MobileDashboardHeader navItems={headerNavItems} pathname={pathname} deploymentProfile={deploymentProfile} />
       <Sidebar
         side="right"
         className={`border-border/80 bg-card text-foreground ${draggingWidth ? "transition-none" : ""}`}
@@ -1110,6 +1097,7 @@ export function DashboardSidebar({
           // not a saved choice, so offering it as one would silently freeze it.
           bottomNavHrefs={resolveBottomNavHrefs(bottomNav, availableHrefs, false)}
           onSaveBottomNav={saveBottomNav}
+          deploymentProfile={deploymentProfile}
         />
         {mode === "expanded" ? (
           <SidebarResizeHandle

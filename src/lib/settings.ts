@@ -37,7 +37,9 @@ export const SETTING_KEYS = {
   pricing: "pricing.config",
   /** AppUpdateStatus — last manual release-version comparison; no download metadata or credentials */
   appUpdateStatus: "app_update.status",
-  /** DeploymentMode (src/lib/deployment-mode.ts) — { mode: 'local'|'connected', pairedAt } */
+  /** DeploymentProfileRecord — { profile: 'cloud'|'hybrid'|'local', pairedAt }. */
+  deploymentProfile: "deployment.profile",
+  /** @deprecated Pre-0172 compatibility key. Read only; new code writes deployment.profile. */
   deploymentMode: "deployment.mode",
   /** OnlinePlatformsConfig (src/lib/online-platforms-service.ts) — per-platform commission %, e.g. SnapFood (issue #160 §4) */
   onlinePlatforms: "online_platforms.config",

@@ -926,15 +926,15 @@ permission overrides and default branch. One person can hold several memberships
 between them (`/api/auth/switch-business`). PIN-only staff have no platform identity and
 belong to exactly one business.
 
-**Deployment mode.** `settings['deployment.mode']` records whether an install is `local`
-(standalone desktop, no online platform) or `connected`. **An absent setting reads as
-`connected`**, so every deployment that predates this feature — every VPS, every
-already-paired laptop — behaves exactly as it did, with no backfill migration.
-`isLocalOnly(businessId)` in `src/lib/deployment-mode.ts` is the one place to ask. A local
-install turns off the three platform-dependent features (`ai_assistant`, `multi_location`,
-`offline_mode`) and has no cloud backup; see
-[docs/standalone-desktop-app.md](docs/standalone-desktop-app.md#first-run--local-setup-or-pairing)
-for the first-run flow and how a desktop install pairs with an existing online business.
+**Deployment profile.** `settings['deployment.profile']` records `cloud`, `hybrid`, or
+`local` per business. This is separate from the process runtime role (`central | site`) and
+from transient connectivity. Migration 0172 and the single adapter in
+`src/lib/deployment-mode.ts` preserve older `deployment.mode` records: legacy `connected`
+means Hybrid on a site process and Cloud on a central process. New code never writes the old
+key. A Local install turns off cloud-dependent entitlements (`ai_assistant`,
+`multi_location`, `integrations`, `site_cloud_sync`) while Accounting, CRM and local
+operations remain available. See [docs/deployment-architecture.md](docs/deployment-architecture.md)
+for capability enforcement, data ownership, connection state and sync behavior.
 
 **Dashboard URL carries the business's slug.** The browser sees `/{slug}/dashboard/...` —
 the business's slug (its stable, human-readable "english name", set at signup/provisioning

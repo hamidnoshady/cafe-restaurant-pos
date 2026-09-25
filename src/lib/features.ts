@@ -84,8 +84,8 @@ const API_FEATURE_PREFIXES: [string, string][] = [
   ["/api/couriers", "delivery"],
   ["/api/reports", "reporting"],
   ["/api/branches", "multi_location"],
-  ["/api/rollup", "offline_mode"],
-  ["/api/server-sync", "offline_mode"],
+  ["/api/rollup", "site_cloud_sync"],
+  ["/api/server-sync", "site_cloud_sync"],
   ["/api/backup", "backup"],
   ["/api/ai", "ai_assistant"],
   ["/api/integrations", "integrations"],
@@ -130,7 +130,7 @@ export const PAGE_FEATURE_PREFIXES: [string, string][] = [
   // renders, so only the canonical prefix needs a row.
   ["/accounting", "ledger"],
   // `/settings/branch-management` is deliberately absent: the tab carries
-  // *either* `multi_location` or `offline_mode` (`requiredAnyFeature` in
+  // *either* `multi_location` or `site_cloud_sync` (`requiredAnyFeature` in
   // settings-tabs.ts), and a single-flag prefix row here would wrongly gate a
   // sync-only business out of its own sync screen.
   ["/settings/backup", "backup"],

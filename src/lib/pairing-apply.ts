@@ -446,7 +446,7 @@ async function insertPaymentMethods(client: PoolClient, snapshot: PairingSnapsho
 /**
  * The snapshot's own settings, plus three this side owns:
  *
- *   - deployment.mode      — 'connected', stamped with the pairing time
+ *   - deployment.profile   — 'hybrid', stamped with the pairing time
  *   - server_sync.config   — the token the snapshot delivered, pointed at the
  *                            server that issued it, left disabled so the owner
  *                            turns sync on deliberately
@@ -475,7 +475,7 @@ async function insertSettings(
   }
 
   const owned: Array<[string, unknown]> = [
-    [SETTING_KEYS.deploymentMode, { mode: "connected", pairedAt }],
+    [SETTING_KEYS.deploymentProfile, { profile: "hybrid", pairedAt }],
     [
       SETTING_KEYS.serverSyncConfig,
       {

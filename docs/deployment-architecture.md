@@ -1,0 +1,39 @@
+# Deployment architecture
+
+This document describes the implemented runtime as of migration 0172. Code is authoritative: `src/lib/deployment-mode.ts`, `capabilities.ts`, `data-ownership.ts`, `connection-state.ts`, and the existing server-sync modules.
+
+## Product profile vs process role
+
+`DeploymentProfile` is `cloud | hybrid | local` and is stored per business in `settings['deployment.profile']` for site installations. `RuntimeRole` remains `central | site` and is process configuration. Network reachability is runtime state and does not change either value.
+
+Pre-0172 `{mode:'local'|'connected'}` records are adapted in one compatibility boundary. `connected` maps to Hybrid on a site and Cloud on a central runtime. New code never writes the old key.
+
+## Availability and execution
+
+The capability registry is the common policy for pages and API route families. Accounting and CRM are supported in all profiles. Growth, Website Management, AI, central multi-location and cloud integrations execute in cloud and require Cloud or Hybrid. A Local denial returns `REQUIRES_CLOUD_CONNECTION`; a missing entitlement returns `FEATURE_NOT_IN_PLAN`; these are intentionally distinct.
+
+Hybrid operational writes stay local-first. Internet reachability controls cloud work and synchronization, not the database used by POS, accounting or inventory.
+
+## Ownership
+
+`data-ownership.ts` is the required registry for synchronized domains. Orders, payments, journals and inventory movement are site-authoritative and immutable/append/reverse based. Customer and product/menu records are shared with domain-specific reconciliation. Billing is cloud-authoritative. Printers, local backup paths and LAN gateway configuration are device-local and never synchronize.
+
+## Synchronization and device queue
+
+`sync_events` remains the versioned inbox/outbox transport to avoid a destructive table rename. `sync_domain_effects` records idempotent domain application; deferred and dead-letter tables retain diagnosis and replay state. `appendSyncOutboxEvent` can only accept the `PoolClient` owning a domain transaction, preventing an after-commit outbox write.
+
+Normal order creation now inserts the order and its local-origin outbox event in one transaction. Event application suppresses a second producer and uses a stable order UUID on both peers. Further registered transactional domains must follow this same producer rule.
+
+The Dexie queue remains a bounded device-to-local-server queue. It is not site-to-cloud synchronization. Service workers cache shell/fallback assets, not financial POST results.
+
+## Connection state
+
+The shared model separately reports local server, LAN gateway, Internet, cloud, synchronization and external services. A Hybrid cloud failure therefore reads as local active / sync paused, never as total system offline. `/api/connection/status` exposes only classified state and counters, never credentials or raw upstream errors.
+
+## Pairing and activation
+
+Cloud-to-site pairing creates an independent revocable site identity, applies bootstrap in one transaction and writes profile `hybrid`. Continuous synchronization stays disabled until explicitly activated. Local installations write profile `local` and expose **Settings → Cloud & Sync**; conversion must perform compatibility analysis/bootstrap/reconciliation before changing the profile, rather than toggling a flag.
+
+## Backups, printing and LAN
+
+Local backup success is independent from optional cloud upload. Filesystem paths are device-local. Electron native/raw/network printing remains separate from the browser cloud connector. The explicit HTTPS LAN gateway is independent from cloud reachability.

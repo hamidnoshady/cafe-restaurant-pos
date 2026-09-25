@@ -10,6 +10,9 @@
  * one shell, not a gated app of its own.)
  */
 import { MODULE_KEYS, type ModuleKey } from "./industry-profile";
+import type { CapabilityKey, ExecutionTarget } from "./capabilities";
+import type { DeploymentProfile } from "./deployment-mode";
+import type { Permission } from "./permissions";
 
 export const APP_KEYS = [
   "accounting",
@@ -24,6 +27,12 @@ export interface AppDef {
   label: string;
   /** One line, in the owner's terms, of what this app is for. */
   description: string;
+  /** Canonical metadata consumed by deployment/page/navigation policy. */
+  route: string;
+  capability: CapabilityKey;
+  supportedProfiles: readonly DeploymentProfile[];
+  executionTarget: ExecutionTarget;
+  requiredAnyPermission: readonly Permission[];
   /**
    * The modules that make up this app. An app is shown only when the
    * business's industry has at least one of them — so a future trade that
@@ -37,6 +46,11 @@ export const APPS: AppDef[] = [
     key: "accounting",
     label: "حسابداری",
     description: "فروش و صندوق، سفارش‌ها، عملیات، خرید و انبار، دفتر حساب‌ها و گزارش‌ها.",
+    route: "/accounting",
+    capability: "app.accounting",
+    supportedProfiles: ["cloud", "hybrid", "local"],
+    executionTarget: "either",
+    requiredAnyPermission: ["ledger.view", "orders.view", "orders.create"],
     // Sales/POS and operations are work areas inside Accounting's workspace.
     // The operational dashboard follows Accounting; shared settings do not.
     modules: [
@@ -51,6 +65,11 @@ export const APPS: AppDef[] = [
     label: "ارتباط با مشتری",
     description:
       "پروندهٔ مشتری، بخش‌بندی، قیف فروش، کارها و پیگیری‌ها، تیکت‌های خدمات و رضایت‌نامهٔ ارتباط.",
+    route: "/crm",
+    capability: "app.crm",
+    supportedProfiles: ["cloud", "hybrid", "local"],
+    executionTarget: "either",
+    requiredAnyPermission: ["crm.view", "crm.manage"],
     // Phase 36 — the CRM is its own app, not a section of Growth.
     //
     // Phase 35 seated `crm` under Growth as a forward reference, on the
@@ -77,6 +96,11 @@ export const APPS: AppDef[] = [
     label: "رشد و بازاریابی",
     description:
       "برنامهٔ نگه‌داشتن و رشد مشتریان: میز کار رشد، وفاداری، کمپین‌ها و کارت هدیه، و پورسانت فروشندگان.",
+    route: "/growth",
+    capability: "app.growth",
+    supportedProfiles: ["cloud", "hybrid"],
+    executionTarget: "cloud",
+    requiredAnyPermission: ["growth.view"],
     // Since Phase 36b this app has a home of its own (/growth) with
     // a management dashboard and one section per engine — the same shape the
     // accounting suite has — over the same services and posting rules the
@@ -92,6 +116,11 @@ export const APPS: AppDef[] = [
     label: "مدیریت وب‌سایت",
     description:
       "مدیریت خودِ سایت‌ها، از هر دو راه: سایت‌ساز اشوبه (Eshobe CMS) و وردپرس و ووکامرس — هرکدام بخش مدیریت جدای خودش را دارد. اتصال فنی هر دو در «اتصال‌های فنی» است.",
+    route: "/websites",
+    capability: "app.website",
+    supportedProfiles: ["cloud", "hybrid"],
+    executionTarget: "cloud",
+    requiredAnyPermission: ["website.view", "cms.view", "woocommerce.view"],
     // One app, two managers — and it is *one* app on purpose.
     //
     // Until now these were two peers in the rail: «وب‌سایت» (the eshobe-cms
