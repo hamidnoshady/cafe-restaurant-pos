@@ -18,7 +18,7 @@ import { generateSyncToken } from "../src/lib/sync-token";
 import { restoreTenantExport } from "./restore-tenant";
 
 const DEVICE_LOCAL_TABLES = new Set([
-  "printers", "backup_runs", "cloud_exception_outbox",
+  "printers", "backup_runs", "cloud_exception_outbox", "cloud_exception_response_receipts",
   // Wrapped under the Local install's KEK and unusable on Cloud. Plaintext
   // export columns are restored, then Cloud mints/backfills its own DEK.
   "business_encryption_keys",

@@ -11,6 +11,8 @@ import {
 } from "@/components/platform";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { usePlatformQuery } from "../_lib/use-platform-data";
 import { fmtDateTime, fmtRelative } from "@/lib/platform-format";
 
@@ -60,6 +62,9 @@ function EventDetails({ event }: { event: ExceptionEvent }) {
 export default function CloudExceptionsPage() {
   const [kind, setKind] = useState("all");
   const [selected, setSelected] = useState<ExceptionEvent | null>(null);
+  const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
+  const [replyStatus, setReplyStatus] = useState<string | null>(null);
   const url = useMemo(() => `/api/platform/cloud-exceptions?limit=200${kind === "all" ? "" : `&kind=${encodeURIComponent(kind)}`}`, [kind]);
   const query = usePlatformQuery<{ events: ExceptionEvent[] }>(url, [url]);
   const columns: Column<ExceptionEvent>[] = [
@@ -68,6 +73,25 @@ export default function CloudExceptionsPage() {
     { key: "summary", header: "خلاصه", cell: (row) => <span className="line-clamp-2 max-w-md">{text(row.payload.subject) ?? text(row.payload.description) ?? text(row.payload.body) ?? "—"}</span> },
     { key: "received", header: "دریافت", align: "end", cell: (row) => <span title={fmtDateTime(row.receivedAt)}>{fmtRelative(row.receivedAt)}</span> },
   ];
+  async function sendReply() {
+    if (!selected || !reply.trim() || sending) return;
+    setSending(true);
+    setReplyStatus(null);
+    try {
+      const response = await fetch(`/api/platform/cloud-exceptions/${selected.id}/reply`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body: reply }),
+      });
+      if (!response.ok) throw new Error("reply_failed");
+      setReply("");
+      setReplyStatus("پاسخ در صف تحویل امن به نصب محلی قرار گرفت.");
+    } catch {
+      setReplyStatus("ارسال پاسخ ممکن نشد. دوباره تلاش کنید.");
+    } finally {
+      setSending(false);
+    }
+  }
   return (
     <PlatformPageContainer width="wide">
       <PlatformPageHeader
@@ -93,7 +117,23 @@ export default function CloudExceptionsPage() {
         onRowClick={setSelected}
         emptyTitle="رویدادی دریافت نشده است"
       />
-      {selected ? <div className="mt-4"><EventDetails event={selected} /></div> : null}
+      {selected ? (
+        <div className="mt-4 space-y-4">
+          <EventDetails event={selected} />
+          {selected.kind.startsWith("support.") ? (
+            <Card>
+              <CardHeader><CardTitle className="text-base">پاسخ به نصب محلی</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <Textarea value={reply} onChange={(event) => setReply(event.target.value)} maxLength={5000} rows={5} placeholder="متن پاسخ پشتیبانی…" />
+                <div className="flex items-center gap-3">
+                  <Button onClick={sendReply} disabled={sending || !reply.trim()}>{sending ? "در حال ثبت…" : "ثبت پاسخ"}</Button>
+                  {replyStatus ? <p className="text-sm text-muted-foreground">{replyStatus}</p> : null}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      ) : null}
     </PlatformPageContainer>
   );
 }

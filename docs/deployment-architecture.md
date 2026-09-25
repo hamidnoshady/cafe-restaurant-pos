@@ -1,6 +1,6 @@
 # Deployment architecture
 
-This document describes the implemented runtime as of migration 0172. Code is authoritative: `src/lib/deployment-mode.ts`, `capabilities.ts`, `data-ownership.ts`, `connection-state.ts`, and the existing server-sync modules.
+This document describes the implemented runtime as of migration 0174. Code is authoritative: `src/lib/deployment-mode.ts`, `capabilities.ts`, `data-ownership.ts`, `connection-state.ts`, and the existing server-sync modules.
 
 ## Product profile vs process role
 
@@ -14,6 +14,8 @@ The capability registry is the common policy for pages and API route families. A
 
 Hybrid operational writes stay local-first. Internet reachability controls cloud work and synchronization, not the database used by POS, accounting or inventory.
 
+Process workers follow the same execution targets: AI, website, WooCommerce, messaging, CMS, push delivery, Holoo/provider, billing and scheduled cloud-export ticks are central-only. A site process starts only local maintenance and site durability workers; server-sync and rollup discovery additionally requires an explicit Hybrid profile, so stale configuration cannot make a fully Local business contact Cloud.
+
 ## Ownership
 
 `data-ownership.ts` is the required registry for synchronized domains. Orders, payments, journals and inventory movement are site-authoritative and immutable/append/reverse based. Customer and product/menu records are shared with domain-specific reconciliation. Billing is cloud-authoritative. Printers, local backup paths and LAN gateway configuration are device-local and never synchronize.
@@ -24,7 +26,7 @@ Hybrid operational writes stay local-first. Internet reachability controls cloud
 
 Normal site mutations for orders, purchases/receipts/returns, transfers, waste, F&B and retail stock counts, production, customer returns, and manual-journal reversals insert their local-origin outbox event in the owning transaction. Created entities retain stable UUIDs on both peers. Event application runs on the central role and the producer itself suppresses bounce events.
 
-Support and Bug Report are the only Local cloud exceptions. They use `cloud_exception_outbox`, not operational sync: the local row and relay envelope commit atomically, a leased worker retries with bounded backoff, and the central receiver deduplicates `(installation_id,event_id)`. The bearer secret is server-only. Standalone installation identities are deliberately stored outside Cloud tenant foreign keys, so asking for help cannot silently provision or merge operational data.
+Support and Bug Report are the only Local cloud exceptions. They use `cloud_exception_outbox`, not operational sync: the local row and relay envelope commit atomically, a leased worker retries with bounded backoff, and the central receiver deduplicates `(installation_id,event_id)`. Support replies return through `cloud_exception_responses`; Local atomically commits the admin message plus a tenant-scoped receipt before acknowledging Cloud, so a lost response or ACK is safely replayed without duplicating the conversation. The bearer secret is server-only. Standalone installation identities are deliberately stored outside Cloud tenant foreign keys, so asking for help cannot silently provision or merge operational data.
 
 The Dexie queue remains a bounded device-to-local-server queue. It is not site-to-cloud synchronization. Service workers cache shell/fallback assets, not financial POST results.
 

@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { acceptCloudExceptionBatch, authenticateCloudExceptionInstallation, CLOUD_EXCEPTION_KINDS, type CloudExceptionKind } from "@/lib/cloud-exception-relay";
+import {
+  acceptCloudExceptionBatch,
+  acknowledgeCloudExceptionResponses,
+  authenticateCloudExceptionInstallation,
+  CLOUD_EXCEPTION_KINDS,
+  pendingCloudExceptionResponses,
+  type CloudExceptionKind,
+} from "@/lib/cloud-exception-relay";
 import { deploymentRole } from "@/lib/deployment-role";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function authenticated(request: NextRequest, installationId: string): Promise<boolean> {
+  const authorization = request.headers.get("authorization") ?? "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  return Boolean(token) && authenticateCloudExceptionInstallation(installationId, token);
+}
 
 export async function POST(request: NextRequest) {
   if (deploymentRole() !== "central") return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -16,9 +29,7 @@ export async function POST(request: NextRequest) {
   if (typeof input.installationId !== "string" || input.installationId.length < 8 || input.installationId.length > 200 || !Array.isArray(input.events) || input.events.length < 1 || input.events.length > 2) {
     return NextResponse.json({ error: "invalid_batch" }, { status: 400 });
   }
-  const authorization = request.headers.get("authorization") ?? "";
-  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-  if (!token || !(await authenticateCloudExceptionInstallation(input.installationId, token))) {
+  if (!(await authenticated(request, input.installationId))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const events: Parameters<typeof acceptCloudExceptionBatch>[0]["events"] = [];
@@ -35,4 +46,29 @@ export async function POST(request: NextRequest) {
   }
   await acceptCloudExceptionBatch({ installationId: input.installationId, events });
   return NextResponse.json({ accepted: events.length });
+}
+
+export async function GET(request: NextRequest) {
+  if (deploymentRole() !== "central") return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const installationId = request.headers.get("x-installation-id")?.trim() ?? "";
+  if (!installationId || !(await authenticated(request, installationId))) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  return NextResponse.json({ responses: await pendingCloudExceptionResponses(installationId) });
+}
+
+export async function PATCH(request: NextRequest) {
+  if (deploymentRole() !== "central") return NextResponse.json({ error: "not_found" }, { status: 404 });
+  let body: { installationId?: unknown; responseIds?: unknown };
+  try { body = await request.json() as typeof body; }
+  catch { return NextResponse.json({ error: "bad_request" }, { status: 400 }); }
+  if (typeof body.installationId !== "string" || !Array.isArray(body.responseIds) || body.responseIds.length > 50 ||
+      !body.responseIds.every((id) => typeof id === "string" && UUID.test(id))) {
+    return NextResponse.json({ error: "invalid_ack" }, { status: 400 });
+  }
+  if (!(await authenticated(request, body.installationId))) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  await acknowledgeCloudExceptionResponses(body.installationId, body.responseIds as string[]);
+  return NextResponse.json({ acknowledged: body.responseIds.length });
 }

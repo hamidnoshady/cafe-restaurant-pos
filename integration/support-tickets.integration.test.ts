@@ -148,6 +148,8 @@ afterAll(async () => {
 
 /** Each test starts from an empty ticket board (fixtures are per-test). */
 beforeEach(async () => {
+  await db.query("DELETE FROM cloud_exception_response_receipts");
+  await db.query("DELETE FROM cloud_exception_responses");
   await db.query("DELETE FROM cloud_exception_inbox");
   await db.query("DELETE FROM cloud_exception_installations");
   await db.query("DELETE FROM cloud_exception_outbox");
@@ -565,6 +567,57 @@ describe("standalone-installation cloud relay", () => {
       [issued.installationId],
     );
     expect(credential.rows[0].token_hash).not.toContain(issued.token);
+  });
+
+  it("delivers an operator reply back to the Local ticket exactly once and acknowledges it", async () => {
+    const ticket = await asAlpha(() => service.createMemberTicket({
+      businessId: alpha.id, locationId: alpha.locationId, userId: alpha.ownerId,
+      subject: "Need help", category: "other", priority: "normal", body: "Opening message", attachment: null,
+    }));
+    const issued = await dbLib.withoutTenantScope("platform", () =>
+      cloudRelay.provisionCloudExceptionInstallation("Local reply test"),
+    );
+    const inbox = await db.query<{ id: string }>(
+      `INSERT INTO cloud_exception_inbox(installation_id,event_id,kind,aggregate_id,payload,occurred_at)
+       VALUES($1,$2,'support.ticket.created',$3,'{}',now()) RETURNING id::text`,
+      [issued.installationId, randomUUID(), ticket.id],
+    );
+    await cloudRelay.queueCloudExceptionResponse(inbox.rows[0].id, admin.id, "Operator answer");
+
+    const saved = { role: process.env.DEPLOYMENT_ROLE, url: process.env.SUPPORT_CLOUD_URL, token: process.env.SUPPORT_RELAY_TOKEN, installation: process.env.SUPPORT_INSTALLATION_ID, fetch: globalThis.fetch };
+    process.env.DEPLOYMENT_ROLE = "site";
+    process.env.SUPPORT_CLOUD_URL = "https://support.example.test";
+    process.env.SUPPORT_RELAY_TOKEN = issued.token;
+    process.env.SUPPORT_INSTALLATION_ID = issued.installationId;
+    globalThis.fetch = async (_input, init) => {
+      if (init?.method === "PATCH") {
+        const ack = JSON.parse(String(init.body)) as { responseIds: string[] };
+        await cloudRelay.acknowledgeCloudExceptionResponses(issued.installationId, ack.responseIds);
+        return new Response("{}", { status: 200 });
+      }
+      return Response.json({ responses: await cloudRelay.pendingCloudExceptionResponses(issued.installationId) });
+    };
+    try {
+      expect(await cloudRelay.pullCloudExceptionResponses()).toBe(1);
+      expect(await cloudRelay.pullCloudExceptionResponses()).toBe(0);
+      const messages = await db.query<{ author_type: string; body: string }>(
+        "SELECT author_type,body FROM support_ticket_messages WHERE ticket_id=$1 ORDER BY created_at", [ticket.id],
+      );
+      expect(messages.rows).toEqual([
+        { author_type: "member", body: "Opening message" },
+        { author_type: "admin", body: "Operator answer" },
+      ]);
+      const response = await db.query<{ acknowledged: boolean }>(
+        "SELECT acknowledged_at IS NOT NULL acknowledged FROM cloud_exception_responses WHERE ticket_id=$1", [ticket.id],
+      );
+      expect(response.rows[0].acknowledged).toBe(true);
+    } finally {
+      globalThis.fetch = saved.fetch;
+      if (saved.role === undefined) delete process.env.DEPLOYMENT_ROLE; else process.env.DEPLOYMENT_ROLE = saved.role;
+      if (saved.url === undefined) delete process.env.SUPPORT_CLOUD_URL; else process.env.SUPPORT_CLOUD_URL = saved.url;
+      if (saved.token === undefined) delete process.env.SUPPORT_RELAY_TOKEN; else process.env.SUPPORT_RELAY_TOKEN = saved.token;
+      if (saved.installation === undefined) delete process.env.SUPPORT_INSTALLATION_ID; else process.env.SUPPORT_INSTALLATION_ID = saved.installation;
+    }
   });
 });
 

@@ -8,7 +8,7 @@ describe("data ownership registry", () => {
     }
   });
   it("keeps filesystem and printer configuration device-local", () => {
-    for (const domain of ["printer_settings", "backup_paths", "lan_gateway", "certificate_paths", "database_paths"] as const) {
+    for (const domain of ["printer_settings", "backup_paths", "lan_gateway", "certificate_paths", "database_paths", "cloud_exception_transport"] as const) {
       expect(DATA_OWNERSHIP_REGISTRY[domain]).toMatchObject({ ownership: "device_local", direction: "none", conflictPolicy: "never_sync" });
     }
   });

@@ -5,7 +5,7 @@ import { readDeploymentProfile } from "@/lib/deployment-mode";
 import { getServerSyncConfig, getServerSyncState } from "@/lib/server-sync";
 import { query } from "@/lib/db";
 import type { ConnectionStatus, PlatformConnectionState } from "@/lib/connection-state";
-import { deliverCloudExceptions } from "@/lib/cloud-exception-relay";
+import { deliverCloudExceptions, pullCloudExceptionResponses } from "@/lib/cloud-exception-relay";
 
 /**
  * Authenticated, credential-free connection model shared by the global status
@@ -21,8 +21,11 @@ export const GET = withTenantScope(async () => {
   const role = deploymentRole();
   const deployment = await readDeploymentProfile(session.businessId, role);
   const exceptionRelay = role === "site"
-    ? await deliverCloudExceptions(session.businessId).catch(() => ({ delivered: 0, pending: 0, configured: false }))
-    : { delivered: 0, pending: 0, configured: false };
+    ? await Promise.all([
+        deliverCloudExceptions(session.businessId).catch(() => ({ delivered: 0, pending: 0, configured: false })),
+        pullCloudExceptionResponses().catch(() => 0),
+      ]).then(([outbound, received]) => ({ ...outbound, received }))
+    : { delivered: 0, pending: 0, configured: false, received: 0 };
   if (role !== "site" || deployment.profile === "cloud") {
     const state: PlatformConnectionState = {
       localServer: "not_applicable",

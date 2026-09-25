@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { PoolClient } from "pg";
-import { getPool, query, withTenant, withoutTenantScope } from "./db";
+import { getPool, query, withTenant, withTenantTransaction, withoutTenantScope } from "./db";
 import { deploymentRole } from "./deployment-role";
 
 export const CLOUD_EXCEPTION_RELAY_INTERVAL_MS = 15_000;
@@ -128,12 +128,12 @@ export async function deliverCloudExceptions(businessId: string): Promise<{ deli
 /** Background delivery independent of an open dashboard/browser. */
 export async function runCloudExceptionRelayTick(): Promise<number> {
   if (deploymentRole() !== "site") return 0;
+  let delivered = await pullCloudExceptionResponses();
   const businesses = await withoutTenantScope("cloud-exception-relay-tick", () => query<{ business_id: string }>(
     `SELECT DISTINCT business_id FROM cloud_exception_outbox
       WHERE next_attempt_at<=now() AND (lease_until IS NULL OR lease_until<now())
       ORDER BY business_id LIMIT 100`,
   ));
-  let delivered = 0;
   for (const row of businesses.rows) {
     try {
       const result = await withTenant(row.business_id, () => deliverCloudExceptions(row.business_id));
@@ -159,6 +159,126 @@ export async function authenticateCloudExceptionInstallation(installationId: str
   const a = Buffer.from(hash);
   const b = Buffer.from(stored);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** Platform provisioning returns the bearer once; only its SHA-256 hash persists. */
+export interface CloudExceptionResponse {
+  responseId: string;
+  ticketId: string;
+  body: string;
+  createdAt: string;
+}
+
+export async function queueCloudExceptionResponse(
+  inboxId: string,
+  adminId: string,
+  body: string,
+): Promise<{ id: string }> {
+  const clean = body.trim();
+  if (!clean || clean.length > 5000) throw new Error("invalid_response_body");
+  return withoutTenantScope("cloud-exception-response", async () => {
+    const source = await query<{ installation_id: string; aggregate_id: string; kind: string }>(
+      "SELECT installation_id,aggregate_id::text,kind FROM cloud_exception_inbox WHERE id=$1",
+      [inboxId],
+    );
+    const event = source.rows[0];
+    if (!event) throw new Error("cloud_exception_not_found");
+    if (!event.kind.startsWith("support.")) throw new Error("response_not_supported");
+    const inserted = await query<{ id: string }>(
+      `INSERT INTO cloud_exception_responses(installation_id,ticket_id,body,admin_id)
+       VALUES($1,$2,$3,$4) RETURNING id::text`,
+      [event.installation_id, event.aggregate_id, clean, adminId],
+    );
+    return inserted.rows[0];
+  });
+}
+
+export async function pendingCloudExceptionResponses(installationId: string): Promise<CloudExceptionResponse[]> {
+  return withoutTenantScope("cloud-exception-response-pull", async () => {
+    const result = await query<{ responseId: string; ticketId: string; body: string; createdAt: string }>(
+      `SELECT id::text AS "responseId",ticket_id::text AS "ticketId",body,created_at::text AS "createdAt"
+         FROM cloud_exception_responses
+        WHERE installation_id=$1 AND acknowledged_at IS NULL
+        ORDER BY created_at,id LIMIT 50`,
+      [installationId],
+    );
+    return result.rows;
+  });
+}
+
+export async function acknowledgeCloudExceptionResponses(installationId: string, ids: string[]): Promise<void> {
+  if (!ids.length || ids.length > 50) return;
+  await withoutTenantScope("cloud-exception-response-ack", () => query(
+    `UPDATE cloud_exception_responses SET acknowledged_at=COALESCE(acknowledged_at,now())
+      WHERE installation_id=$1 AND id=ANY($2::uuid[])`,
+    [installationId, ids],
+  ));
+}
+
+/** Pulls and atomically materialises operator replies into Local Support threads. */
+export async function pullCloudExceptionResponses(): Promise<number> {
+  if (deploymentRole() !== "site") return 0;
+  const config = relayConfig();
+  if (!config) return 0;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  let responses: CloudExceptionResponse[] = [];
+  try {
+    const response = await fetch(config.url, {
+      headers: { authorization: `Bearer ${config.token}`, "x-installation-id": config.installationId },
+      signal: controller.signal,
+    });
+    if (!response.ok) return 0;
+    const body = await response.json() as { responses?: unknown };
+    if (!Array.isArray(body.responses) || body.responses.length > 50) return 0;
+    responses = body.responses.filter((entry): entry is CloudExceptionResponse => {
+      const item = entry as Partial<CloudExceptionResponse>;
+      return typeof item.responseId === "string" && typeof item.ticketId === "string" &&
+        typeof item.body === "string" && item.body.length > 0 && item.body.length <= 5000 &&
+        typeof item.createdAt === "string" && Number.isFinite(Date.parse(item.createdAt));
+    });
+  } catch {
+    return 0;
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const applied: string[] = [];
+  for (const response of responses) {
+    const owner = await withoutTenantScope("cloud-exception-response-owner", () => query<{ business_id: string }>(
+      "SELECT business_id::text FROM support_tickets WHERE id=$1",
+      [response.ticketId],
+    ));
+    const businessId = owner.rows[0]?.business_id;
+    if (!businessId) continue;
+    await withTenantTransaction(businessId, async () => {
+      const receipt = await query(
+        `INSERT INTO cloud_exception_response_receipts(response_id,business_id,ticket_id)
+         VALUES($1,$2,$3) ON CONFLICT(response_id) DO NOTHING RETURNING response_id`,
+        [response.responseId, businessId, response.ticketId],
+      );
+      if (receipt.rowCount === 1) {
+        await query(
+          `INSERT INTO support_ticket_messages(ticket_id,business_id,author_type,body,created_at)
+           VALUES($1,$2,'admin',$3,$4)`,
+          [response.ticketId, businessId, response.body, response.createdAt],
+        );
+        await query(
+          "UPDATE support_tickets SET status='waiting_customer',updated_at=GREATEST(updated_at,$2::timestamptz) WHERE id=$1",
+          [response.ticketId, response.createdAt],
+        );
+      }
+      applied.push(response.responseId);
+    });
+  }
+  if (applied.length) {
+    await fetch(config.url, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", authorization: `Bearer ${config.token}` },
+      body: JSON.stringify({ installationId: config.installationId, responseIds: applied }),
+    }).catch(() => undefined);
+  }
+  return applied.length;
 }
 
 /** Platform provisioning returns the bearer once; only its SHA-256 hash persists. */
