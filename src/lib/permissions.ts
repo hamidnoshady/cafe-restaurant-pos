@@ -156,12 +156,60 @@ export const PERMISSIONS = {
    */
   workspaceApprove: "workspace.approve",
 
-  // Accounting
+  // Accounting authority — the books themselves. These stay narrow: they are
+  // accounting *control*, not day-to-day business work, and the manager preset
+  // deliberately holds none of them.
   ledgerView: "ledger.view",
   ledgerPost: "ledger.post",
   ledgerApprove: "ledger.approve",
   ledgerClosePeriod: "ledger.close_period",
   accountsEdit: "accounts.edit",
+  /**
+   * Drafting a manual journal entry — proposing, not posting.
+   *
+   * A draft has no effect on the ledger by itself; `/api/ledger/entries/drafts/
+   * [id]/approve` is gated on `ledger.approve` and that is where the entry
+   * actually lands. Separating "may propose" from "may post" is the entire
+   * point of the review queue, so collapsing this into `ledger.post` would
+   * make the queue decorative — and would take drafting away from the managers
+   * who have always had it.
+   */
+  ledgerPropose: "ledger.propose",
+
+  /**
+   * Operational finance — money moving in and out of the business as a
+   * consequence of ordinary trading, as opposed to accounting control.
+   *
+   * These exist because sixteen ledger write routes were using `role` as a
+   * proxy for two different capabilities at once. Paying a supplier or taking
+   * a customer receipt is work a manager legitimately performs; posting a
+   * manual journal, approving one, closing a period or editing the chart of
+   * accounts is accounting authority. Mapping the former onto `ledger.post`
+   * would have either removed access every manager already had, or widened
+   * `ledger.post` into something far broader than its name promises.
+   *
+   * They are named for the business action rather than the table that ends up
+   * being written: each of these does produce accounting entries downstream,
+   * but the user is recording a payment, not "posting to the ledger".
+   */
+  financeExpensesManage: "finance.expenses_manage",
+  financeReceivablesManage: "finance.receivables_manage",
+  financePayablesManage: "finance.payables_manage",
+  financeChequesManage: "finance.cheques_manage",
+  financeInstallmentsManage: "finance.installments_manage",
+  financeReconciliationManage: "finance.reconciliation_manage",
+  financeAssetsManage: "finance.assets_manage",
+
+  /**
+   * Payroll is its own realm: salary figures are sensitive in a way the rest
+   * of the ledger is not, and the payroll routes were guarded
+   * `requireRole("owner", "accountant")` — a strictly narrower audience than
+   * the surrounding ledger surface. Without these keys the payroll reads would
+   * have to ride on `ledger.view`, which the manager and viewer presets hold,
+   * and every manager would suddenly see what everyone earns.
+   */
+  payrollView: "payroll.view",
+  payrollManage: "payroll.manage",
 
   // Insight
   reportsView: "reports.view",
@@ -288,7 +336,10 @@ const {
   partiesView, partiesManage,
   crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure, crmDelete,
   workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
-  ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
+  ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit, ledgerPropose,
+  financeExpensesManage, financeReceivablesManage, financePayablesManage, financeChequesManage,
+  financeInstallmentsManage, financeReconciliationManage, financeAssetsManage,
+  payrollView, payrollManage,
   reportsView, reportsExport,
   dataImport, dataExport,
   websiteView, websiteManage, websitePublish, websiteConfigure,
@@ -325,6 +376,19 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
     // business that wants a narrower manager revokes the individual keys.
     workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
     ledgerView, reportsView, reportsExport,
+    // Phase L. Sixteen ledger write routes gated on
+    // requireRole("owner","manager","accountant"), so the manager already did
+    // every one of these jobs: recording expenses, taking receipts, paying
+    // suppliers, handling cheques and instalments, reconciling a bank
+    // statement, maintaining the fixed-asset register. Splitting that role
+    // gate into named capabilities must not be the thing that takes the work
+    // away, so the preset grants all seven — and, by the same rule, drafting a
+    // manual journal for an accountant to approve. What the manager still does
+    // NOT get is accounting authority: no ledger.post, approve, close_period
+    // or accounts.edit, and no payroll.
+    financeExpensesManage, financeReceivablesManage, financePayablesManage, financeChequesManage,
+    financeInstallmentsManage, financeReconciliationManage, financeAssetsManage,
+    ledgerPropose,
     // «ورود و خروج داده». The manager already held every bulk door the product
     // had (crm.export gated both the customer export AND the customer import;
     // reports.export gated the report download), so granting these two keeps
@@ -372,7 +436,12 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
     menuView,
     inventoryView,
     partiesView, partiesManage,
-    ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
+    ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit, ledgerPropose,
+    // The accountant reached all sixteen operational-finance routes too, and
+    // payroll was theirs alone alongside the owner.
+    financeExpensesManage, financeReceivablesManage, financePayablesManage, financeChequesManage,
+    financeInstallmentsManage, financeReconciliationManage, financeAssetsManage,
+    payrollView, payrollManage,
     reportsView, reportsExport,
     // Same reasoning as the manager's: the accountant already downloaded the
     // financial statements through reports.export, and importing a chart of

@@ -148,6 +148,44 @@ Practical rules:
   empty-state hint). It must never be the input to a gate;
   `src/app/navigation-route-guards.test.ts` asserts the negative.
 
+## Minting a key: name the action, not the table
+
+A permission key is minted when no existing key *means* the right thing. Two
+failure modes push in opposite directions, and the accounting surface hit both:
+
+- **Reusing a key for its audience.** The accounting nav gated its payroll
+  section on `ledger.post` because that preset happened to be exactly
+  owner + accountant. It read as correct and was a latent bug: the moment
+  either preset changes, a menu about wages starts following a rule about
+  journal entries. Payroll now has `payroll.view` / `payroll.manage`.
+- **Collapsing distinct capabilities.** Sixteen ledger write routes were guarded
+  `requireRole("owner", "manager", "accountant")`, using role as a proxy for two
+  different things: operational finance a manager legitimately performs, and
+  accounting authority that should not be theirs. Mapping them all onto
+  `ledger.post` would either have removed work every manager already did, or
+  widened `ledger.post` far beyond its name.
+
+The resolution is a `finance.*` family named for the business action —
+`expenses_manage`, `receivables_manage`, `payables_manage`, `cheques_manage`,
+`installments_manage`, `reconciliation_manage`, `assets_manage` — plus
+`ledger.propose` for drafting a manual journal. Each of these does produce
+accounting entries downstream, but the user is recording a payment, not posting
+to the ledger; the key is named for what they are doing, not for the table that
+ends up written. `ledger.post`, `ledger.approve`, `ledger.close_period` and
+`accounts.edit` stay accounting authority, and the manager preset holds none of
+them.
+
+Drafting is separated from posting deliberately: a draft has no ledger effect,
+and `/api/ledger/entries/drafts/[id]/approve` is gated on `ledger.approve`.
+Folding `ledger.propose` into `ledger.post` would make the review queue
+decorative.
+
+The corollary for sweeps: a verb-aware migration is not audience-aware. Mapping
+"every GET in this tree" onto one read key is only safe if every one of those
+GETs had the same audience to begin with. Here two payroll reads were narrower
+than the ledger around them, and the sweep leaked salary data to the manager and
+viewer presets before the contract test caught it.
+
 ## Delegating team administration
 
 Three keys, deliberately separate:

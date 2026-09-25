@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, requirePermission, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { ExpenseError, listExpenses, recordExpense } from "@/lib/expense-service";
@@ -24,7 +24,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
 
 /** Records a paid operating expense and posts it immediately (Debit the chosen expense account / Credit the payment account). */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.financeExpensesManage);
   if (error) return error;
 
   let body: {

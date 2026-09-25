@@ -57,10 +57,13 @@ export const ACCOUNTING_SECTIONS: readonly AccountingSectionDef[] = [
   { key: "reconciliation", label: "تطبیق بانکی" },
   { key: "chart-of-accounts", label: "سرفصل حساب‌ها" },
   // Wages are compensation data — owner + accountant only, the same line the
-  // in-page rail draws. A manager may open every other section. `ledger.post`
-  // is that audience exactly (the manager preset deliberately excludes it),
-  // and posting wages to the ledger is what the section is for.
-  { key: "payroll", label: "حقوق و دستمزد", permission: PERMISSIONS.ledgerPost },
+  // in-page rail draws. A manager may open every other section. This used to
+  // borrow `ledger.post` because that preset happened to be the right
+  // audience; it now asks for the key that actually means "may see payroll",
+  // which is also what `/api/ledger/payroll/*` enforces. Borrowing a key for
+  // its preset rather than its meaning is how a menu and an API drift apart
+  // the next time either preset changes.
+  { key: "payroll", label: "حقوق و دستمزد", permission: PERMISSIONS.payrollView },
   { key: "vat", label: "گزارش مالیات" },
   { key: "fixed-assets", label: "دارایی‌های ثابت" },
   { key: "financial-reports", label: "گزارش‌های مالی" },

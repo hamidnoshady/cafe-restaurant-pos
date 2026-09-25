@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, requirePermission, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { listCheques, recordCheque } from "@/lib/cheques-service";
@@ -44,7 +44,7 @@ function isChequeBody(value: unknown): value is ChequeBody {
  * the entry that puts it on the books.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.financeChequesManage);
   if (error) return error;
 
   let body: unknown;

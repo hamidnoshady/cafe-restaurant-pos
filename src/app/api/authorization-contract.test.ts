@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { globSync } from "tinyglobby";
+import { roleBasePermissions } from "@/lib/permissions";
 
 const API_DIR = join(process.cwd(), "src/app/api");
 const ROUTES = globSync("**/route.ts", { cwd: API_DIR }).sort();
@@ -130,6 +131,54 @@ describe("families migrated off role-only gating stay migrated", () => {
     }
   });
 
+  it("gates every ledger route on an accounting, finance or payroll capability", () => {
+    const routes = family("ledger/");
+    expect(routes.length).toBeGreaterThan(35);
+    for (const relative of routes) {
+      const source = read(relative);
+      expect(source, relative).toMatch(
+        /PERMISSIONS\.(ledger(View|Post|Approve|ClosePeriod|Propose)|accountsEdit|finance\w+|payroll(View|Manage))/,
+      );
+      expect(source, relative).not.toMatch(/requireRole\(/);
+    }
+  });
+
+  it("keeps payroll off the ordinary ledger keys", () => {
+    // The regression this exists for: a verb-aware sweep mapped every ledger
+    // GET onto `ledger.view`, which silently included the two payroll reads —
+    // and `ledger.view` is held by the manager and viewer presets, so a
+    // refactor would have shown every manager what every colleague earns.
+    // Payroll was `requireRole("owner", "accountant")`, a strictly narrower
+    // audience than the ledger around it, and it now has keys of its own.
+    const routes = family("ledger/payroll/");
+    expect(routes.length).toBeGreaterThan(4);
+    for (const relative of routes) {
+      const source = read(relative);
+      expect(source, relative).toMatch(/PERMISSIONS\.payroll(View|Manage)/);
+      expect(source, relative).not.toMatch(
+        /PERMISSIONS\.(ledger\w+|accountsEdit|finance\w+)/,
+      );
+    }
+  });
+
+  it("keeps operational finance separable from accounting authority", () => {
+    // Recording a payment and posting a manual journal are different jobs. If
+    // the finance.* writes ever collapse back onto ledger.post, the manager
+    // preset loses work it has always done; if the accounting-authority keys
+    // leak into the manager preset, the separation of duties is gone. Both
+    // directions are asserted here rather than left to the preset test alone.
+    const managerKeys = roleBasePermissions("manager");
+    for (const key of ["finance.expenses_manage", "finance.receivables_manage",
+      "finance.payables_manage", "finance.cheques_manage", "finance.installments_manage",
+      "finance.reconciliation_manage", "finance.assets_manage", "ledger.propose"]) {
+      expect(managerKeys, `manager lost ${key}`).toContain(key);
+    }
+    for (const key of ["ledger.post", "ledger.approve", "ledger.close_period",
+      "accounts.edit", "payroll.view", "payroll.manage"]) {
+      expect(managerKeys, `manager gained accounting authority: ${key}`).not.toContain(key);
+    }
+  });
+
   it("separates reading the team from administering it", () => {
     const list = read("team/route.ts");
     // The list opens for either key; the writes need the administrative one.
@@ -161,6 +210,6 @@ describe("the legacy role guard is confined and shrinking", () => {
    */
   it("does not grow the number of role-gated API routes", () => {
     const roleGated = ROUTES.filter((relative) => /requireRole\(/.test(read(relative)));
-    expect(roleGated.length).toBeLessThanOrEqual(303);
+    expect(roleGated.length).toBeLessThanOrEqual(281);
   });
 });

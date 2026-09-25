@@ -100,12 +100,14 @@ describe("accountingSectionsFor", () => {
   });
 
   it("gates payroll on the capability, not on a role name", () => {
-    // A manager individually granted `ledger.post` sees payroll; the preset
+    // A manager individually granted `payroll.view` sees payroll; the preset
     // alone does not. This is the whole reason the gate moved off role strings.
-    const managerPlusPosting = new Set([...of("manager"), "ledger.post"]);
+    // The key is payroll's own, not a borrowed `ledger.post` that merely
+    // happened to have the right preset audience.
+    const managerPlusPosting = new Set([...of("manager"), "payroll.view"]);
     expect(accountingSectionsFor(managerPlusPosting).map((s) => s.key)).toContain("payroll");
     const accountantMinusPosting = new Set(
-      [...of("accountant")].filter((p) => p !== "ledger.post"),
+      [...of("accountant")].filter((p) => p !== "payroll.view"),
     );
     expect(accountingSectionsFor(accountantMinusPosting).map((s) => s.key)).not.toContain("payroll");
   });

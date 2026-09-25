@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, requirePermission, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { ApError, MissingLedgerAccountError, payBill } from "@/lib/ap-service";
@@ -28,7 +28,7 @@ const METHODS = ["cash", "bank"] as const;
 
 /** Records the business paying down a supplier's AP balance. Same access as posting a manual journal entry. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.financePayablesManage);
   if (error) return error;
 
   let body: PaymentBody;

@@ -48,6 +48,8 @@ export type PermissionGroup =
   | "crm"
   | "workspace"
   | "accounting"
+  | "finance"
+  | "payroll"
   | "reports"
   | "growth"
   | "website"
@@ -92,6 +94,8 @@ const GROUP_LABELS: Record<PermissionGroup, string> = {
   crm: "مشتریان و CRM",
   workspace: "میز کار",
   accounting: "حسابداری",
+  finance: "عملیات مالی",
+  payroll: "حقوق و دستمزد",
   reports: "گزارش‌ها",
   growth: "رشد و بازاریابی",
   website: "مدیریت وب‌سایت",
@@ -107,7 +111,7 @@ export function permissionGroupLabel(group: PermissionGroup): string {
 
 export const PERMISSION_GROUP_ORDER: readonly PermissionGroup[] = [
   "orders", "payments", "floor", "menu", "inventory", "parties", "crm",
-  "workspace", "accounting", "reports", "growth", "website", "data",
+  "workspace", "accounting", "finance", "payroll", "reports", "growth", "website", "data",
   "team", "settings", "security",
 ];
 
@@ -166,6 +170,24 @@ const DRAFTS: Draft[] = [
   { key: P.ledgerApprove, group: "accounting", label: "تأیید سند", description: "تأیید سند ثبت‌شده. جدا از ثبت است تا تفکیک وظایف حفظ شود.", risk: "high", audit: true, implies: [P.ledgerView] },
   { key: P.ledgerClosePeriod, group: "accounting", label: "بستن دوره مالی", description: "بستن یا بازگشایی دوره مالی. پس از آن ثبت در دوره ممکن نیست.", risk: "critical", audit: true, implies: [P.ledgerView] },
   { key: P.accountsEdit, group: "accounting", label: "ویرایش کدینگ حساب‌ها", description: "تغییر ساختار حساب‌ها؛ هر گزارش تاریخی را بازتعریف می‌کند.", risk: "high", audit: true, implies: [P.ledgerView] },
+  { key: P.ledgerPropose, group: "accounting", label: "پیش‌نویس سند", description: "تهیه پیش‌نویس سند حسابداری برای بررسی. تا زمانی که تأیید نشود بر دفاتر اثری ندارد.", risk: "low", audit: false, implies: [P.ledgerView] },
+
+  // --- Operational finance -------------------------------------------------
+  // Money moving as a consequence of ordinary trading. Separate from the
+  // accounting-authority keys above: a manager holds these and none of those.
+  { key: P.financeExpensesManage, group: "finance", label: "ثبت هزینه", description: "ثبت هزینه پرداخت‌شده و تخصیص آن به سرفصل و حساب پرداخت.", risk: "medium", audit: true, implies: [P.ledgerView] },
+  { key: P.financeReceivablesManage, group: "finance", label: "دریافت از مشتری", description: "ثبت دریافت وجه از مشتری و تسویه مطالبات.", risk: "medium", audit: true, implies: [P.ledgerView] },
+  { key: P.financePayablesManage, group: "finance", label: "پرداخت به تأمین‌کننده", description: "ثبت پرداخت به تأمین‌کننده و تسویه بدهی‌ها.", risk: "medium", audit: true, implies: [P.ledgerView] },
+  { key: P.financeChequesManage, group: "finance", label: "مدیریت چک", description: "ثبت چک دریافتی و پرداختی و تغییر وضعیت آن (وصول، برگشت، انتقال).", risk: "medium", audit: true, implies: [P.ledgerView] },
+  { key: P.financeInstallmentsManage, group: "finance", label: "مدیریت اقساط", description: "تعریف طرح اقساط و ثبت پرداخت هر قسط.", risk: "medium", audit: true, implies: [P.ledgerView] },
+  { key: P.financeReconciliationManage, group: "finance", label: "تطبیق بانکی", description: "ایجاد و تکمیل تطبیق صورت‌حساب بانکی با دفاتر.", risk: "medium", audit: true, implies: [P.ledgerView] },
+  { key: P.financeAssetsManage, group: "finance", label: "دارایی‌های ثابت", description: "نگهداری دفتر دارایی‌های ثابت و اجرای استهلاک دوره‌ای.", risk: "medium", audit: true, implies: [P.ledgerView] },
+
+  // --- Payroll -------------------------------------------------------------
+  // Its own group because compensation data is sensitive in a way the rest of
+  // the ledger is not: these keys are owner + accountant, never the manager.
+  { key: P.payrollView, group: "payroll", label: "مشاهده حقوق و دستمزد", description: "دیدن احکام حقوقی، لیست‌های حقوق و مبالغ پرداختی پرسنل.", risk: "high", audit: true },
+  { key: P.payrollManage, group: "payroll", label: "اجرای حقوق و دستمزد", description: "تعریف حکم حقوقی، صدور لیست حقوق و پرداخت یا ابطال آن.", risk: "critical", audit: true, implies: [P.payrollView] },
 
   // --- Reports -------------------------------------------------------------
   { key: P.reportsView, group: "reports", label: "مشاهده گزارش‌ها", description: "دیدن گزارش‌های فروش، مالی و عملیاتی.", risk: "low", audit: false },

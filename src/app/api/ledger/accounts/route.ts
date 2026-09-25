@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { createAccount, listAccounts, AccountsError } from "@/lib/accounts-service";

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { PayrollError, setWage } from "@/lib/payroll-service";
 
 interface Ctx {
@@ -7,7 +8,7 @@ interface Ctx {
 }
 
 export const PATCH = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.payrollManage);
   if (error) return error;
 
   const { id } = await ctx.params;

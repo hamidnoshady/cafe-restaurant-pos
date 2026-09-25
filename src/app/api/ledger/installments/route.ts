@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, requirePermission, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import {
@@ -27,7 +27,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
 });
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.financeInstallmentsManage);
   if (error) return error;
 
   let body: Record<string, unknown>;

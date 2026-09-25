@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { MAX_RECONCILIATION_LINE_BATCH } from "@/lib/bank-reconciliation";
 import { ReconciliationError, setLineCleared, setLinesCleared } from "@/lib/reconciliation-service";
 
@@ -17,7 +18,7 @@ interface PatchBody {
 
 /** Clears or un-clears one — or a whole selection of — journal lines against this in-progress reconciliation. */
 export const PATCH = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.financeReconciliationManage);
   if (error) return error;
 
   const { id } = await ctx.params;

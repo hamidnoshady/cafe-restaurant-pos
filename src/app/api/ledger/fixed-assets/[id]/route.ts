@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, requirePermission, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { FixedAssetError, deleteFixedAsset, getFixedAssetWithDepreciation } from "@/lib/fixed-assets-service";
 
@@ -24,7 +24,7 @@ export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
 
 /** Hard delete — only ever succeeds for an asset with no depreciation posted yet. */
 export const DELETE = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.financeAssetsManage);
   if (error) return error;
 
   const { id } = await ctx.params;

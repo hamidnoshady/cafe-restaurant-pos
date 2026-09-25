@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import {
@@ -29,11 +29,7 @@ interface DraftLineInput {
  * on ledger.approve rather than this role list.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole(
-    "owner",
-    "manager",
-    "accountant",
-  );
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPropose);
   if (error) return error;
 
   let body: { entryDate?: unknown; memo?: unknown; lines?: unknown };

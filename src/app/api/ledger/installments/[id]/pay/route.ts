@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { InstallmentError, MissingLedgerAccountError, payInstallmentItem } from "@/lib/installments-service";
 import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
 
 /** Settles one slice of a plan — posts the subledger pair atomically. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.financeInstallmentsManage);
   if (error) return error;
   const { id: planId } = await context.params;
 
