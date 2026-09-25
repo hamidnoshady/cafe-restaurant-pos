@@ -19,6 +19,8 @@ import type { PoolClient } from "pg";
 import { getPool, query } from "./db";
 import { postExactJournalEntry, postJournalEntry } from "./ledger-service";
 import type { JournalLine } from "./ledger";
+import type { Role } from "./auth-edge";
+import { appendSyncOutboxEvent } from "./sync-outbox";
 import {
   MANUAL_LINES_MAX,
   MANUAL_MEMO_MAX,
@@ -368,6 +370,7 @@ export interface ReverseManualEntryParams {
   actorId: string;
   memo?: string | null;
   entryDate?: string | null;
+  sync?: { actorRole: Role; clientEventId?: string };
 }
 
 export async function reverseEntryInTransaction(
@@ -420,6 +423,14 @@ export async function reverseEntryInTransaction(
   });
   await client.query("UPDATE journal_entries SET reverses_entry_id = $2 WHERE id = $1", [entryId, params.entryId]);
   await client.query("UPDATE journal_entries SET reversed_at = now(), reversed_by = $2 WHERE id = $1", [params.entryId, params.actorId]);
+  if (params.sync && params.locationId) await appendSyncOutboxEvent(client, {
+    locationId: params.locationId,
+    clientEventId: params.sync.clientEventId ?? `journal:reverse:${params.entryId}`,
+    eventType: "accounting.manual_journal.reversed",
+    payload: { entryId: params.entryId, memo: params.memo ?? null, entryDate: params.entryDate ?? null },
+    actorUserId: params.actorId,
+    actorRole: params.sync.actorRole,
+  });
   return { entryId: entryId! };
 }
 

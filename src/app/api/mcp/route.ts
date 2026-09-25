@@ -3,6 +3,8 @@ import { dispatchMcpMessage } from "@/lib/mcp/server";
 import { withMcpScope } from "@/lib/mcp/auth";
 import { bearerChallenge } from "@/lib/mcp/oauth";
 import { mcpIssuer } from "@/lib/mcp/origin";
+import { readDeploymentProfile } from "@/lib/deployment-mode";
+import { resolveCapability } from "@/lib/capabilities";
 import {
   JSON_RPC_ERRORS,
   LATEST_PROTOCOL_VERSION,
@@ -104,6 +106,13 @@ export async function POST(request: NextRequest) {
   }
 
   const outcome = await withMcpScope(request, async (auth) => {
+    // MCP is bearer-authenticated and bypasses withTenantScope, so it must
+    // enforce deployment policy after its token resolves the business. This
+    // closes the otherwise-valid-token bypass on a fully Local installation.
+    const deployment = await readDeploymentProfile(auth.businessId);
+    if (!resolveCapability("app.ai", { deployment: deployment.profile }).available) {
+      return { deploymentBlocked: true, responses: [] as JsonRpcResponse[] };
+    }
     const responses: JsonRpcResponse[] = [];
     // Sequential, not Promise.all: a batch that mixes two writes must not
     // interleave them, and MCP clients send batches of at most a few messages.
@@ -111,7 +120,7 @@ export async function POST(request: NextRequest) {
       const response = await dispatchMcpMessage(auth, message);
       if (response) responses.push(response);
     }
-    return responses;
+    return { deploymentBlocked: false, responses };
   });
 
   if (!outcome.ok) {
@@ -127,7 +136,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const responses = outcome.value;
+  if (outcome.value.deploymentBlocked) {
+    return withCors(NextResponse.json({
+      error: "capability_unavailable",
+      code: "REQUIRES_CLOUD_CONNECTION",
+      capability: "app.ai",
+      status: "requires_cloud",
+    }, { status: 403 }));
+  }
+
+  const responses = outcome.value.responses;
   // A body of notifications only: nothing to answer, and 202 is what the spec
   // asks for rather than an empty 200 body a client would try to parse.
   if (responses.length === 0) return withCors(new NextResponse(null, { status: 202 }));

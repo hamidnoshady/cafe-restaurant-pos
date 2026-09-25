@@ -28,6 +28,8 @@ import { enqueueHolooSaleForOrder } from "@/lib/integrations/holoo/outbox-produc
 import { emitDomainEvent } from "@/lib/posting-engine";
 import { earnPoints } from "@/lib/loyalty-service";
 import { releaseTableAfterOrderSettled } from "@/lib/table-session-service";
+import { appendSyncOutboxEvent } from "@/lib/sync-outbox";
+import { markScoringDirtyIn } from "@/lib/crm-scoring-freshness";
 
 interface PayTenderBody {
   /** `payment_methods.id` — the way the cashier tapped. */
@@ -330,6 +332,27 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
     // freed table commit together or not at all, so a rolled-back checkout can
     // never leave a table that looks empty but still owes money.
     releasedSession = await releaseTableAfterOrderSettled(client, location.id, id, session.sub);
+    await markScoringDirtyIn(client, session.businessId);
+    await appendSyncOutboxEvent(client, {
+      locationId: location.id,
+      clientEventId: `order-payment:${id}`,
+      eventType: "order.payment.completed",
+      schemaVersion: 2,
+      payload: {
+        orderId: id,
+        tenders: paid.map((tender) => ({
+          methodId: tender.methodId,
+          settlement: tender.settlement,
+          amount: tender.amount,
+          reference: tender.reference,
+        })),
+        customerId,
+        tipAmount,
+        businessDate: businessDay?.businessDate ?? null,
+      },
+      actorUserId: session.sub,
+      actorRole: session.role,
+    });
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");

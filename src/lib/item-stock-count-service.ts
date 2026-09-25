@@ -28,6 +28,8 @@
  */
 import Decimal from "decimal.js";
 import type { PoolClient } from "pg";
+import type { Role } from "./auth-edge";
+import { appendSyncOutboxEvent } from "./sync-outbox";
 import { quantityText, rialText, type RialText } from "./inventory-exact";
 import { emitDomainEvent } from "./posting-engine";
 import "./retail-stock-posting-rules";
@@ -90,6 +92,8 @@ export async function createItemStockCount(
     note?: string | null;
     lines: ItemStockCountLineInput[];
     createdBy: string | null;
+    countId?: string;
+    sync?: { actorRole: Role; clientEventId?: string };
   },
 ): Promise<{ id: string; entryId: string | null; shortage: string; surplus: string }> {
   if (params.lines.length === 0) throw new Error("no_items");
@@ -116,9 +120,9 @@ export async function createItemStockCount(
   await client.query("SELECT id FROM items WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE", [itemIds]);
 
   const { rows: countRows } = await client.query<{ id: string }>(
-    `INSERT INTO item_stock_counts (business_id, location_id, note, counted_by)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [params.businessId, params.locationId, params.note?.trim() || null, params.createdBy],
+    `INSERT INTO item_stock_counts (id, business_id, location_id, note, counted_by)
+     VALUES (COALESCE($5::uuid,gen_random_uuid()), $1, $2, $3, $4) RETURNING id`,
+    [params.businessId, params.locationId, params.note?.trim() || null, params.createdBy, params.countId ?? null],
   );
   const countId = countRows[0].id;
 
@@ -172,6 +176,14 @@ export async function createItemStockCount(
   if (entryId) {
     await client.query("UPDATE item_stock_counts SET entry_id = $2 WHERE id = $1", [countId, entryId]);
   }
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: params.locationId,
+    clientEventId: params.sync.clientEventId ?? `retail-stock-count:create:${countId}`,
+    eventType: "retail.stock_count.recorded",
+    payload: { countId, note: params.note ?? null, lines: params.lines },
+    actorUserId: params.createdBy,
+    actorRole: params.sync.actorRole,
+  });
 
   return { id: countId, entryId, shortage: shortage.toFixed(), surplus: surplus.toFixed() };
 }
@@ -193,6 +205,7 @@ export async function reverseItemStockCount(
     countId: string;
     createdBy: string | null;
     note?: string | null;
+    sync?: { actorRole: Role; clientEventId?: string };
   },
 ): Promise<{ id: string; entryId: string | null }> {
   const { rows: counts } = await client.query<{ id: string; reversal_of: string | null }>(
@@ -275,6 +288,14 @@ export async function reverseItemStockCount(
   if (entryId) {
     await client.query("UPDATE item_stock_counts SET entry_id = $2 WHERE id = $1", [reversalId, entryId]);
   }
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: params.locationId,
+    clientEventId: params.sync.clientEventId ?? `retail-stock-count:reverse:${params.countId}`,
+    eventType: "retail.stock_count.reversed",
+    payload: { countId: params.countId, note: params.note ?? null },
+    actorUserId: params.createdBy,
+    actorRole: params.sync.actorRole,
+  });
 
   return { id: reversalId, entryId };
 }

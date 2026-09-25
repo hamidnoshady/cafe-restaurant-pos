@@ -31,6 +31,10 @@ import {
   planLimitsFor,
 } from "./plan-limits";
 import type { PoolClient } from "pg";
+import { randomUUID } from "node:crypto";
+import type { Role } from "./auth";
+import { appendSyncOutboxEvent } from "./sync-outbox";
+import { deploymentRole } from "./deployment-role";
 
 /**
  * Writes one line's add-on snapshots, quantities included. One INSERT per
@@ -159,6 +163,12 @@ export interface CreateOrderInput {
    * synchronous POST /api/orders path can't double-order.
    */
   clientRequestId?: string | null;
+  /** Stable entity id used by site and cloud. Generated before the transaction when omitted. */
+  orderId?: string;
+  /** Actor role is persisted with the outbox event for permission-safe replay. */
+  actorRole?: Role;
+  /** False only while applying an event already present in the sync inbox. */
+  recordSyncEvent?: boolean;
 }
 
 export interface CreateOrderOutput {
@@ -312,6 +322,7 @@ export async function createOrder(
   const totals = computeOrderTotals(cartLines, input.discount, deliveryFee);
 
   const clientRequestId = input.clientRequestId?.trim() || null;
+  const requestedOrderId = input.orderId ?? randomUUID();
 
   const client = await getPool().connect();
   try {
@@ -355,11 +366,12 @@ export async function createOrder(
 
     const discountType = input.discount.type;
     const { rows: orderRows } = await client.query<{ id: string }>(
-      `INSERT INTO orders (location_id, order_number, type, status, table_id, table_session_id, customer_id, guest_count,
+      `INSERT INTO orders (id, location_id, order_number, type, status, table_id, table_session_id, customer_id, guest_count,
               subtotal, discount, discount_type, discount_value, service_charge, tax, total, note, opened_by, client_request_id)
-       VALUES ($1, $2, $3, 'open', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       VALUES ($1, $2, $3, $4, 'open', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING id`,
       [
+        requestedOrderId,
         input.locationId,
         orderNumber,
         input.type,
@@ -417,6 +429,27 @@ export async function createOrder(
         item.menuItemId,
         item.modifiers,
       );
+    }
+
+    if (input.recordSyncEvent !== false && deploymentRole() === "site") {
+      await appendSyncOutboxEvent(client, {
+        locationId: input.locationId,
+        clientEventId: orderId,
+        eventType: "order.create",
+        actorUserId: input.openedBy,
+        actorRole: input.actorRole ?? "cashier",
+        payload: {
+          orderId,
+          type: input.type,
+          tableId,
+          customerId,
+          guestCount: input.guestCount ?? null,
+          note: input.note ?? null,
+          discount: input.discount,
+          items: input.items,
+          delivery: input.delivery ?? null,
+        },
+      });
     }
 
     await client.query("COMMIT");

@@ -84,6 +84,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       reason: body.reason,
       note: body.note?.trim() || null,
       createdBy: session.sub,
+      sync: { actorRole: session.role },
     });
     return NextResponse.json({ ok: true, totalCost: recorded.postedCost });
   } catch (err) {

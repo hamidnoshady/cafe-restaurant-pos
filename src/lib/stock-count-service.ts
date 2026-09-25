@@ -19,6 +19,8 @@
  */
 import Decimal from "decimal.js";
 import type { PoolClient } from "pg";
+import type { Role } from "./auth-edge";
+import { appendSyncOutboxEvent } from "./sync-outbox";
 import { applyStockAdjustmentExact } from "./inventory-adjustment-exact";
 import { quantityText, rialText } from "./inventory-exact";
 import { isLotBased, type CostingMethod } from "./inventory-costing";
@@ -261,6 +263,8 @@ export async function createStockCount(
     note?: string | null;
     lines: StockCountLineInput[];
     createdBy: string | null;
+    countId?: string;
+    sync?: { actorRole: Role; clientEventId?: string };
     /** Archived lines from an existing count may be preserved during an edit. */
     allowInactiveItemIds?: string[];
   },
@@ -298,8 +302,8 @@ export async function createStockCount(
   // One deterministic lock acquisition prevents count/sale/purchase deadlocks.
   await client.query("SELECT id FROM inventory_items WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE", [itemIds]);
   const { rows: countRows } = await client.query<{ id: string }>(
-    "INSERT INTO stock_counts (location_id, note, counted_by) VALUES ($1, $2, $3) RETURNING id",
-    [params.locationId, params.note?.trim() || null, params.createdBy],
+    "INSERT INTO stock_counts (id, location_id, note, counted_by) VALUES (COALESCE($4::uuid,gen_random_uuid()), $1, $2, $3) RETURNING id",
+    [params.locationId, params.note?.trim() || null, params.createdBy, params.countId ?? null],
   );
   const stockCountId = countRows[0].id;
   const { rows: eventRows } = await client.query<{ id: string }>(
@@ -365,6 +369,14 @@ export async function createStockCount(
     inventoryEventId: eventId,
   });
   await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: params.locationId,
+    clientEventId: params.sync.clientEventId ?? `stock-count:create:${stockCountId}`,
+    eventType: "inventory.stock_count.recorded",
+    payload: { countId: stockCountId, note: params.note ?? null, lines: params.lines },
+    actorUserId: params.createdBy,
+    actorRole: params.sync.actorRole,
+  });
   return { id: stockCountId };
 }
 
@@ -443,6 +455,7 @@ export async function reverseStockCount(
     countId: string;
     createdBy: string | null;
     note?: string | null;
+    sync?: { actorRole: Role; clientEventId?: string };
   },
 ): Promise<{ id: string; eventId: string }> {
   const { rows: counts } = await client.query<{
@@ -563,6 +576,14 @@ export async function reverseStockCount(
 
   await client.query("UPDATE inventory_events SET posting_status='reversed' WHERE id=$1", [count.inventory_event_id]);
   await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [reversalEventId]);
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: params.locationId,
+    clientEventId: params.sync.clientEventId ?? `stock-count:reverse:${params.countId}`,
+    eventType: "inventory.stock_count.reversed",
+    payload: { countId: params.countId, note: params.note ?? null },
+    actorUserId: params.createdBy,
+    actorRole: params.sync.actorRole,
+  });
   return { id: reversalCountId, eventId: reversalEventId };
 }
 
@@ -579,6 +600,7 @@ export async function editStockCount(
     note?: string | null;
     lines: StockCountLineInput[];
     createdBy: string | null;
+    sync?: { actorRole: Role };
   },
 ): Promise<{ reversed: boolean; id: string | null }> {
   // An item may have been archived after the original count. It is still valid
@@ -600,6 +622,7 @@ export async function editStockCount(
     countId: params.countId,
     createdBy: params.createdBy,
     note: params.note ?? null,
+    sync: params.sync,
   });
   if (params.lines.length === 0) return { reversed: true, id: null };
   const created = await createStockCount(client, {
@@ -608,6 +631,7 @@ export async function editStockCount(
     note: params.note ?? null,
     lines: params.lines,
     createdBy: params.createdBy,
+    sync: params.sync,
     allowInactiveItemIds: originalLines.map((line) => line.inventory_item_id),
   });
   return { reversed: true, id: created.id };

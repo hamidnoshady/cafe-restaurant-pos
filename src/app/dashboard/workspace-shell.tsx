@@ -27,6 +27,12 @@ import { LockProvider } from "./lock-screen";
 import { DashboardSidebar, type NavItem } from "./dashboard-sidebar";
 import { DashboardMain } from "./dashboard-main";
 import { AppAvailabilityGate } from "./app-availability-gate";
+import { DeploymentCapabilityGate } from "./deployment-capability-gate";
+import { OfflineQueueProvider } from "./offline-queue";
+import { readDeploymentProfile } from "@/lib/deployment-mode";
+import { resolveCapability, type CapabilityKey } from "@/lib/capabilities";
+import { deploymentRole } from "@/lib/deployment-role";
+import { getServerSyncConfig } from "@/lib/server-sync";
 
 /**
  * The dashboard nav.
@@ -327,12 +333,15 @@ export async function WorkspaceShell({
           // a capability, this says whether the app it lives in is working.
           effectiveAppAvailability(session.businessId),
           effectiveFeatures(session.businessId),
+          readDeploymentProfile(session.businessId),
+          getServerSyncConfig(session.businessId),
         ]),
       { locationId: session.locationId, userId: session.sub },
     ),
   ]);
   if (!member?.isActive) redirect("/login");
-  const [industryResult, prefs, appAvailability, features] = tenantReads;
+  const [industryResult, prefs, appAvailability, features, deployment, serverSyncConfig] = tenantReads;
+  const runtimeRole = deploymentRole();
   const industry = industryResult.rows[0]?.industry ?? "food_service";
   const currencyDisplay = prefs?.currencyDisplay === "rial" ? "rial" : "toman";
   const permissions = member.permissions;
@@ -366,9 +375,14 @@ export async function WorkspaceShell({
       // src/lib/app-availability.ts for why the two off-switches differ.
       const app = appForModule(item.module);
       const availability = app ? appAvailability[app] : undefined;
+      const deploymentCapability: CapabilityKey | null =
+        app === "growth" ? "app.growth" : app === "website" ? "app.website" : null;
+      const deploymentLocked = deploymentCapability
+        ? !resolveCapability(deploymentCapability, { deployment: deployment.profile }).available
+        : false;
       return {
         ...item,
-        locked: Boolean(item.flag && !features[item.flag]),
+        locked: deploymentLocked || Boolean(item.flag && !features[item.flag]),
         appState:
           availability && availability.badged
             ? { state: availability.state, label: availability.label, usable: availability.usable }
@@ -378,6 +392,7 @@ export async function WorkspaceShell({
   return (
     <LockProvider fullName={session.fullName}>
       <MoneyProvider unit={currencyDisplay}>
+        <OfflineQueueProvider>
         <BugReportProvider>
         {/*
           A *definite* height, not `min-h-screen` — this is the fix for "the app
@@ -408,14 +423,22 @@ export async function WorkspaceShell({
           brandSubtitle={profile.brandSubtitle}
           industry={industry}
           workspaceSections={workspaceSections}
+          deploymentProfile={deployment.profile}
         />
         <DashboardMain>
           <AppAvailabilityGate availability={appAvailability}>
-            {children}
+            <DeploymentCapabilityGate
+              profile={deployment.profile}
+              runtimeRole={runtimeRole}
+              cloudUrl={serverSyncConfig?.enabled ? serverSyncConfig.remoteUrl : null}
+            >
+              {children}
+            </DeploymentCapabilityGate>
           </AppAvailabilityGate>
         </DashboardMain>
         </div>
         </BugReportProvider>
+        </OfflineQueueProvider>
       </MoneyProvider>
     </LockProvider>
   );

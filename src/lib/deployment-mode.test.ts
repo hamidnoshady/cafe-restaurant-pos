@@ -35,11 +35,12 @@ describe("resolveDeploymentMode", () => {
 });
 
 describe("LOCAL_DISABLED_FEATURES", () => {
-  it("disables exactly the three platform-dependent features", () => {
+  it("disables the cloud-dependent features", () => {
     expect([...LOCAL_DISABLED_FEATURES].sort()).toEqual([
       "ai_assistant",
+      "integrations",
       "multi_location",
-      "offline_mode",
+      "site_cloud_sync",
     ]);
   });
 

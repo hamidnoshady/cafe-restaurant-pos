@@ -13,9 +13,10 @@ export const SETTINGS_TAB_KEYS = [
   "team",
   "menu",
   "printers",
+  "cloud-sync",
   "branch-management",
   // No `server-sync`: remote-server sync is a technical connection and lives
-  // in the «اتصال‌های فنی» hub («سرور راه دور», owner-only, `offline_mode`).
+  // in the «اتصال‌های فنی» hub («سرور راه دور», owner-only, `site_cloud_sync`).
   // «تنظیمات» keeps no copy; the old `?tab=server-sync` deep link redirects
   // to the hub in `settings-manager.tsx`.
   "devices",
@@ -146,6 +147,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     requiredAnyPermission: [PERMISSIONS.settingsManage],
   },
   {
+    key: "cloud-sync",
+    label: "ابر و همگام‌سازی",
+    description: "وضعیت سیستم محلی، اتصال ابری، صف همگام‌سازی و اتصال به ابر",
+    requiredAnyPermission: [PERMISSIONS.settingsManage],
+  },
+  {
     key: "branch-management",
     label: "مدیریت شعب",
     description: "مدیریت شعب کسب‌وکار و همگام‌سازی داده‌های شعب با سرور مرکزی",
@@ -157,7 +164,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
     // role's preset, so this is still owner-only until it is deliberately
     // delegated — the difference is that delegating it now works.
     requiredAnyPermission: [PERMISSIONS.locationsManage],
-    requiredAnyFeature: ["multi_location", "offline_mode"],
+    requiredAnyFeature: ["multi_location", "site_cloud_sync"],
   },
   {
     key: "devices",

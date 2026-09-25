@@ -43,6 +43,7 @@ export const POST = withTenantScope(
         runId: id,
         note: body.note?.trim() || null,
         createdBy: session.sub,
+        sync: { actorRole: session.role },
       });
       await client.query("COMMIT");
       return NextResponse.json({ ok: true, id: reversal.id });

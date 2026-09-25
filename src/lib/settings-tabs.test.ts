@@ -34,6 +34,7 @@ describe("visibleSettingsTabs", () => {
       "payment-methods",
       "menu",
       "printers",
+      "cloud-sync",
       "devices",
       "notifications",
       "logs",
@@ -103,14 +104,14 @@ describe("visibleSettingsTabs", () => {
     expect(
       visibleSettingsTabs([], {
         role: "manager",
-        features: { backup: true, offline_mode: true },
+        features: { backup: true, site_cloud_sync: true },
       }).map((tab) => tab.key),
     ).toEqual(["notifications", "backup"]);
 
     expect(
       visibleSettingsTabs([PERMISSIONS.locationsManage], {
         role: "owner",
-        features: { backup: true, offline_mode: true },
+        features: { backup: true, site_cloud_sync: true },
       }).map((tab) => tab.key),
       // No `server-sync`: remote-server sync is a technical connection and
       // lives in the «اتصال‌های فنی» hub now, not among the settings tabs.
@@ -119,14 +120,14 @@ describe("visibleSettingsTabs", () => {
     expect(
       visibleSettingsTabs([PERMISSIONS.locationsManage], {
         role: "owner",
-        features: { backup: false, offline_mode: false },
+        features: { backup: false, site_cloud_sync: false },
       }).map((tab) => tab.key),
     ).toEqual(["notifications"]);
 
     expect(
       visibleSettingsTabs([PERMISSIONS.locationsManage], {
         role: "owner",
-        features: { backup: false, offline_mode: false, multi_location: true },
+        features: { backup: false, site_cloud_sync: false, multi_location: true },
       }).map((tab) => tab.key),
     ).toEqual(["branch-management", "notifications"]);
   });

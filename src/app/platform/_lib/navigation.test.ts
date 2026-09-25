@@ -28,6 +28,7 @@ describe("console navigation IA", () => {
     for (const href of [
       "/platform/businesses",
       "/platform/support",
+      "/platform/cloud-exceptions",
       "/platform/bug-reports",
       "/platform/billing",
       "/platform/plans",

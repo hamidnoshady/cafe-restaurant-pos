@@ -94,10 +94,10 @@ export const CONNECTION_KINDS: ConnectionKind[] = [
     description:
       "همگام‌سازی دوطرفهٔ این سرور با سرور مرکزی (VPS): آدرس و توکن اتصال، وضعیت همگام‌سازی و رویدادهای ناموفق.",
     // Owner-only, like the settings tab this replaces: the token reaches the
-    // whole central dataset. Gated by `offline_mode` — without it there is no
+    // whole central dataset. Gated by `site_cloud_sync` — without it there is no
     // remote peer to sync with.
     allowedRoles: ["owner"],
-    feature: "offline_mode",
+    feature: "site_cloud_sync",
   },
   {
     key: "mcp",

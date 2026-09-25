@@ -31,6 +31,7 @@ export const POST = withTenantScope(async (request:NextRequest) => {
  try{await client.query("BEGIN");const result=await createInventoryTransfer(client,{
   businessId:session.businessId,createdBy:session.sub,sourceLocationId:body.sourceLocationId??"",
   destinationLocationId:body.destinationLocationId??"",note:body.note,idempotencyKey:body.idempotencyKey??"",
+  sync:{actorRole:session.role},
   lines:(body.lines??[]).map(l=>({sourceInventoryItemId:l.sourceInventoryItemId??"",
    destinationInventoryItemId:l.destinationInventoryItemId??"",quantity:positiveQuantityText(l.quantity??"")}))});
   await client.query("COMMIT");return NextResponse.json({ok:true,...result});

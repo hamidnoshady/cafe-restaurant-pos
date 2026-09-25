@@ -23,6 +23,7 @@ import {
 } from "@/lib/rate-limit";
 import { isInternalCall } from "@/lib/internal-auth";
 import { legacyRedirectTarget } from "@/lib/app-routes";
+import { deploymentRole } from "@/lib/deployment-role";
 import {
   ADMIN_HOST_LABEL,
   hostRoutingEnabled,
@@ -32,6 +33,42 @@ import {
   swapHostLabel,
   type ParsedHost,
 } from "@/lib/host";
+
+const CENTRAL_EXECUTION_PATHS = [
+  "/api/rollup/ingest",
+  "/api/server-sync/push",
+  "/api/server-sync/pull",
+  "/api/server-sync/media",
+  "/api/server-sync/update-check",
+  "/api/server-sync/config/generate-token",
+  "/api/peer/backup",
+  "/api/v1",
+  "/api/ai",
+  "/api/workspace",
+  "/api/billing",
+  "/api/messaging",
+  "/api/notifications/devices",
+  "/api/notifications/public-key",
+  "/api/notifications/test",
+  "/api/growth",
+  "/api/cms",
+  "/api/website",
+  "/api/connections/website",
+  "/api/integrations",
+  "/api/integrations/wordpress",
+  "/api/integrations/woocommerce/webhook",
+  "/api/mcp",
+  "/api/connections/mcp",
+  "/api/well-known/oauth-",
+  "/.well-known/oauth-",
+  "/api/cms/revalidate",
+  "/api/pairing/redeem",
+  "/mcp",
+] as const;
+
+export function isCentralExecutionPath(pathname: string): boolean {
+  return CENTRAL_EXECUTION_PATHS.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`) || (prefix.endsWith("-") && pathname.startsWith(prefix)));
+}
 
 const PUBLIC_PATHS = [
   // The root path decides, in src/app/page.tsx, between the login page and the
@@ -96,6 +133,7 @@ const PUBLIC_PATHS = [
   // completely unreachable regardless of a valid token until this fix.
   "/api/server-sync/push",
   "/api/server-sync/pull",
+  "/api/server-sync/media",
   // Migration 0132: the same shape again — the caller is another *server*
   // migrating onto this one, authenticated with a bearer token issued in the
   // super-admin console (`platform_backup_tokens`, hashed), never with a
@@ -154,6 +192,10 @@ const PUBLIC_PATHS = [
   // own health check hit it without a session, and a probe that gets
   // redirected into the host resolver reads as "the app is down".
   "/api/health",
+  // The site relay uses a server-only bearer secret, never a browser session.
+  // It accepts only Support/Bug Report envelopes and is the sole cloud channel
+  // intentionally available to a fully Local installation.
+  "/api/cloud-exceptions/relay",
   // The Windows Print Connector payload (public/windows). It is tenant-neutral
   // by design — the same static file for every business — but it is consumed
   // by the installer's PowerShell download, which by definition carries no
@@ -609,6 +651,15 @@ async function handlePlatformAdmin(
     pathname.startsWith("/platform/") ||
     pathname.startsWith("/api/platform")
   ) {
+    // The platform console is a central-runtime application, not merely a
+    // hidden tenant page. A Local or Hybrid site process must never expose it,
+    // even when somebody knows the route or has copied a platform cookie.
+    if (deploymentRole() !== "central") {
+      return pathname.startsWith("/api/")
+        ? NextResponse.json({ error: "deployment_unsupported" }, { status: 404 })
+        : new NextResponse("Not Found", { status: 404 });
+    }
+
     // Phase 23: the console lives on admin.{root} and nowhere else. Serving it
     // from a tenant's origin would put the super-admin realm inside that
     // tenant's browser origin — the exact sharing this wave removes — so the
@@ -880,6 +931,15 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
     }
+  }
+
+  // Public/bearer authentication does not imply that a site process is an
+  // execution target. Cloud APIs are absent on Local and Hybrid site runtimes;
+  // their central counterparts remain reachable on the Cloud origin.
+  if (deploymentRole() !== "central" && isCentralExecutionPath(pathname)) {
+    return pathname.startsWith("/api/") || pathname.startsWith("/.well-known/")
+      ? NextResponse.json({ error: "not_found" }, { status: 404 })
+      : new NextResponse("Not Found", { status: 404 });
   }
 
   // ---- Super-admin realm ---------------------------------------------------

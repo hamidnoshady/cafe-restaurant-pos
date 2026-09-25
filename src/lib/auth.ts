@@ -22,6 +22,9 @@ import { authorize, denialResponse, withAuthorizationMemo } from "./authorize";
 import { activeGrant } from "./platform-service";
 import { platformAudit } from "./platform-auth";
 import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
+import { capabilityForApiPath, capabilityHttpStatus, resolveCapability } from "./capabilities";
+import { readDeploymentProfile } from "./deployment-mode";
+import { deploymentRole } from "./deployment-role";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -160,9 +163,27 @@ export function withTenantScope<Args extends unknown[]>(
       // exists: an unauthenticated request still gets its ordinary 401 from
       // the handler's own requireRole/requirePermission call, unchanged.
       if (session) {
-        const flag = request ? featureForApiPath(request.nextUrl.pathname) : null;
+        const pathname = request?.nextUrl.pathname ?? "";
+        // Deployment support is independent from plan entitlement. Resolve it
+        // first so Local-only says "connect to cloud", never "upgrade plan".
+        const capability = capabilityForApiPath(pathname);
+        const deployment = capability ? await readDeploymentProfile(session.businessId) : null;
+        if (capability && deployment) {
+          const resolved = resolveCapability(capability, { deployment: deployment.profile, runtimeRole: deploymentRole() });
+          if (!resolved.available) {
+            return NextResponse.json(
+              { error: "capability_unavailable", code: resolved.code, capability, status: resolved.status },
+              { status: capabilityHttpStatus(resolved.code) },
+            );
+          }
+        }
+
+        const flag = request ? featureForApiPath(pathname) : null;
         if (flag && !(await isFeatureEnabled(session.businessId, flag))) {
-          return NextResponse.json({ error: "feature_disabled", flag }, { status: 403 });
+          return NextResponse.json(
+            { error: "feature_disabled", code: "FEATURE_NOT_IN_PLAN", flag },
+            { status: 403 },
+          );
         }
 
         // Phase 25 — the same enforcement, keyed on the industry's module set

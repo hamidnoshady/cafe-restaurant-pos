@@ -46,7 +46,7 @@ describe("featureForPagePath", () => {
     expect(featureForPagePath("/accounting/waiter")).toBe("reservations");
     expect(featureForPagePath("/settings/backup")).toBe("backup");
     // Branch management is deliberately ungated here: its settings tab
-    // carries `requiredAnyFeature: [multi_location, offline_mode]`, and a
+    // carries `requiredAnyFeature: [multi_location, site_cloud_sync]`, and a
     // single-flag prefix row would lock a sync-only business out.
     expect(featureForPagePath("/settings/branch-management")).toBeNull();
   });

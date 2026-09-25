@@ -52,6 +52,7 @@ export interface SyncEventResult {
 }
 
 interface OrderCreatePayload {
+  orderId?: string;
   type?: "dine_in" | "takeaway" | "delivery";
   tableId?: string;
   customerId?: string;
@@ -111,6 +112,9 @@ async function dispatch(
       // If a future retry path reaches order creation without its original
       // sync_events outcome, it still converges on the same order.
       clientRequestId: event.clientEventId,
+      orderId: typeof payload.orderId === "string" ? payload.orderId : event.clientEventId,
+      actorRole: actor.role,
+      recordSyncEvent: false,
       delivery: payload.type === "delivery" && payload.delivery
         ? {
             address: payload.delivery.address ?? "",

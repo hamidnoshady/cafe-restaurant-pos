@@ -8,7 +8,7 @@ import { useFeatureLocked } from "@/components/feature-lock";
  * «سرور راه دور» — the «اتصال‌های فنی» hub's tab for the bidirectional
  * server-to-server sync (Phase 11): connects this server to a remote peer
  * (café laptop <-> VPS) and reuses the client offline-queue's idempotency
- * engine. Owner-only, gated by the `offline_mode` feature; the old
+ * engine. Owner-only, gated by the `site_cloud_sync` feature; the old
  * «همگام‌سازی با سرور راه دور» settings tab redirects here.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -156,7 +156,7 @@ export function ServerSyncPanel() {
 
   const load = useCallback(async () => {
     // Locked preview: /api/server-sync/* answers `feature_disabled` without
-    // `offline_mode`, so asking would only paint the preview with a load
+    // `site_cloud_sync`, so asking would only paint the preview with a load
     // error. The empty form underneath is the preview.
     if (locked) {
       setLoading(false);

@@ -97,6 +97,10 @@ const PUBLIC_ROUTES: Record<string, string> = {
     "server-to-server — authenticated by a site/location credential and constrained to its location (legacy tokens remain migration-only); not a session",
   "server-sync/update-check":
     "server-to-server — authenticated by a site or legacy business credential only; no global-token fallback and no session",
+  "server-sync/media/[id]":
+    "cloud-to-site media mirroring — authenticated by the site's scoped sync credential and constrained to that credential's business; no browser session",
+  "cloud-exceptions/relay":
+    "server-to-server — the narrowly-scoped Local Support/Bug Report relay authenticates with a timing-safe server bearer secret, validates a bounded allowlisted envelope, and carries no browser session",
 
   // Migration 0132 — the platform's own server-to-server channel, for the same
   // reason as the sync ones: the caller is another deployment, mid-migration, with

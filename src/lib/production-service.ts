@@ -22,6 +22,8 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
 import type { PoolClient } from "pg";
+import type { Role } from "./auth-edge";
+import { appendSyncOutboxEvent } from "./sync-outbox";
 import { query } from "./db";
 import { consumeInventoryExact } from "./inventory-consumption-exact";
 import {
@@ -456,6 +458,8 @@ export async function recordProductionRun(
     createdBy: string | null;
     /** Caller-owned domain idempotency identity (for sync retries). */
     idempotencyKey?: string | null;
+    runId?: string;
+    sync?: { actorRole: Role; clientEventId?: string };
   },
 ): Promise<RecordedProductionRun> {
   const domainKey = params.idempotencyKey ? `production-sync:${params.idempotencyKey}` : null;
@@ -520,7 +524,7 @@ export async function recordProductionRun(
   // own INSERT — a retry of this transaction then collides on
   // `production_runs (business_id, idempotency_key)` instead of writing a
   // second batch.
-  const runId = randomUUID();
+  const runId = params.runId ?? randomUUID();
 
   const { rows: events } = await client.query<{ id: string }>(
     `INSERT INTO inventory_events
@@ -610,6 +614,17 @@ export async function recordProductionRun(
   });
 
   await client.query("UPDATE inventory_events SET posting_status = 'posted' WHERE id = $1", [eventId]);
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: params.locationId,
+    clientEventId: params.sync.clientEventId ?? params.idempotencyKey ?? `production:create:${runId}`,
+    eventType: "inventory.production.recorded",
+    payload: {
+      runId, formulaId: params.formulaId, batches: params.batches,
+      outputQuantity, conversionCostRial: conversionCost, note: params.note,
+    },
+    actorUserId: params.createdBy,
+    actorRole: params.sync.actorRole,
+  });
 
   return {
     id: runId,
@@ -706,6 +721,7 @@ export async function reverseProductionRun(
     runId: string;
     note: string | null;
     createdBy: string | null;
+    sync?: { actorRole: Role; clientEventId?: string };
   },
 ): Promise<{ id: string }> {
   const { rows: runs } = await client.query<{
@@ -826,6 +842,14 @@ export async function reverseProductionRun(
     run.inventory_event_id,
   ]);
   await client.query("UPDATE inventory_events SET posting_status = 'posted' WHERE id = $1", [reversalEventId]);
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: params.locationId,
+    clientEventId: params.sync.clientEventId ?? `production:reverse:${params.runId}`,
+    eventType: "inventory.production.reversed",
+    payload: { runId: params.runId, note: params.note },
+    actorUserId: params.createdBy,
+    actorRole: params.sync.actorRole,
+  });
   return { id: reversalRunId };
 }
 

@@ -25,6 +25,7 @@ let db: Client;
 let dbLib: typeof import("../src/lib/db");
 let ledgerService: typeof import("../src/lib/ledger-service");
 let paymentMethodsService: typeof import("../src/lib/payment-methods-service");
+let paymentService: typeof import("../src/lib/payment-service");
 
 const biz = { id: "", locationId: "" };
 const acct = {
@@ -38,6 +39,8 @@ const acct = {
   vatPayable: "",
   tipsPayable: "",
   platformCommissionExpense: "",
+  inventory: "",
+  cogs: "",
 };
 
 function urlFor(database: string): string {
@@ -69,6 +72,7 @@ beforeAll(async () => {
   dbLib = await import("../src/lib/db");
   ledgerService = await import("../src/lib/ledger-service");
   paymentMethodsService = await import("../src/lib/payment-methods-service");
+  paymentService = await import("../src/lib/payment-service");
 
   db = new Client({ connectionString: urlFor(databaseName) });
   await db.connect();
@@ -120,7 +124,8 @@ beforeEach(async () => {
             ($1, '4310', 'Dine-in', 'revenue'),
             ($1, '4320', 'Takeaway', 'revenue'), ($1, '4330', 'Delivery', 'revenue'),
             ($1, '2200', 'VAT Payable', 'liability'), ($1, '2400', 'Tips Payable', 'liability'),
-            ($1, '5650', 'Platform Commission Expense', 'expense')
+            ($1, '5650', 'Platform Commission Expense', 'expense'),
+            ($1, '1300', 'Inventory', 'asset'), ($1, '5100', 'COGS', 'expense')
      RETURNING id, code`,
     [biz.id],
   );
@@ -135,6 +140,8 @@ beforeEach(async () => {
     "2200": "vatPayable",
     "2400": "tipsPayable",
     "5650": "platformCommissionExpense",
+    "1300": "inventory",
+    "5100": "cogs",
   };
   for (const row of accounts.rows) acct[byCode[row.code]] = row.id;
 });
@@ -469,5 +476,45 @@ describe("payments rows for a split bill", () => {
         [biz.locationId, orderId],
       ),
     ).rejects.toThrow(/uq_payments_one_positive_per_order/);
+  });
+});
+
+describe("server-sync split settlement replay", () => {
+  it("replays exact tender slices and is idempotent", async () => {
+    const order = await db.query<{ id: string }>(
+      `INSERT INTO orders(location_id,order_number,status,type,subtotal,tax,total)
+       VALUES($1,991,'open','takeaway',1000,0,1000) RETURNING id`, [biz.locationId],
+    );
+    const clientEventId = randomUUID();
+    const settle = async () => {
+      const client = await dbLib.getPool().connect();
+      try {
+        await client.query("BEGIN");
+        const result = await paymentService.completeSplitOrderPayment({
+          client, businessId: biz.id, locationId: biz.locationId, orderId: order.rows[0].id,
+          tenders: [
+            { methodId: null, settlement: "cash", amount: 400, reference: null },
+            { methodId: null, settlement: "card", amount: 600, reference: "terminal-1" },
+          ],
+          customerId: null, tipAmount: 0, receivedBy: null, idempotencyKey: clientEventId,
+        });
+        await client.query("COMMIT");
+        return result;
+      } catch (error) { await client.query("ROLLBACK"); throw error; }
+      finally { client.release(); }
+    };
+    expect(await settle()).toMatchObject({ amount: "1000", duplicate: false });
+    expect(await settle()).toMatchObject({ amount: "1000", duplicate: true });
+    const payments = await db.query<{ method: string; amount: string; settlement_seq: number }>(
+      "SELECT method,amount::text,settlement_seq FROM payments WHERE order_id=$1 ORDER BY settlement_seq", [order.rows[0].id],
+    );
+    expect(payments.rows).toEqual([
+      { method: "cash", amount: "400", settlement_seq: 1 },
+      { method: "card", amount: "600", settlement_seq: 2 },
+    ]);
+    const entries = await db.query<{ count: string }>(
+      "SELECT count(*)::text count FROM journal_entries WHERE source_type='order' AND source_id=$1", [order.rows[0].id],
+    );
+    expect(Number(entries.rows[0].count)).toBeGreaterThan(0);
   });
 });

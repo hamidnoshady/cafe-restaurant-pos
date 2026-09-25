@@ -56,7 +56,7 @@ describe("visibleConnectionKinds", () => {
     // business cannot ask for something it is never shown.
     const owner = visibleConnectionKinds({ role: "owner" });
     expect(owner.some((k) => k.feature === "integrations")).toBe(true);
-    expect(owner.some((k) => k.feature === "offline_mode")).toBe(true);
+    expect(owner.some((k) => k.feature === "site_cloud_sync")).toBe(true);
     expect(owner.some((k) => k.feature === "api_platform")).toBe(true);
     // …and the desktop tab has no flag at all: connecting the desktop app is
     // not something a business buys.

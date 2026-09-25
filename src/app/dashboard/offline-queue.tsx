@@ -10,9 +10,10 @@
  * the pure Pending/Syncing/Completed/Failed/Conflict state machine this
  * module drives.
  */
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { getOfflineDb, type PendingAction, type PendingActionType } from "@/lib/offline-db";
 import { safeRandomId } from "@/lib/client-id";
+import type { ConnectionStatus } from "@/lib/connection-state";
 import {
   classifyFlushOutcome,
   isQueueEntryDueForRetry,
@@ -225,12 +226,30 @@ export interface ConnectionState {
   attentionNeeded: number;
 }
 
-export function useOfflineQueue(): {
+export interface ConnectionStatusSnapshot {
+  profile?: "cloud" | "hybrid" | "local";
+  localServer?: ConnectionStatus;
+  cloud?: ConnectionStatus;
+  sync?: ConnectionStatus;
+  cloudSync?: string;
+  outboundPending?: number;
+  inboundPending?: number;
+  conflicts?: number;
+  deadLetters?: number;
+  lastSuccessfulSyncAt?: string | null;
+  error?: string | null;
+}
+
+export interface OfflineQueueState {
   pendingCount: number;
   isOnline: boolean;
   connectionState: ConnectionState;
   entries: PendingAction[];
-} {
+  serverStatus: ConnectionStatusSnapshot | null;
+}
+
+function useOfflineQueueState(): OfflineQueueState {
+  const [serverStatus, setServerStatus] = useState<ConnectionStatusSnapshot | null>(null);
   const [entries, setEntries] = useState<PendingAction[]>([]);
   const [isOnline, setIsOnline] = useState(true);
   const [internet, setInternet] = useState<InternetState>("internet_unknown");
@@ -260,7 +279,8 @@ export function useOfflineQueue(): {
       try {
         const response = await fetch("/api/connection/status", { cache: "no-store" });
         if (!response.ok) return;
-        const body = (await response.json()) as { cloudSync?: string; error?: string | null };
+        const body = (await response.json()) as ConnectionStatusSnapshot;
+        setServerStatus(body);
         if (body.cloudSync === "connected") {
           setCloudSync("cloud_sync_connected");
           setInternet("internet_available");
@@ -308,6 +328,7 @@ export function useOfflineQueue(): {
     pendingCount: entries.length,
     isOnline,
     entries,
+    serverStatus,
     connectionState: {
       localServer: isOnline ? "local_server_connected" : "local_server_unreachable",
       internet,
@@ -317,6 +338,20 @@ export function useOfflineQueue(): {
       attentionNeeded,
     },
   };
+}
+
+const OfflineQueueContext = createContext<OfflineQueueState | null>(null);
+
+/** One queue/probe owner for the whole authenticated shell. */
+export function OfflineQueueProvider({ children }: { children: ReactNode }) {
+  const state = useOfflineQueueState();
+  return <OfflineQueueContext.Provider value={state}>{children}</OfflineQueueContext.Provider>;
+}
+
+export function useOfflineQueue(): OfflineQueueState {
+  const state = useContext(OfflineQueueContext);
+  if (!state) throw new Error("useOfflineQueue must be used inside OfflineQueueProvider");
+  return state;
 }
 
 export type { PendingAction };

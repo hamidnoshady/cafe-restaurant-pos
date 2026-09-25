@@ -4,7 +4,9 @@ import { createCustomerReturn } from "./customer-return-service";
 import { positiveQuantityText, quantityText, rialText } from "./inventory-exact";
 import { createItemStockCount, reverseItemStockCount } from "./item-stock-count-service";
 import { reverseEntryInTransaction } from "./manual-journal-service";
-import { completeOrderPayment, PAYMENT_METHODS } from "./payment-service";
+import { completeOrderPayment, completeSplitOrderPayment, PAYMENT_METHODS } from "./payment-service";
+import { PAYMENT_SETTLEMENTS, type ResolvedTender } from "./payment-methods";
+import type { Rial } from "./money";
 import { createDraftPurchaseInTransaction } from "./purchase-service";
 import { PURCHASE_SETTLEMENT_METHODS, receivePurchaseInTransaction } from "./purchase-receive-service";
 import { recordProductionRun, reverseProductionRun } from "./production-service";
@@ -55,9 +57,9 @@ function optionalString(payload: Record<string, unknown>, field: string): string
   return value.trim() || null;
 }
 
-function array(payload: Record<string, unknown>, field: string): Record<string, unknown>[] {
+function array(payload: Record<string, unknown>, field: string, allowEmpty = false): Record<string, unknown>[] {
   const value = payload[field];
-  if (!Array.isArray(value) || value.length === 0 || value.length > 500) throw new SyncPayloadError(`invalid_${field}`);
+  if (!Array.isArray(value) || (!allowEmpty && value.length === 0) || value.length > 500) throw new SyncPayloadError(`invalid_${field}`);
   return value.map((entry) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new SyncPayloadError(`invalid_${field}`);
     return entry as Record<string, unknown>;
@@ -109,6 +111,23 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
       });
       return { effectType: "order_payment", effectId: requiredString(payload, "orderId"), result: { amount: result.amount, duplicate: Boolean(result.duplicate) } };
     }
+    case "order.payment.completed.v2": {
+      const tenders: ResolvedTender[] = array(payload, "tenders", true).map((tender) => ({
+        methodId: optionalString(tender, "methodId"),
+        settlement: enumValue(tender.settlement, PAYMENT_SETTLEMENTS, "invalid_settlement"),
+        amount: exactInteger(tender.amount, "invalid_amount") as Rial,
+        reference: optionalString(tender, "reference"),
+      }));
+      const result = await completeSplitOrderPayment({
+        client, businessId, locationId,
+        orderId: requiredString(payload, "orderId"), tenders,
+        customerId: optionalString(payload, "customerId"),
+        tipAmount: payload.tipAmount === undefined ? 0 : exactInteger(payload.tipAmount, "invalid_tipAmount"),
+        businessDate: optionalString(payload, "businessDate") ?? undefined,
+        receivedBy: actor.userId, idempotencyKey: clientEventId,
+      });
+      return { effectType: "order_payment", effectId: requiredString(payload, "orderId"), result: { amount: result.amount, duplicate: Boolean(result.duplicate) } };
+    }
     case "order.customer_return.created": {
       const refundMethod = enumValue(payload.refundMethod, ["cash", "card", "card_to_card", "online", "credit"] as const, "invalid_refundMethod");
       const result = await createCustomerReturn(client, {
@@ -142,6 +161,7 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
     case "inventory.purchase.created": {
       const result = await createDraftPurchaseInTransaction(client, {
         locationId,
+        purchaseId: optionalString(payload, "purchaseId") ?? undefined,
         supplierId: optionalString(payload, "supplierId"),
         note: optionalString(payload, "note") ?? undefined,
         purchaseDate: optionalString(payload, "purchaseDate"),
@@ -186,6 +206,7 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
       const result = await createInventoryTransfer(client, {
         businessId,
         sourceLocationId: locationId,
+        transferId: optionalString(payload, "transferId") ?? undefined,
         destinationLocationId: requiredString(payload, "destinationLocationId"),
         note: optionalString(payload, "note"),
         idempotencyKey: clientEventId,
@@ -238,6 +259,7 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
       const result = await createStockCount(client, {
         businessId,
         locationId,
+        countId: optionalString(payload, "countId") ?? undefined,
         note: optionalString(payload, "note"),
         createdBy: actor.userId,
         lines: array(payload, "lines").map((line) => ({
@@ -261,6 +283,7 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
       const result = await createItemStockCount(client, {
         businessId,
         locationId,
+        countId: optionalString(payload, "countId") ?? undefined,
         note: optionalString(payload, "note"),
         createdBy: actor.userId,
         lines: array(payload, "lines").map((line) => ({
@@ -284,6 +307,7 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
       const result = await recordProductionRun(client, {
         businessId,
         locationId,
+        runId: optionalString(payload, "runId") ?? undefined,
         formulaId: requiredString(payload, "formulaId"),
         batches: positiveQuantityText(requiredString(payload, "batches")),
         outputQuantity: payload.outputQuantity == null ? null : positiveQuantityText(requiredString(payload, "outputQuantity")),

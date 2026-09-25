@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireMember, withTenantScope } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { getPool } from "@/lib/db";
+import { enqueueCloudException } from "@/lib/cloud-exception-relay";
 
 /**
  * In-app bug reports (see migrations/0127_bug_reports.sql).
@@ -58,21 +59,29 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const userAgent = typeof body.userAgent === "string" ? body.userAgent.slice(0, 1000) : null;
   const viewport = typeof body.viewport === "string" ? body.viewport.slice(0, 200) : null;
 
-  const { rows } = await query<{ id: string }>(
-    `INSERT INTO bug_reports (business_id, location_id, user_id, description, screenshot, page_url, user_agent, viewport)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id`,
-    [
-      session.businessId,
-      session.locationId ?? null,
-      session.sub,
-      description,
-      screenshot,
-      pageUrl,
-      userAgent,
-      viewport,
-    ],
-  );
-
-  return NextResponse.json({ id: rows[0].id }, { status: 201 });
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO bug_reports (business_id, location_id, user_id, description, screenshot, page_url, user_agent, viewport)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
+      [session.businessId, session.locationId ?? null, session.sub, description,
+        screenshot, pageUrl, userAgent, viewport],
+    );
+    await enqueueCloudException(client, {
+      businessId: session.businessId,
+      kind: "bug_report.created",
+      aggregateId: rows[0].id,
+      payload: { reportId: rows[0].id, locationId: session.locationId ?? null,
+        userId: session.sub, description, screenshot, pageUrl, userAgent, viewport },
+    });
+    await client.query("COMMIT");
+    return NextResponse.json({ id: rows[0].id }, { status: 201 });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 });

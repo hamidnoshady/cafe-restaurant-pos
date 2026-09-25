@@ -46,6 +46,7 @@ export const NAV_GROUPS: NavGroup[] = [
         alsoActive: ["/platform/businesses/"],
       },
       { label: "پشتیبانی", href: "/platform/support", cap: "support.manage" },
+      { label: "صندوق نصب‌های محلی", href: "/platform/cloud-exceptions", cap: "support.manage" },
       { label: "گزارش‌های خطا", href: "/platform/bug-reports", cap: "audit.read" },
     ],
   },

@@ -148,6 +148,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     discount,
     items,
     openedBy: session.sub,
+    actorRole: session.role,
     clientRequestId: body.clientRequestId ?? null,
     delivery: body.type === "delivery" && body.delivery
       ? {

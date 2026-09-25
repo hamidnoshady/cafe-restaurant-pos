@@ -30,6 +30,7 @@ export const POST = withTenantScope(async (request: NextRequest, context: { para
       businessId: session.businessId, locationId: location.id, orderId: id,
       refundMethod: body.refundMethod ?? "cash", refundAmount: rialText(body.refundAmountRial ?? ""),
       reason: body.reason ?? "", idempotencyKey: body.idempotencyKey ?? "", createdBy: session.sub,
+      sync: { actorRole: session.role },
       lines: (body.lines ?? []).map((line) => ({
         orderItemId: line.orderItemId ?? "", quantity: positiveQuantityText(line.quantity ?? ""),
         disposition: line.disposition ?? "discarded",

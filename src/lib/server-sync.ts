@@ -764,8 +764,11 @@ export async function runServerSyncTick(): Promise<void> {
   // Discovery spans tenants; each business's sync then runs scoped to it.
   const rows = await withoutTenantScope("platform", async () => {
     const result = await query<{ business_id: string }>(
-      `SELECT business_id FROM settings WHERE key = $1 AND location_id IS NULL`,
-      [SETTING_KEYS.serverSyncConfig],
+      `SELECT c.business_id FROM settings c
+         JOIN settings p ON p.business_id=c.business_id AND p.location_id IS NULL
+                        AND p.key=$2 AND p.value->>'profile'='hybrid'
+        WHERE c.key=$1 AND c.location_id IS NULL`,
+      [SETTING_KEYS.serverSyncConfig, SETTING_KEYS.deploymentProfile],
     );
     return result.rows;
   });

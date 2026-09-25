@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getMediaConfig, isMediaStorageReady, readMediaObject } from "@/lib/media-service";
+import { readMirroredMediaObject } from "@/lib/media-mirror";
 
 /**
  * The object's bytes, served through the app: the browser never talks to the
@@ -24,15 +25,14 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
   const { id } = await context.params;
 
   const config = await getMediaConfig();
-  if (!isMediaStorageReady(config)) {
-    return NextResponse.json({ error: "storage_not_configured" }, { status: 503 });
-  }
-
-  let result: Awaited<ReturnType<typeof readMediaObject>>;
+  let result: { asset: { kind: string; fileName: string; mimeType: string }; bytes: Buffer } | null = null;
   try {
-    result = await readMediaObject(session.businessId, id, config);
-  } catch (err) {
-    console.error("media read failed:", err);
+    if (isMediaStorageReady(config)) result = await readMediaObject(session.businessId, id, config);
+    // A paired site's snapshot carries media metadata, not cloud bucket
+    // credentials. Fetch once over its scoped sync credential and keep a
+    // checksum-verified local mirror for subsequent Internet outages.
+    if (!result) result = await readMirroredMediaObject(session.businessId, id);
+  } catch {
     return NextResponse.json({ error: "storage_error" }, { status: 502 });
   }
   if (!result) return NextResponse.json({ error: "asset_not_found" }, { status: 404 });

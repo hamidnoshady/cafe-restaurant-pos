@@ -14,6 +14,8 @@ import { unitCostFromValue } from "./inventory-reversal";
 import { liveSaleInventoryEventId } from "./order-amendment-service";
 import { postExactCustomerRefundEntry, postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
+import { appendSyncOutboxEvent } from "./sync-outbox";
+import type { Role } from "./auth-edge";
 
 export type ReturnLine = {
   orderItemId: string;
@@ -34,6 +36,7 @@ export async function createCustomerReturn(
     /** null for system-driven returns (e.g. a WooCommerce webhook) with no local user. */
     createdBy: string | null;
     lines: ReturnLine[];
+    sync?: { actorRole: Role; clientEventId?: string };
   },
 ): Promise<{ id: string; refundAmount: RialText; recoveredValue: RialText; duplicate: boolean }> {
   if (!params.reason.trim() || !params.idempotencyKey || params.lines.length === 0) throw new Error("invalid_customer_return");
@@ -209,5 +212,16 @@ export async function createCustomerReturn(
   });
   await client.query("UPDATE customer_returns SET inventory_event_id=$2 WHERE id=$1", [returnId, events[0].id]);
   await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [events[0].id]);
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: params.locationId,
+    clientEventId: params.sync.clientEventId ?? params.idempotencyKey,
+    eventType: "order.customer_return.created",
+    payload: {
+      orderId: params.orderId, refundMethod: params.refundMethod,
+      refundAmount: params.refundAmount, reason: params.reason, lines: params.lines,
+    },
+    actorUserId: params.createdBy,
+    actorRole: params.sync.actorRole,
+  });
   return { id: returnId, refundAmount: params.refundAmount, recoveredValue: rialText(recovered.toString()), duplicate: false };
 }
