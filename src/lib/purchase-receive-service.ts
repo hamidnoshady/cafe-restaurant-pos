@@ -8,6 +8,8 @@ import {
   postPeriodicPurchaseEntry,
 } from "./ledger-service";
 import { applyPurchaseReceiptCosting } from "./purchase-receipt-costing";
+import { appendSyncOutboxEvent } from "./sync-outbox";
+import type { Role } from "./auth-edge";
 
 export const PURCHASE_SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
 export type PurchaseSettlementMethod = (typeof PURCHASE_SETTLEMENT_METHODS)[number];
@@ -25,6 +27,7 @@ export async function receivePurchaseInTransaction(
     settlementMethod: PurchaseSettlementMethod;
     supplierId?: string | null;
     createdBy: string | null;
+    sync?: { actorRole: Role; clientEventId?: string };
   },
 ): Promise<{ id: string; inventoryEventId: string | null; duplicate: boolean }> {
   const { rows: locked } = await client.query<{
@@ -49,6 +52,17 @@ export async function receivePurchaseInTransaction(
 
   const supplierId = params.supplierId?.trim() || purchase.supplier_id;
   if (params.settlementMethod === "credit" && !supplierId) throw new Error("supplier_required");
+  const appendOutbox = async () => {
+    if (!params.sync) return;
+    await appendSyncOutboxEvent(client, {
+      locationId: params.locationId,
+      clientEventId: params.sync.clientEventId ?? `purchase:receive:${params.purchaseId}`,
+      eventType: "inventory.purchase.received",
+      payload: { purchaseId: params.purchaseId, settlementMethod: params.settlementMethod, supplierId },
+      actorUserId: params.createdBy,
+      actorRole: params.sync.actorRole,
+    });
+  };
   if (supplierId && supplierId !== purchase.supplier_id) {
     const owned = await client.query("SELECT 1 FROM suppliers WHERE id=$1 AND location_id=$2", [supplierId, params.locationId]);
     if (owned.rowCount !== 1) throw new Error("supplier_not_found");
@@ -75,6 +89,7 @@ export async function receivePurchaseInTransaction(
       settlementMethod: params.settlementMethod,
     });
     await enqueueHolooPurchase(client, params.businessId, params.purchaseId, "purchase");
+    await appendOutbox();
     return { id: params.purchaseId, inventoryEventId: null, duplicate: false };
   }
 
@@ -133,5 +148,6 @@ export async function receivePurchaseInTransaction(
   });
   await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [inventoryEventId]);
   await enqueueHolooPurchase(client, params.businessId, params.purchaseId, "purchase");
+  await appendOutbox();
   return { id: params.purchaseId, inventoryEventId, duplicate: false };
 }

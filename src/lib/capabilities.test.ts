@@ -23,9 +23,30 @@ describe("deployment capability resolver", () => {
     expect(resolveCapability("app.accounting", { deployment: "hybrid", runtime: { internet: "unreachable" } }).status).toBe("available");
   });
 
-  it("maps cloud API families to the same registry", () => {
+  it("makes Support and Bug Report the only Local cloud exceptions", () => {
+    expect(resolveCapability("app.support", { deployment: "local" }).status).toBe("available");
+    expect(resolveCapability("support.bug_report", { deployment: "local" }).status).toBe("available");
+    expect(resolveCapability("app.support", { deployment: "local", runtime: { internet: "unreachable" } })).toMatchObject({
+      status: "requires_internet", code: "INTERNET_REQUIRED",
+    });
+
+    for (const capability of [
+      "app.ai", "app.website", "app.growth", "app.workspace", "platform.billing",
+      "cloud.integrations", "cloud.sync", "cloud.multi_location", "cloud.messaging",
+    ] as const) {
+      expect(resolveCapability(capability, { deployment: "local" })).toMatchObject({
+        status: "requires_cloud", code: "REQUIRES_CLOUD_CONNECTION",
+      });
+    }
+  });
+
+  it("maps cloud API families and Local exceptions to the same registry", () => {
     expect(capabilityForApiPath("/api/cms/website/posts")).toBe("app.website");
+    expect(capabilityForApiPath("/api/website/posts")).toBe("app.website");
     expect(capabilityForApiPath("/api/ai/chat")).toBe("app.ai");
+    expect(capabilityForApiPath("/api/workspace/items")).toBe("app.workspace");
+    expect(capabilityForApiPath("/api/support/tickets")).toBe("app.support");
+    expect(capabilityForApiPath("/api/bug-report")).toBe("support.bug_report");
     expect(capabilityForApiPath("/api/orders")).toBeNull();
   });
 });

@@ -8,6 +8,11 @@ import { CloudRequiredState } from "@/components/cloud-required-state";
 const PAGE_CAPABILITIES: readonly [string, CapabilityKey, string][] = [
   ["/growth", "app.growth", "رشد و بازاریابی"],
   ["/websites", "app.website", "مدیریت وب‌سایت"],
+  ["/workspace", "app.workspace", "میز کار من"],
+  ["/settings/billing", "platform.billing", "اعتبار و پرداخت‌ها"],
+  ["/settings/subscription", "platform.billing", "اشتراک"],
+  // Support is deliberately absent: it is one of Local-only's two cloud
+  // exceptions (the other is the global bug-report dialog).
   // /dashboard is the assistant home in this repository. Match exactly so
   // operational children that may still redirect through /dashboard/* are not
   // accidentally classified as AI.

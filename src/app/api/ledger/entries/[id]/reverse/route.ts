@@ -37,6 +37,7 @@ export const POST = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
       actorId: session.sub,
       memo: body.memo,
       entryDate: body.entryDate,
+      sync: { actorRole: session.role },
     });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {

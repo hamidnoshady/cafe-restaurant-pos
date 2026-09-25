@@ -20,6 +20,8 @@ import type { QuantityText, RialText } from "./inventory-exact";
 import { emitDomainEvent } from "./posting-engine";
 // Side-effect import: registers "inventory.operational_posting" with the engine.
 import "./fnb-posting-rules";
+import { appendSyncOutboxEvent } from "./sync-outbox";
+import type { Role } from "./auth-edge";
 
 export const WASTE_REASONS = ["spoilage", "prep_error", "customer_return", "staff_meal", "other"] as const;
 export type WasteReason = (typeof WASTE_REASONS)[number];
@@ -45,6 +47,7 @@ export interface RecordWasteParams {
   createdBy: string | null;
   /** Caller-owned domain idempotency identity (sync client_event_id). */
   idempotencyKey?: string | null;
+  sync?: { actorRole: Role; clientEventId?: string };
 }
 
 /**
@@ -109,6 +112,17 @@ export async function recordWasteInTransaction(
     createdBy: params.createdBy,
   });
   await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1", [eventId]);
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: params.locationId,
+    clientEventId: params.sync.clientEventId ?? params.idempotencyKey ?? `waste:${eventId}`,
+    eventType: "inventory.waste.recorded",
+    payload: {
+      inventoryItemId: params.inventoryItemId, quantity: params.quantity,
+      reason: params.reason, note: params.note,
+    },
+    actorUserId: params.createdBy,
+    actorRole: params.sync.actorRole,
+  });
 
   return { inventoryEventId: eventId, postedCost: result.postedCost, duplicate: false };
 }

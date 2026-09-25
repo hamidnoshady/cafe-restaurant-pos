@@ -7,10 +7,12 @@ import {
 import { postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
 import { getCostingMethod, getInventorySystem } from "./inventory-service";
+import { appendSyncOutboxEvent } from "./sync-outbox";
+import type { Role } from "./auth-edge";
 
 export async function createSupplierReturn(client:PoolClient,params:{
  businessId:string;locationId:string;purchaseId:string;settlementMethod:"accounts_payable"|"cash"|"bank"|"supplier_receivable";
- reason:string;idempotencyKey:string;createdBy:string;
+ reason:string;idempotencyKey:string;createdBy:string;sync?:{actorRole:Role;clientEventId?:string};
  lines:Array<{purchaseItemId:string;inventoryLotId?:string|null;quantity:QuantityText}>;
 }):Promise<{id:string;value:RialText;duplicate:boolean}>{
  if(!params.reason.trim()||!params.idempotencyKey||!params.lines.length)throw new Error("invalid_supplier_return");
@@ -121,5 +123,11 @@ export async function createSupplierReturn(client:PoolClient,params:{
   createdBy:params.createdBy,inventoryEventId:events[0].id,debitCode,creditCode:WELL_KNOWN_CODES.inventory,
   amount:rialText(total.toString())});
  await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1",[events[0].id]);
+ if(params.sync)await appendSyncOutboxEvent(client,{
+  locationId:params.locationId,clientEventId:params.sync.clientEventId??params.idempotencyKey,
+  eventType:"inventory.supplier_return.created",payload:{purchaseId:params.purchaseId,
+   settlementMethod:params.settlementMethod,reason:params.reason,lines:params.lines},
+  actorUserId:params.createdBy,actorRole:params.sync.actorRole,
+ });
  return{id:headers[0].id,value:rialText(total.toString()),duplicate:false};
 }

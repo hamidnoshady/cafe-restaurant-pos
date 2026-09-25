@@ -142,6 +142,7 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
     case "inventory.purchase.created": {
       const result = await createDraftPurchaseInTransaction(client, {
         locationId,
+        purchaseId: optionalString(payload, "purchaseId") ?? undefined,
         supplierId: optionalString(payload, "supplierId"),
         note: optionalString(payload, "note") ?? undefined,
         purchaseDate: optionalString(payload, "purchaseDate"),
@@ -186,6 +187,7 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
       const result = await createInventoryTransfer(client, {
         businessId,
         sourceLocationId: locationId,
+        transferId: optionalString(payload, "transferId") ?? undefined,
         destinationLocationId: requiredString(payload, "destinationLocationId"),
         note: optionalString(payload, "note"),
         idempotencyKey: clientEventId,
@@ -238,6 +240,7 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
       const result = await createStockCount(client, {
         businessId,
         locationId,
+        countId: optionalString(payload, "countId") ?? undefined,
         note: optionalString(payload, "note"),
         createdBy: actor.userId,
         lines: array(payload, "lines").map((line) => ({
@@ -284,6 +287,7 @@ export async function applySyncDomainHandler(context: SyncDomainContext): Promis
       const result = await recordProductionRun(client, {
         businessId,
         locationId,
+        runId: optionalString(payload, "runId") ?? undefined,
         formulaId: requiredString(payload, "formulaId"),
         batches: positiveQuantityText(requiredString(payload, "batches")),
         outputQuantity: payload.outputQuantity == null ? null : positiveQuantityText(requiredString(payload, "outputQuantity")),

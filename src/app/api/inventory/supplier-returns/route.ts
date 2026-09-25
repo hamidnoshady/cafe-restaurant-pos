@@ -14,7 +14,7 @@ export const POST = withTenantScope(async (request:NextRequest) => {
  const result=await createSupplierReturn(client,{businessId:session.businessId,locationId:location.id,
   purchaseId:body.purchaseId??"",settlementMethod:body.settlementMethod??"accounts_payable",
   reason:body.reason??"",idempotencyKey:body.idempotencyKey??"",createdBy:session.sub,
-  lines:(body.lines??[]).map(l=>({purchaseItemId:l.purchaseItemId??"",inventoryLotId:l.inventoryLotId??null,
+  sync:{actorRole:session.role},lines:(body.lines??[]).map(l=>({purchaseItemId:l.purchaseItemId??"",inventoryLotId:l.inventoryLotId??null,
    quantity:positiveQuantityText(l.quantity??"")}))});
  await client.query("COMMIT");return NextResponse.json({ok:true,...result});
  }catch(err){await client.query("ROLLBACK");return NextResponse.json({error:(err as Error).message},{status:409});}

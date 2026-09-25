@@ -219,6 +219,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
         settlementMethod,
         supplierId,
         createdBy: session.sub,
+        sync: { actorRole: session.role },
       });
     }
     await client.query("COMMIT");

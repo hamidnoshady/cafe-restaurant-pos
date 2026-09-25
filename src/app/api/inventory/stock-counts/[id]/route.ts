@@ -81,6 +81,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: Conte
       note: body.note,
       lines: body.lines ?? [],
       createdBy: session.sub,
+      sync: { actorRole: session.role },
     });
     await client.query("COMMIT");
     return NextResponse.json({ ok: true, ...result });
@@ -111,6 +112,7 @@ export const DELETE = withTenantScope(async (_request: NextRequest, context: Con
       locationId: location.id,
       countId: id,
       createdBy: session.sub,
+      sync: { actorRole: session.role },
     });
     await client.query("COMMIT");
     return NextResponse.json({ ok: true, id: result.id });

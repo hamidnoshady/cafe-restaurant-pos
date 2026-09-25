@@ -9,10 +9,14 @@ import { getCostingMethod, getInventorySystem } from "./inventory-service";
 import { unitCostFromValue } from "./inventory-reversal";
 import { postExactOperationalInventoryEntry } from "./ledger-service";
 import { WELL_KNOWN_CODES } from "./coa-template";
+import { appendSyncOutboxEvent } from "./sync-outbox";
+import type { Role } from "./auth-edge";
+
+type TransferSync = { actorRole: Role; clientEventId?: string };
 
 export async function createInventoryTransfer(client: PoolClient, params: {
   businessId: string; sourceLocationId: string; destinationLocationId: string; note?: string | null;
-  idempotencyKey: string; createdBy: string;
+  transferId?: string; idempotencyKey: string; createdBy: string; sync?: TransferSync;
   lines: Array<{ sourceInventoryItemId: string; destinationInventoryItemId: string; quantity: QuantityText }>;
 }): Promise<{ id: string; duplicate: boolean }> {
   if (params.sourceLocationId === params.destinationLocationId || !params.idempotencyKey || !params.lines.length)
@@ -27,10 +31,10 @@ export async function createInventoryTransfer(client: PoolClient, params: {
   if (existing[0]) return { id:existing[0].id, duplicate:true };
   const { rows } = await client.query<{id:string}>(
     `INSERT INTO inventory_transfers
-     (business_id,source_location_id,destination_location_id,note,created_by,idempotency_key)
-     VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
+     (id,business_id,source_location_id,destination_location_id,note,created_by,idempotency_key)
+     VALUES(COALESCE($7::uuid,gen_random_uuid()),$1,$2,$3,$4,$5,$6) RETURNING id`,
     [params.businessId,params.sourceLocationId,params.destinationLocationId,params.note?.trim()||null,
-     params.createdBy,params.idempotencyKey]);
+     params.createdBy,params.idempotencyKey,params.transferId??null]);
   for (const line of params.lines) {
     positiveQuantityText(line.quantity);
     const { rows: matched } = await client.query(
@@ -44,11 +48,19 @@ export async function createInventoryTransfer(client: PoolClient, params: {
        VALUES($1,$2,$3,$4)`,
       [rows[0].id,line.sourceInventoryItemId,line.destinationInventoryItemId,line.quantity]);
   }
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: params.sourceLocationId,
+    clientEventId: params.sync.clientEventId ?? params.idempotencyKey,
+    eventType: "inventory.transfer.created",
+    payload: { transferId: rows[0].id, destinationLocationId: params.destinationLocationId, note: params.note ?? null, lines: params.lines },
+    actorUserId: params.createdBy,
+    actorRole: params.sync.actorRole,
+  });
   return { id:rows[0].id, duplicate:false };
 }
 
 export async function shipInventoryTransfer(client: PoolClient, params: {
-  businessId:string; transferId:string; actorId:string;
+  businessId:string; transferId:string; actorId:string; sync?: TransferSync;
 }): Promise<{eventId:string;value:RialText}> {
   const { rows: transfers } = await client.query<{source_location_id:string;status:string}>(
     "SELECT source_location_id,status::text FROM inventory_transfers WHERE id=$1 AND business_id=$2 FOR UPDATE",
@@ -140,11 +152,17 @@ export async function shipInventoryTransfer(client: PoolClient, params: {
     `UPDATE inventory_transfers SET status='shipped',shipped_by=$2,shipped_at=now(),ship_event_id=$3
      WHERE id=$1 AND status='draft'`,[params.transferId,params.actorId,events[0].id]);
   await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1",[events[0].id]);
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: transfer.source_location_id,
+    clientEventId: params.sync.clientEventId ?? `transfer:ship:${params.transferId}`,
+    eventType: "inventory.transfer.shipped",
+    payload: { transferId: params.transferId }, actorUserId: params.actorId, actorRole: params.sync.actorRole,
+  });
   return {eventId:events[0].id,value:rialText(total.toString())};
 }
 
 export async function receiveInventoryTransfer(client: PoolClient, params: {
-  businessId:string;transferId:string;actorId:string;
+  businessId:string;transferId:string;actorId:string;sync?: TransferSync;
 }): Promise<{eventId:string;value:RialText}> {
   const { rows: transfers } = await client.query<{destination_location_id:string;status:string}>(
     "SELECT destination_location_id,status::text FROM inventory_transfers WHERE id=$1 AND business_id=$2 FOR UPDATE",
@@ -206,11 +224,17 @@ export async function receiveInventoryTransfer(client: PoolClient, params: {
     `UPDATE inventory_transfers SET status='received',received_by=$2,received_at=now(),receive_event_id=$3
      WHERE id=$1 AND status='shipped'`,[params.transferId,params.actorId,events[0].id]);
   await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1",[events[0].id]);
+  if (params.sync) await appendSyncOutboxEvent(client, {
+    locationId: transfer.destination_location_id,
+    clientEventId: params.sync.clientEventId ?? `transfer:receive:${params.transferId}`,
+    eventType: "inventory.transfer.received",
+    payload: { transferId: params.transferId }, actorUserId: params.actorId, actorRole: params.sync.actorRole,
+  });
   return {eventId:events[0].id,value:rialText(total.toString())};
 }
 
 export async function cancelInventoryTransfer(client: PoolClient, params: {
-  businessId:string;transferId:string;actorId:string;
+  businessId:string;transferId:string;actorId:string;sync?: TransferSync;
 }): Promise<{eventId:string|null;value:RialText}> {
   const {rows:transfers}=await client.query<{
     source_location_id:string;status:string;ship_event_id:string|null;
@@ -220,10 +244,20 @@ export async function cancelInventoryTransfer(client: PoolClient, params: {
   if(!transfer)throw new Error("transfer_not_found");
   if(transfer.status==="received")throw new Error("received_transfer_requires_reverse_transfer");
   if(transfer.status==="cancelled")throw new Error("transfer_already_cancelled");
+  const appendCancellation = async () => {
+    if (!params.sync) return;
+    await appendSyncOutboxEvent(client, {
+      locationId: transfer.source_location_id,
+      clientEventId: params.sync.clientEventId ?? `transfer:cancel:${params.transferId}`,
+      eventType: "inventory.transfer.cancelled",
+      payload: { transferId: params.transferId }, actorUserId: params.actorId, actorRole: params.sync.actorRole,
+    });
+  };
   if(transfer.status==="draft"){
     await client.query(
       "UPDATE inventory_transfers SET status='cancelled',cancelled_by=$2,cancelled_at=now() WHERE id=$1",
       [params.transferId,params.actorId]);
+    await appendCancellation();
     return {eventId:null,value:rialText("0")};
   }
   if(transfer.status!=="shipped"||!transfer.ship_event_id)throw new Error("invalid_transfer_status");
@@ -283,5 +317,6 @@ export async function cancelInventoryTransfer(client: PoolClient, params: {
     `UPDATE inventory_transfers SET status='cancelled',cancelled_by=$2,cancelled_at=now(),cancel_event_id=$3
      WHERE id=$1 AND status='shipped'`,[params.transferId,params.actorId,events[0].id]);
   await client.query("UPDATE inventory_events SET posting_status='posted' WHERE id=$1",[events[0].id]);
+  await appendCancellation();
   return {eventId:events[0].id,value:rialText(total.toString())};
 }

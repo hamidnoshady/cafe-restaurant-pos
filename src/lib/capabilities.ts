@@ -25,6 +25,11 @@ export type CapabilityKey =
   | "app.growth"
   | "app.website"
   | "app.ai"
+  | "app.workspace"
+  | "app.support"
+  | "support.bug_report"
+  | "platform.billing"
+  | "cloud.messaging"
   | "operation.pos"
   | "operation.local_reporting"
   | "operation.local_backup"
@@ -78,6 +83,13 @@ export const CAPABILITY_REGISTRY: Readonly<Record<CapabilityKey, CapabilityDefin
   "app.growth": { key: "app.growth", executionTarget: "cloud", profiles: ["cloud", "hybrid"], requiredAnyPermission: ["growth.view"], cloudDependency: "cloud" },
   "app.website": { key: "app.website", executionTarget: "cloud", profiles: ["cloud", "hybrid"], requiredAnyPermission: ["website.view", "cms.view", "woocommerce.view"], cloudDependency: "cloud" },
   "app.ai": { key: "app.ai", executionTarget: "cloud", profiles: ["cloud", "hybrid"], planCapability: "ai_assistant", cloudDependency: "cloud" },
+  "app.workspace": { key: "app.workspace", executionTarget: "cloud", profiles: ["cloud", "hybrid"], cloudDependency: "cloud" },
+  // Explicit Local-only exceptions: support and bug reporting may contact the
+  // cloud, but they never become write authorities for operational data.
+  "app.support": { key: "app.support", executionTarget: "cloud", profiles: ["cloud", "hybrid", "local"], cloudDependency: "internet" },
+  "support.bug_report": { key: "support.bug_report", executionTarget: "cloud", profiles: ["cloud", "hybrid", "local"], cloudDependency: "internet" },
+  "platform.billing": { key: "platform.billing", executionTarget: "cloud", profiles: ["cloud", "hybrid"], cloudDependency: "cloud" },
+  "cloud.messaging": { key: "cloud.messaging", executionTarget: "cloud", profiles: ["cloud", "hybrid"], cloudDependency: "cloud" },
   "operation.pos": { key: "operation.pos", executionTarget: "local", profiles: ["hybrid", "local"], requiredAnyPermission: ["orders.create"] },
   "operation.local_reporting": { key: "operation.local_reporting", executionTarget: "local", profiles: ["hybrid", "local"] },
   "operation.local_backup": { key: "operation.local_backup", executionTarget: "local", profiles: ["hybrid", "local"], requiredAnyPermission: ["backup.manage"] },
@@ -118,9 +130,9 @@ export function resolveCapability(key: CapabilityKey, context: CapabilityContext
   }
   // Cloud SaaS executes in cloud already; browser network failures are handled
   // by the request boundary. Hybrid explicitly depends on its cloud channel.
-  if (context.deployment === "hybrid" && definition.cloudDependency) {
+  if (context.deployment !== "cloud" && definition.cloudDependency) {
     if (context.runtime?.internet === "unreachable") return result("requires_internet", "INTERNET_REQUIRED");
-    if (context.runtime?.cloud === "unreachable" || context.runtime?.cloud === "not_configured") {
+    if (definition.cloudDependency === "cloud" && (context.runtime?.cloud === "unreachable" || context.runtime?.cloud === "not_configured")) {
       return result("temporarily_unavailable", "CLOUD_TEMPORARILY_UNAVAILABLE");
     }
   }
@@ -128,10 +140,20 @@ export function resolveCapability(key: CapabilityKey, context: CapabilityContext
 }
 
 const API_CAPABILITIES: readonly [string, CapabilityKey][] = [
+  // Local-only's two intentional cloud exceptions are explicit entries, not
+  // accidental omissions from the guard.
+  ["/api/support", "app.support"],
+  ["/api/bug-report", "support.bug_report"],
   ["/api/ai", "app.ai"],
+  ["/api/workspace", "app.workspace"],
+  ["/api/billing", "platform.billing"],
+  ["/api/messaging", "cloud.messaging"],
   ["/api/growth", "app.growth"],
   ["/api/cms", "app.website"],
+  ["/api/website", "app.website"],
+  ["/api/connections/website", "app.website"],
   ["/api/integrations", "cloud.integrations"],
+  ["/api/mcp", "app.ai"],
   ["/api/branches", "cloud.multi_location"],
   ["/api/rollup", "cloud.multi_location"],
   ["/api/server-sync", "cloud.sync"],

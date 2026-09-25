@@ -6,6 +6,8 @@
  */
 import { getPool, query, type PoolClient } from "./db";
 import { preparePurchaseLines, purchaseDateOrNull, type PurchaseItemInput } from "./purchase-lines";
+import { appendSyncOutboxEvent } from "./sync-outbox";
+import type { Role } from "./auth-edge";
 
 export class PurchaseServiceError extends Error {
   constructor(
@@ -19,11 +21,14 @@ export class PurchaseServiceError extends Error {
 
 export interface CreateDraftPurchaseInput {
   locationId: string;
+  purchaseId?: string;
   supplierId?: string | null;
   note?: string;
   purchaseDate?: string | null;
   items: PurchaseItemInput[];
   createdBy: string | null;
+  /** Present on normal site writes; omitted by cloud replay and automation. */
+  sync?: { actorRole: Role; clientEventId?: string };
 }
 
 export async function createDraftPurchaseInTransaction(
@@ -41,12 +46,12 @@ export async function createDraftPurchaseInTransaction(
   const purchaseDate = purchaseDateOrNull(input.purchaseDate);
   const { lines, total } = await preparePurchaseLines(input.items, input.locationId, client);
   const { rows: purchaseRows } = await client.query<{ id: string }>(
-    `INSERT INTO purchases (location_id, supplier_id, status, total, note, purchase_date, created_by)
-     VALUES ($1, $2, 'draft', $3, $4,
+    `INSERT INTO purchases (id, location_id, supplier_id, status, total, note, purchase_date, created_by)
+     VALUES (COALESCE($7::uuid, gen_random_uuid()), $1, $2, 'draft', $3, $4,
              COALESCE($5::date, (SELECT app_business_date(now(), l.timezone, l.business_day_start_minutes)
                                    FROM locations l WHERE l.id = $1)),
              $6) RETURNING id`,
-    [input.locationId, input.supplierId || null, total, input.note?.trim() || null, purchaseDate, input.createdBy],
+    [input.locationId, input.supplierId || null, total, input.note?.trim() || null, purchaseDate, input.createdBy, input.purchaseId ?? null],
   );
   const purchaseId = purchaseRows[0].id;
   for (const line of lines) {
@@ -55,6 +60,22 @@ export async function createDraftPurchaseInTransaction(
        VALUES ($1, $2, $3, $4::numeric / $3::numeric, $4)`,
       [purchaseId, line.inventoryItemId, line.baseQty, line.totalCost],
     );
+  }
+  if (input.sync) {
+    await appendSyncOutboxEvent(client, {
+      locationId: input.locationId,
+      clientEventId: input.sync.clientEventId ?? `purchase:create:${purchaseId}`,
+      eventType: "inventory.purchase.created",
+      payload: {
+        purchaseId,
+        supplierId: input.supplierId ?? null,
+        note: input.note?.trim() || null,
+        purchaseDate,
+        items: input.items,
+      },
+      actorUserId: input.createdBy,
+      actorRole: input.sync.actorRole,
+    });
   }
   return { id: purchaseId, total };
 }
