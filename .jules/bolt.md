@@ -22,3 +22,6 @@
 ## 2025-02-27 - Pre-Grouping Relations for O(1) Component Render
 **Learning:** React component lists (like ItemRow in MenuManager) frequently filter secondary arrays inside their render scope (`links.filter(l => l.menuItemId === item.id)`). This turns an O(N) render into an O(N^2) operation, causing severe bottlenecks on menus with hundreds of items.
 **Action:** Always extract relational array filtering into a parent `useMemo` that builds a `Map<id, RelatedItem[]>`. Pass down `map.get(id) ?? []` to child components to reduce relation lookup time from O(N) to O(1).
+## 2025-02-27 - Pre-Grouping Relations for O(1) Component Render
+**Learning:** React component lists (like ItemRow in MenuManager) frequently filter secondary arrays inside their render scope (`links.filter(l => l.menuItemId === item.id)`). This turns an O(N) render into an O(N^2) operation, causing severe bottlenecks on menus with hundreds of items.
+**Action:** Always extract relational array filtering into a parent `useMemo` that builds a `Map<id, RelatedItem[]>`. Pass down `map.get(id) ?? []` to child components to reduce relation lookup time from O(N) to O(1).
