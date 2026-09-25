@@ -105,7 +105,9 @@ export interface SessionPayload {
     grantId: string;
     /** platform_admins.id — the operator accountable for anything done here. */
     adminId: string;
-    mode: "read_only" | "full";
+    mode: "read_only" | "controlled" | "full" | "emergency";
+    /** Server-derived technical writes; never populated from a browser request. */
+    allowedCapabilities?: string[];
   };
   /**
    * Phase 20 Wave 2 — employee_sessions.id, set only when this token was

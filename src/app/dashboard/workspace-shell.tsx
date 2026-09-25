@@ -33,6 +33,8 @@ import { readDeploymentProfile } from "@/lib/deployment-mode";
 import { resolveCapability, type CapabilityKey } from "@/lib/capabilities";
 import { deploymentRole } from "@/lib/deployment-role";
 import { getServerSyncConfig } from "@/lib/server-sync";
+import { getGrant } from "@/lib/platform-service";
+import { SupportSessionBanner } from "./support-session-banner";
 
 /**
  * The dashboard nav.
@@ -342,6 +344,7 @@ export async function WorkspaceShell({
   if (!member?.isActive) redirect("/login");
   const [industryResult, prefs, appAvailability, features, deployment, serverSyncConfig] = tenantReads;
   const runtimeRole = deploymentRole();
+  const supportGrant = session.imp ? await getGrant(session.imp.grantId, session.businessId) : null;
   const industry = industryResult.rows[0]?.industry ?? "food_service";
   const currencyDisplay = prefs?.currencyDisplay === "rial" ? "rial" : "toman";
   const permissions = member.permissions;
@@ -426,6 +429,14 @@ export async function WorkspaceShell({
           deploymentProfile={deployment.profile}
         />
         <DashboardMain>
+          {session.imp && supportGrant ? (
+            <SupportSessionBanner session={{
+              businessName: supportGrant.businessName ?? session.businessSlug ?? "کسب‌وکار",
+              operatorName: supportGrant.operatorName ?? "اپراتور پلتفرم",
+              mode: session.imp.mode,
+              expiresAt: supportGrant.expiresAt,
+            }} />
+          ) : null}
           <AppAvailabilityGate availability={appAvailability}>
             <DeploymentCapabilityGate
               profile={deployment.profile}

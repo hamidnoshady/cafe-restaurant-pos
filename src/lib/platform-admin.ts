@@ -81,8 +81,10 @@ export type PlatformCapability =
   | "support.manage"
   // Impersonation, split by blast radius
   | "impersonate.readOnly"
+  | "impersonate.controlled"
   | "impersonate.full"
   | "impersonate.revoke"
+  | "impersonate.extend"
   // …but *replacing this server's entire database* with another server's is not
   // an operations task: it is the one console action that can destroy more data
   // than deleting every business on the platform, so it needs `backup.restore`,
@@ -110,10 +112,12 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     ...READ,
     "support.manage",
     "impersonate.readOnly",
+    "impersonate.controlled",
     "features.write",
     "business.suspend",
     "billing.manage",
     "impersonate.revoke",
+    "impersonate.extend",
     "knowledge.manage",
     "backup.manage",
     "cms.manage",
@@ -126,10 +130,12 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     ...READ,
     "support.manage",
     "impersonate.readOnly",
+    "impersonate.controlled",
     "features.write",
     "business.suspend",
     "billing.manage",
     "impersonate.revoke",
+    "impersonate.extend",
     "knowledge.manage",
     "backup.manage",
     "cms.manage",
@@ -177,6 +183,18 @@ export const PLATFORM_ROLE_LABELS: Record<PlatformAdminRole, string> = {
  */
 export const MAX_IMPERSONATION_MINUTES = 60;
 export const DEFAULT_IMPERSONATION_MINUTES = 30;
+
+export const CONTROLLED_SUPPORT_CAPABILITIES = [
+  "printer.test",
+  "printer.manage",
+  "connection.test",
+  "connection.reconnect",
+  "sync.retry",
+  "integration.test",
+  "media.reprocess",
+  "cache.refresh",
+  "diagnostics.run",
+] as const;
 
 export function clampImpersonationMinutes(requested: number | undefined): number {
   if (!requested || !Number.isFinite(requested) || requested <= 0) {

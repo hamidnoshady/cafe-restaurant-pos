@@ -102,20 +102,46 @@ beforeEach(async () => {
 });
 
 describe("startImpersonation / activeGrant", () => {
+  it("rejects blank and uninformative reasons", async () => {
+    await expect(platformService.startImpersonation({
+      adminId: admin.id,
+      businessId: biz.id,
+      mode: "read_only",
+      reason: "   ",
+    })).rejects.toThrow("reason_too_short");
+  });
+
   it("a fresh grant is live", async () => {
     const { grant } = await platformService.startImpersonation({
       adminId: admin.id,
       businessId: biz.id,
       mode: "read_only",
+      reason: "بررسی مشکل فنی مشتری",
     });
-    const live = await platformService.activeGrant(admin.id, biz.id);
+    const live = await platformService.activeGrant(grant.id, admin.id, biz.id);
     expect(live?.id).toBe(grant.id);
   });
 
   it("does not match a different admin or a different business", async () => {
-    await platformService.startImpersonation({ adminId: admin.id, businessId: biz.id, mode: "read_only" });
-    expect(await platformService.activeGrant(otherAdmin.id, biz.id)).toBeNull();
-    expect(await platformService.activeGrant(admin.id, randomUUID())).toBeNull();
+    const { grant } = await platformService.startImpersonation({ adminId: admin.id, businessId: biz.id, mode: "read_only", reason: "بررسی مشکل فنی مشتری" });
+    expect(await platformService.activeGrant(grant.id, otherAdmin.id, biz.id)).toBeNull();
+    expect(await platformService.activeGrant(grant.id, admin.id, randomUUID())).toBeNull();
+  });
+
+  it("serializes concurrent starts and leaves exactly one live session", async () => {
+    const attempts = await Promise.allSettled([
+      platformService.startImpersonation({ adminId: admin.id, businessId: biz.id, mode: "read_only", reason: "بررسی همزمان مشکل چاپگر" }),
+      platformService.startImpersonation({ adminId: admin.id, businessId: biz.id, mode: "controlled", reason: "بررسی همزمان مشکل اتصال" }),
+    ]);
+    expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1);
+    const count = await db.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM impersonation_grants
+        WHERE platform_admin_id = $1 AND business_id = $2
+          AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()`,
+      [admin.id, biz.id],
+    );
+    expect(Number(count.rows[0].count)).toBe(1);
   });
 });
 
@@ -125,11 +151,12 @@ describe("endImpersonation — the admin leaving on their own", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "full",
+      reason: "بررسی مشکل فنی مشتری",
     });
-    expect(await platformService.activeGrant(admin.id, biz.id)).not.toBeNull();
+    expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).not.toBeNull();
 
     await platformService.endImpersonation(grant.id, admin.id);
-    expect(await platformService.activeGrant(admin.id, biz.id)).toBeNull();
+    expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).toBeNull();
   });
 
   it("another admin cannot end someone else's grant this way", async () => {
@@ -137,10 +164,11 @@ describe("endImpersonation — the admin leaving on their own", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "full",
+      reason: "بررسی مشکل فنی مشتری",
     });
     await platformService.endImpersonation(grant.id, otherAdmin.id);
     // Still live: endImpersonation's WHERE clause requires the same admin.
-    expect(await platformService.activeGrant(admin.id, biz.id)).not.toBeNull();
+    expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).not.toBeNull();
   });
 });
 
@@ -150,11 +178,12 @@ describe("revokeImpersonation — the kill switch", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "full",
+      reason: "بررسی مشکل فنی مشتری",
     });
-    expect(await platformService.activeGrant(admin.id, biz.id)).not.toBeNull();
+    expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).not.toBeNull();
 
     await platformService.revokeImpersonation(grant.id, otherAdmin.id);
-    expect(await platformService.activeGrant(admin.id, biz.id)).toBeNull();
+    expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).toBeNull();
   });
 
   it("a revoked grant cannot also be ended, and vice versa", async () => {
@@ -162,6 +191,7 @@ describe("revokeImpersonation — the kill switch", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "full",
+      reason: "بررسی مشکل فنی مشتری",
     });
     await platformService.revokeImpersonation(grant.id, otherAdmin.id);
 
@@ -187,11 +217,12 @@ describe("expiry", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "read_only",
+      reason: "بررسی مشکل فنی مشتری",
     });
     await db.query("UPDATE impersonation_grants SET expires_at = now() - interval '1 minute' WHERE id = $1", [
       grant.id,
     ]);
-    expect(await platformService.activeGrant(admin.id, biz.id)).toBeNull();
+    expect(await platformService.activeGrant(grant.id, admin.id, biz.id)).toBeNull();
   });
 });
 
@@ -201,6 +232,7 @@ describe("redeemImpersonationHandoff — the business-origin half", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "full",
+      reason: "بررسی مشکل فنی مشتری",
     });
 
     const result = await platformService.redeemImpersonationHandoff(handoff.token);
@@ -221,6 +253,7 @@ describe("redeemImpersonationHandoff — the business-origin half", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "read_only",
+      reason: "بررسی مشکل فنی مشتری",
     });
     expect(await platformService.redeemImpersonationHandoff(handoff.token)).toMatchObject({ ok: true });
     expect(await platformService.redeemImpersonationHandoff(handoff.token)).toEqual({
@@ -241,6 +274,7 @@ describe("redeemImpersonationHandoff — the business-origin half", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "full",
+      reason: "بررسی مشکل فنی مشتری",
     });
     await platformService.revokeImpersonation(grant.id, otherAdmin.id);
     expect(await platformService.redeemImpersonationHandoff(handoff.token)).toEqual({
@@ -254,6 +288,7 @@ describe("redeemImpersonationHandoff — the business-origin half", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "read_only",
+      reason: "بررسی مشکل فنی مشتری",
     });
     await db.query("UPDATE impersonation_grants SET expires_at = now() - interval '1 minute' WHERE id = $1", [
       grant.id,
@@ -269,6 +304,7 @@ describe("redeemImpersonationHandoff — the business-origin half", () => {
       adminId: admin.id,
       businessId: biz.id,
       mode: "read_only",
+      reason: "بررسی مشکل فنی مشتری",
     });
     await db.query(
       "UPDATE impersonation_handoffs SET expires_at = now() - interval '1 minute' WHERE grant_id = $1",

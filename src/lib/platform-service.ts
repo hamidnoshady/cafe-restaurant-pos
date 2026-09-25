@@ -19,7 +19,8 @@ import type { PoolClient } from "pg";
 import { disableFeatures, seedChartOfAccounts } from "./business-provisioning";
 import type { Industry } from "./industries";
 import { industryProfile } from "./industry-profile";
-import { clampImpersonationMinutes } from "./platform-admin";
+import { clampImpersonationMinutes, platformCan } from "./platform-admin";
+import type { PlatformAdminRole } from "./platform-auth-edge";
 import { platformAudit } from "./platform-auth";
 import { isTicketCategory, isTicketPriority, isTicketStatus, statusAfterAdminReply } from "./support-tickets";
 import {
@@ -27,6 +28,7 @@ import {
   hashImpersonationHandoffToken,
   IMPERSONATION_HANDOFF_TTL_MINUTES,
 } from "./impersonation-handoff";
+import { validSupportReason } from "./support-session";
 import { SETTING_KEYS } from "./settings";
 import type { AppUpdateStatus } from "./app-update";
 
@@ -1002,7 +1004,7 @@ export async function businessUsage(businessId: string): Promise<BusinessUsage> 
 // Impersonation grants — the consent-and-time-limit trail
 // ---------------------------------------------------------------------------
 
-export type ImpersonationMode = "read_only" | "full";
+export type ImpersonationMode = "read_only" | "controlled" | "full" | "emergency";
 
 export interface ImpersonationGrant {
   id: string;
@@ -1011,6 +1013,11 @@ export interface ImpersonationGrant {
   userId: string | null;
   mode: ImpersonationMode;
   reason: string | null;
+  ticketId: string | null;
+  operatorName: string | null;
+  operatorRole: string | null;
+  businessName: string | null;
+  allowedCapabilities: string[];
   createdAt: string;
   expiresAt: string;
   endedAt: string | null;
@@ -1024,6 +1031,11 @@ interface GrantRow extends Record<string, unknown> {
   user_id: string | null;
   mode: ImpersonationMode;
   reason: string | null;
+  ticket_id: string | null;
+  operator_name?: string | null;
+  operator_role?: string | null;
+  business_name?: string | null;
+  allowed_capabilities: string[];
   created_at: string;
   expires_at: string;
   ended_at: string | null;
@@ -1038,6 +1050,11 @@ function toGrant(row: GrantRow): ImpersonationGrant {
     userId: row.user_id,
     mode: row.mode,
     reason: row.reason,
+    ticketId: row.ticket_id,
+    operatorName: row.operator_name ?? null,
+    operatorRole: row.operator_role ?? null,
+    businessName: row.business_name ?? null,
+    allowedCapabilities: row.allowed_capabilities ?? [],
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     endedAt: row.ended_at,
@@ -1048,6 +1065,12 @@ function toGrant(row: GrantRow): ImpersonationGrant {
 export class BusinessNotImpersonableError extends Error {
   constructor(reason: string) {
     super(reason);
+  }
+}
+
+export class SupportSessionConflictError extends Error {
+  constructor(public readonly grant: ImpersonationGrant) {
+    super("active_support_session_exists");
   }
 }
 
@@ -1072,6 +1095,10 @@ export async function startImpersonation(params: {
   mode: ImpersonationMode;
   reason?: string | null;
   minutes?: number;
+  ticketId?: string | null;
+  allowedCapabilities?: string[];
+  ipAddress?: string | null;
+  userAgent?: string | null;
 }): Promise<{
   grant: ImpersonationGrant;
   userId: string;
@@ -1080,19 +1107,48 @@ export async function startImpersonation(params: {
   handoff: { token: string };
 }> {
   const minutes = clampImpersonationMinutes(params.minutes);
+  const reason = params.reason?.trim() ?? "";
+  if (!validSupportReason(reason)) throw new BusinessNotImpersonableError("reason_too_short");
 
   return withoutTenantScope("platform", async () => {
     const client = await getPool().connect();
     try {
       await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        `${params.adminId}:${params.businessId}`,
+      ]);
 
-      const { rows: bizRows } = await client.query<{ status: BusinessStatus }>(
-        `SELECT status::text AS status FROM businesses WHERE id = $1`,
+      const { rows: bizRows } = await client.query<{ status: BusinessStatus; support_access_policy: string }>(
+        `SELECT status::text AS status, support_access_policy FROM businesses WHERE id = $1`,
         [params.businessId],
       );
       if (!bizRows[0]) throw new BusinessNotImpersonableError("business_not_found");
       if (bizRows[0].status === "archived") {
         throw new BusinessNotImpersonableError("business_archived");
+      }
+      const policy = bizRows[0].support_access_policy;
+      if (policy === "disabled") throw new BusinessNotImpersonableError("support_access_disabled");
+      if (policy === "strict" || (policy === "approval_required" && params.mode !== "read_only")) {
+        throw new BusinessNotImpersonableError("support_approval_required");
+      }
+
+      const existing = await client.query<GrantRow>(
+        `SELECT id, platform_admin_id, business_id, user_id, mode, reason, ticket_id,
+                allowed_capabilities, created_at, expires_at, ended_at, revoked_at
+           FROM impersonation_grants
+          WHERE platform_admin_id = $1 AND business_id = $2
+            AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+          ORDER BY created_at DESC LIMIT 1`,
+        [params.adminId, params.businessId],
+      );
+      if (existing.rows[0]) throw new SupportSessionConflictError(toGrant(existing.rows[0]));
+
+      if (params.ticketId) {
+        const ticket = await client.query(
+          `SELECT 1 FROM support_tickets WHERE id = $1 AND business_id = $2`,
+          [params.ticketId, params.businessId],
+        );
+        if (!ticket.rowCount) throw new BusinessNotImpersonableError("ticket_unavailable");
       }
 
       // Act as the oldest active owner of the business — a real membership, so
@@ -1107,16 +1163,18 @@ export async function startImpersonation(params: {
 
       const { rows: grantRows } = await client.query<GrantRow>(
         `INSERT INTO impersonation_grants
-           (platform_admin_id, business_id, user_id, mode, reason, expires_at)
-         VALUES ($1, $2, $3, $4, $5, now() + ($6 || ' minutes')::interval)
-         RETURNING id, platform_admin_id, business_id, user_id, mode, reason,
+           (platform_admin_id, business_id, user_id, mode, reason, ticket_id, allowed_capabilities, emergency, platform_admin_token_version, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $4 = 'emergency', (SELECT token_version FROM platform_admins WHERE id = $1), now() + ($8 || ' minutes')::interval)
+         RETURNING id, platform_admin_id, business_id, user_id, mode, reason, ticket_id, allowed_capabilities,
                    created_at, expires_at, ended_at, revoked_at`,
         [
           params.adminId,
           params.businessId,
           ownerRows[0].id,
           params.mode,
-          params.reason?.trim() || null,
+          reason,
+          params.ticketId ?? null,
+          params.allowedCapabilities ?? [],
           String(minutes),
         ],
       );
@@ -1130,6 +1188,35 @@ export async function startImpersonation(params: {
         `INSERT INTO impersonation_handoffs (grant_id, token_hash, expires_at)
          VALUES ($1, $2, now() + ($3 || ' minutes')::interval)`,
         [grantRows[0].id, tokenHash, String(IMPERSONATION_HANDOFF_TTL_MINUTES)],
+      );
+
+      await client.query(
+        `INSERT INTO notification_events
+           (business_id, event_key, severity, title, body, url, payload, dedupe_key)
+         VALUES ($1, 'support_session.started', $2, 'نشست پشتیبانی آغاز شد',
+                 $3, '/settings/security/support-access', $4::jsonb, $5)
+         ON CONFLICT (business_id, dedupe_key) DO NOTHING`,
+        [
+          params.businessId,
+          params.mode === "read_only" ? "important" : "critical",
+          `دلیل: ${reason} — سطح دسترسی: ${params.mode} — مدت: ${minutes} دقیقه`,
+          JSON.stringify({ grantId: grantRows[0].id, mode: params.mode, ticketId: params.ticketId ?? null }),
+          `support-session-started:${grantRows[0].id}`,
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO platform_audit_log
+           (platform_admin_id, business_id, action, entity, entity_id, payload, ip_address, user_agent)
+         VALUES ($1, $2, 'support_session.started', 'impersonation_grant', $3, $4::jsonb, $5, $6)`,
+        [
+          params.adminId,
+          params.businessId,
+          grantRows[0].id,
+          JSON.stringify({ grantId: grantRows[0].id, mode: params.mode, ticketId: params.ticketId ?? null, reason, minutes }),
+          params.ipAddress ?? null,
+          params.userAgent ?? null,
+        ],
       );
 
       await client.query("COMMIT");
@@ -1154,6 +1241,7 @@ export type RedeemImpersonationHandoffResult =
       grantId: string;
       adminId: string;
       mode: ImpersonationMode;
+      allowedCapabilities: string[];
       userId: string;
       fullName: string;
       businessId: string;
@@ -1184,6 +1272,7 @@ export type RedeemImpersonationHandoffResult =
  */
 export async function redeemImpersonationHandoff(
   token: string,
+  expectedBusinessSubdomain?: string,
 ): Promise<RedeemImpersonationHandoffResult> {
   const tokenHash = hashImpersonationHandoffToken(token);
 
@@ -1204,9 +1293,11 @@ export async function redeemImpersonationHandoff(
         business_slug: string;
         business_subdomain: string;
         full_name: string | null;
+        allowedCapabilities: string[];
       }>(
         `SELECT h.id, h.grant_id, h.expires_at, h.redeemed_at,
                 g.platform_admin_id AS admin_id, g.mode::text AS mode, g.user_id,
+                g.allowed_capabilities AS "allowedCapabilities",
                 b.id AS business_id, b.slug::text AS business_slug,
                 b.subdomain::text AS business_subdomain,
                 u.full_name
@@ -1231,6 +1322,10 @@ export async function redeemImpersonationHandoff(
       if (handoff.expires_at.getTime() <= Date.now()) {
         await client.query("ROLLBACK");
         return { ok: false as const, error: "expired" as const };
+      }
+      if (expectedBusinessSubdomain && handoff.business_subdomain !== expectedBusinessSubdomain) {
+        await client.query("ROLLBACK");
+        return { ok: false as const, error: "invalid" as const };
       }
 
       // The grant must still be open, and its owner membership must still
@@ -1257,6 +1352,7 @@ export async function redeemImpersonationHandoff(
         grantId: handoff.grant_id,
         adminId: handoff.admin_id,
         mode: handoff.mode as ImpersonationMode,
+        allowedCapabilities: handoff.allowedCapabilities,
         userId: handoff.user_id,
         fullName: handoff.full_name,
         businessId: handoff.business_id,
@@ -1281,56 +1377,100 @@ export async function redeemImpersonationHandoff(
  * database, so ending or revoking a window takes effect on the next request.
  */
 export async function activeGrant(
+  grantId: string,
   adminId: string,
   businessId: string,
 ): Promise<ImpersonationGrant | null> {
   const { rows } = await withoutTenantScope("platform", () =>
-    query<GrantRow>(
-      `SELECT id, platform_admin_id, business_id, user_id, mode, reason,
-              created_at, expires_at, ended_at, revoked_at
-         FROM impersonation_grants
-        WHERE platform_admin_id = $1 AND business_id = $2
-          AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()
-        ORDER BY created_at DESC LIMIT 1`,
-      [adminId, businessId],
+    query<GrantRow & { operator_role: PlatformAdminRole }>(
+      `SELECT g.id, g.platform_admin_id, g.business_id, g.user_id, g.mode, g.reason,
+              g.ticket_id, g.allowed_capabilities, g.created_at, g.expires_at, g.ended_at, g.revoked_at,
+              pa.role::text AS operator_role
+         FROM impersonation_grants g
+         JOIN platform_admins pa ON pa.id = g.platform_admin_id AND pa.is_active
+           AND (g.platform_admin_token_version IS NULL OR g.platform_admin_token_version = pa.token_version)
+         JOIN businesses b ON b.id = g.business_id AND b.status <> 'archived' AND b.support_access_policy <> 'disabled'
+        WHERE g.id = $1 AND g.platform_admin_id = $2 AND g.business_id = $3
+          AND g.ended_at IS NULL AND g.revoked_at IS NULL AND g.expires_at > now()
+        LIMIT 1`,
+      [grantId, adminId, businessId],
     ),
   );
-  return rows[0] ? toGrant(rows[0]) : null;
+  const row = rows[0];
+  if (!row) return null;
+  const capability = row.mode === "full" || row.mode === "emergency"
+    ? "impersonate.full"
+    : row.mode === "controlled"
+      ? "impersonate.controlled"
+      : "impersonate.readOnly";
+  return platformCan(row.operator_role, capability) ? toGrant(row) : null;
 }
 
 /** The admin ends their own window (they left the business). */
-export async function endImpersonation(grantId: string, adminId: string): Promise<void> {
-  await withoutTenantScope("platform", () =>
+export async function endImpersonation(grantId: string, adminId: string): Promise<boolean> {
+  const result = await withoutTenantScope("platform", () =>
     query(
       `UPDATE impersonation_grants
-          SET ended_at = now()
-        WHERE id = $1 AND platform_admin_id = $2 AND ended_at IS NULL AND revoked_at IS NULL`,
+          SET ended_at = now(), ended_by_type = 'operator', ended_by_id = $2
+        WHERE id = $1 AND platform_admin_id = $2 AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()`,
       [grantId, adminId],
     ),
   );
+  return (result.rowCount ?? 0) > 0;
 }
 
 /** A different admin pulls the plug on a live grant (kill switch). */
-export async function revokeImpersonation(grantId: string, revokedBy: string): Promise<void> {
-  await withoutTenantScope("platform", () =>
+export async function revokeImpersonation(grantId: string, revokedBy: string): Promise<boolean> {
+  const result = await withoutTenantScope("platform", () =>
     query(
       `UPDATE impersonation_grants
-          SET revoked_at = now(), revoked_by = $2
-        WHERE id = $1 AND ended_at IS NULL AND revoked_at IS NULL`,
+          SET revoked_at = now(), revoked_by = $2, ended_by_type = 'platform_admin', ended_by_id = $2
+        WHERE id = $1 AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()`,
       [grantId, revokedBy],
     ),
   );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** A tenant owner/admin immediately revokes one live grant for their business. */
+export async function tenantRevokeImpersonation(grantId: string, businessId: string, actorId: string): Promise<boolean> {
+  const result = await withoutTenantScope("platform", () => query(
+    `UPDATE impersonation_grants
+        SET revoked_at = now(), ended_by_type = 'tenant_admin', ended_by_id = $3
+      WHERE id = $1 AND business_id = $2 AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()`,
+    [grantId, businessId, actorId],
+  ));
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function getGrant(grantId: string, businessId: string): Promise<ImpersonationGrant | null> {
+  const { rows } = await withoutTenantScope("platform", () => query<GrantRow>(
+    `SELECT g.id, g.platform_admin_id, g.business_id, g.user_id, g.mode, g.reason,
+            g.ticket_id, g.allowed_capabilities, pa.full_name AS operator_name,
+            pa.role::text AS operator_role, b.name AS business_name,
+            g.created_at, g.expires_at, g.ended_at, g.revoked_at
+       FROM impersonation_grants g
+       JOIN platform_admins pa ON pa.id = g.platform_admin_id
+       JOIN businesses b ON b.id = g.business_id
+      WHERE g.id = $1 AND g.business_id = $2`,
+    [grantId, businessId],
+  ));
+  return rows[0] ? toGrant(rows[0]) : null;
 }
 
 /** Recent impersonation grants across the platform, or scoped to one business. */
 export async function listGrants(businessId?: string): Promise<ImpersonationGrant[]> {
   const { rows } = await withoutTenantScope("platform", () =>
     query<GrantRow>(
-      `SELECT id, platform_admin_id, business_id, user_id, mode, reason,
-              created_at, expires_at, ended_at, revoked_at
-         FROM impersonation_grants
-        WHERE ($1::uuid IS NULL OR business_id = $1)
-        ORDER BY created_at DESC LIMIT 100`,
+      `SELECT g.id, g.platform_admin_id, g.business_id, g.user_id, g.mode, g.reason,
+              g.ticket_id, g.allowed_capabilities, pa.full_name AS operator_name,
+              pa.role::text AS operator_role, b.name AS business_name,
+              g.created_at, g.expires_at, g.ended_at, g.revoked_at
+         FROM impersonation_grants g
+         JOIN platform_admins pa ON pa.id = g.platform_admin_id
+         JOIN businesses b ON b.id = g.business_id
+        WHERE ($1::uuid IS NULL OR g.business_id = $1)
+        ORDER BY g.created_at DESC LIMIT 100`,
       [businessId ?? null],
     ),
   );

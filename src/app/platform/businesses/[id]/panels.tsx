@@ -8,7 +8,9 @@
  * header and the sidebar without a remount.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPersianNumber } from "@/lib/digits";
 import { validateSubdomain } from "@/lib/slug";
 import { INDUSTRY_LABELS, type Industry } from "@/lib/industries";
@@ -632,158 +634,152 @@ export function FeaturesPanel() {
 interface Grant {
   id: string;
   platformAdminId: string;
-  mode: "read_only" | "full";
-  reason: string | null;
+  operatorName: string | null;
+  operatorRole: string | null;
+  mode: "read_only" | "controlled" | "full" | "emergency";
+  reason: string;
+  ticketId: string | null;
   createdAt: string;
   expiresAt: string;
   endedAt: string | null;
   revokedAt: string | null;
 }
 
+interface TicketOption { id: string; subject: string; status: string }
+
+const MODE_LABELS: Record<Grant["mode"], string> = {
+  read_only: "فقط خواندنی",
+  controlled: "دسترسی محدود فنی",
+  full: "دسترسی کامل",
+  emergency: "دسترسی اضطراری",
+};
+
 export function ImpersonationPanel() {
   const { business, setNotice, version } = useBusiness();
   const can = useCan();
+  const searchParams = useSearchParams();
   const [grants, setGrants] = useState<Grant[] | null>(null);
+  const [tickets, setTickets] = useState<TicketOption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [ticketId, setTicketId] = useState("");
+  const [mode, setMode] = useState<"read_only" | "controlled" | "full">("read_only");
+  const [minutes, setMinutes] = useState(30);
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!business) return;
-    const { ok, data } = await api<{ grants: Grant[]; error?: string }>(
-      `/api/platform/impersonation?businessId=${business.id}`,
-    );
-    if (ok) setGrants(data.grants);
-    else setError(errorMessage(data.error));
+    const [grantResult, ticketResult] = await Promise.all([
+      api<{ grants: Grant[]; error?: string }>(`/api/platform/impersonation?businessId=${business.id}`),
+      api<{ tickets: TicketOption[] }>(`/api/platform/support/tickets?businessId=${business.id}&pageSize=100`),
+    ]);
+    if (grantResult.ok) setGrants(grantResult.data.grants);
+    else setError(errorMessage(grantResult.data.error));
+    if (ticketResult.ok) setTickets(ticketResult.data.tickets.filter((t) => !["closed", "resolved"].includes(t.status)));
   }, [business]);
 
+  useEffect(() => { void load(); }, [load, version]);
   useEffect(() => {
-    void load();
-  }, [load, version]);
-
+    const linkedTicket = searchParams.get("ticketId");
+    if (!linkedTicket) return;
+    setTicketId(linkedTicket);
+    const ticket = tickets.find((candidate) => candidate.id === linkedTicket);
+    if (ticket && !reason) setReason(`تیکت پشتیبانی ${ticket.id.slice(0, 8)} — ${ticket.subject}`);
+    setOpen(true);
+  }, [reason, searchParams, tickets]);
   if (!business) return null;
 
-  async function enter(mode: "read_only" | "full") {
-    const label = mode === "full" ? "دسترسی کامل" : "فقط‌خواندنی";
-    if (!window.confirm(`ورود به «${business!.name}» با ${label}؟ این اقدام ثبت می‌شود.`)) return;
-    setBusy(true);
-    setError(null);
-    const { ok, data } = await api<{ handoffUrl?: string; error?: string }>(
+  const isActive = (g: Grant) => !g.endedAt && !g.revokedAt && new Date(g.expiresAt).getTime() > Date.now();
+  const active = (grants ?? []).find(isActive) ?? null;
+
+  async function enter() {
+    if (reason.trim().length < 10) { setError("دلیل نشست باید دست‌کم ۱۰ نویسه و روشن باشد."); return; }
+    setBusy(true); setError(null);
+    const { ok, data } = await api<{ handoffUrl?: string; error?: string; code?: string }>(
       `/api/platform/businesses/${business!.id}/impersonate`,
-      { method: "POST", body: JSON.stringify({ mode, reason: reason.trim() || undefined }) },
+      { method: "POST", body: JSON.stringify({ mode, reason: reason.trim(), ticketId: ticketId || undefined, minutes }) },
     );
     setBusy(false);
-    if (ok) {
-      // Host-routed deployments mint the session on the business's own origin,
-      // so the console hands the browser a one-time URL to follow there; a
-      // single-host install mints the cookie here and navigates straight in.
-      window.location.href = data.handoffUrl ?? "/dashboard";
-    } else {
-      setError(errorMessage(data.error));
-    }
+    if (ok) window.location.href = data.handoffUrl ?? "/dashboard";
+    else if (data.code === "ACTIVE_SUPPORT_SESSION_EXISTS") setError("یک نشست فعال دارید؛ ابتدا همان نشست را ادامه دهید یا پایان دهید.");
+    else setError(errorMessage(data.error));
   }
 
-  async function revoke(grantId: string) {
-    if (!window.confirm("این نشست پشتیبانی لغو شود؟")) return;
-    const { ok, data } = await api<{ error?: string }>(
-      `/api/platform/impersonation/${grantId}?action=revoke`,
-      { method: "DELETE" },
-    );
-    if (ok) {
-      setNotice("نشست پشتیبانی لغو شد.");
-      void load();
-    } else setError(errorMessage(data.error));
+  async function closeGrant(grant: Grant, revoke: boolean) {
+    setBusy(true); setError(null);
+    const { ok, data } = await api<{ error?: string }>(`/api/platform/impersonation/${grant.id}${revoke ? "?action=revoke" : ""}`, { method: "DELETE" });
+    setBusy(false);
+    if (ok) { setNotice(revoke ? "نشست پشتیبانی لغو شد." : "نشست پشتیبانی پایان یافت."); void load(); }
+    else setError(errorMessage(data.error));
   }
-
-  function grantState(g: Grant): { label: string; cls: string } {
-    if (g.revokedAt) return { label: "لغو‌شده", cls: "text-red-700 dark:text-red-300" };
-    if (g.endedAt) return { label: "پایان‌یافته", cls: "text-muted-foreground" };
-    if (new Date(g.expiresAt).getTime() <= Date.now())
-      return { label: "منقضی", cls: "text-muted-foreground" };
-    return { label: "باز", cls: "text-emerald-700 dark:text-emerald-300" };
-  }
-
-  const canReadOnly = can("impersonate.readOnly");
-  const canFull = can("impersonate.full");
-  const canRevoke = can("impersonate.revoke");
-  const openGrants = (grants ?? []).filter((g) => grantState(g).label === "باز");
 
   return (
-    <Card title="دسترسی پشتیبانی">
+    <div className="space-y-4">
       <ErrorBox>{error}</ErrorBox>
-
-      {openGrants.length > 0 ? (
-        <div className="mb-3 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
-          {formatPersianNumber(openGrants.length)} نشست پشتیبانی هم‌اکنون باز است. پیش از بستن
-          مرورگر، آن را ببندید یا لغو کنید.
-        </div>
-      ) : null}
-
-      {canReadOnly || canFull ? (
-        <div className="mb-4 rounded-lg border border-border bg-card p-3">
-          <Field label="دلیل (اختیاری، در گزارش ثبت می‌شود)">
-            <input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className={inputClass}
-              placeholder="مثلاً: بررسی مشکل چاپ رسید"
-            />
-          </Field>
-          <div className="flex flex-wrap gap-2">
-            {canReadOnly ? (
-              <Button variant="ghost" onClick={() => void enter("read_only")} disabled={busy}>
-                ورود فقط‌خواندنی
-              </Button>
-            ) : null}
-            {canFull ? (
-              <Button variant="danger" onClick={() => void enter("full")} disabled={busy}>
-                ورود با دسترسی کامل
-              </Button>
-            ) : null}
+      {active ? (
+        <Card title="نشست پشتیبانی فعال">
+          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <p><span className="block text-xs text-muted-foreground">اپراتور</span>{active.operatorName ?? "اپراتور پلتفرم"} · {active.operatorRole ?? "—"}</p>
+            <p><span className="block text-xs text-muted-foreground">نوع دسترسی</span>{MODE_LABELS[active.mode]}</p>
+            <p><span className="block text-xs text-muted-foreground">دلیل</span>{active.reason}</p>
+            <p><span className="block text-xs text-muted-foreground">تیکت مرتبط</span>{active.ticketId ? `#${active.ticketId.slice(0, 8)}` : "بدون تیکت"}</p>
+            <p><span className="block text-xs text-muted-foreground">شروع</span>{new Date(active.createdAt).toLocaleString("fa-IR")}</p>
+            <p><span className="block text-xs text-muted-foreground">پایان خودکار</span>{new Date(active.expiresAt).toLocaleString("fa-IR")}</p>
           </div>
-        </div>
-      ) : null}
-
-      {grants === null ? (
-        <SkeletonRows rows={3} />
-      ) : grants.length === 0 ? (
-        <p className="text-sm text-muted-foreground">هنوز دسترسی پشتیبانی ثبت نشده است.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button onClick={() => setOpen(true)} disabled={busy}>ادامه نشست فعلی</Button>
+            <Button variant="ghost" onClick={() => void closeGrant(active, false)} disabled={busy}>پایان نشست من</Button>
+            {can("impersonate.revoke") ? <Button variant="danger" onClick={() => void closeGrant(active, true)} disabled={busy}>لغو نشست</Button> : null}
+          </div>
+        </Card>
       ) : (
-        <div className="space-y-2">
-          {grants.map((g) => {
-            const st = grantState(g);
-            const open = st.label === "باز";
-            return (
-              <div
-                key={g.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card p-3 text-sm"
-              >
-                <div>
-                  <span className="font-medium">
-                    {g.mode === "full" ? "دسترسی کامل" : "فقط‌خواندنی"}
-                  </span>
-                  <span className={`ms-2 text-xs ${st.cls}`}>{st.label}</span>
-                  {g.reason ? <p className="mt-0.5 text-xs text-muted-foreground">{g.reason}</p> : null}
-                  <p className="mt-0.5 text-xs text-muted-foreground" dir="ltr">
-                    {new Date(g.createdAt).toLocaleString("fa-IR")} ←{" "}
-                    {new Date(g.expiresAt).toLocaleString("fa-IR")}
-                  </p>
-                </div>
-                {open && canRevoke ? (
-                  <button
-                    type="button"
-                    onClick={() => void revoke(g.id)}
-                    className="rounded-lg border border-red-500/30 px-2 py-1 text-xs text-red-700 dark:text-red-300 hover:bg-red-500/10"
-                  >
-                    لغو
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
+        <Card title="شروع نشست پشتیبانی">
+          <p className="mb-4 text-sm text-muted-foreground">دسترسی موقت، ثبت‌شده و قابل لغو است. حالت فقط‌خواندنی گزینهٔ پیش‌فرض است.</p>
+          <Button onClick={() => setOpen(true)}>شروع نشست</Button>
+        </Card>
       )}
-    </Card>
+
+      <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader><DialogTitle>شروع نشست پشتیبانی</DialogTitle><DialogDescription>کسب‌وکار: {business.name}</DialogDescription></DialogHeader>
+            <div className="mt-4">
+              <Field label="دلیل دسترسی" hint="الزامی؛ دست‌کم ۱۰ نویسه">
+                <textarea value={reason} onChange={(e) => setReason(e.target.value)} className={`${inputClass} min-h-24 py-2`} placeholder="مثلاً: بررسی مشکل شناسایی نشدن چاپگر فاکتور" />
+              </Field>
+              <Field label="تیکت مرتبط">
+                <select value={ticketId} onChange={(e) => setTicketId(e.target.value)} className={inputClass}>
+                  <option value="">بدون تیکت</option>
+                  {tickets.map((ticket) => <option key={ticket.id} value={ticket.id}>#{ticket.id.slice(0, 8)} — {ticket.subject}</option>)}
+                </select>
+              </Field>
+              <Field label="سطح دسترسی">
+                <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} className={inputClass}>
+                  {can("impersonate.readOnly") ? <option value="read_only">فقط خواندنی (پیشنهادی)</option> : null}
+                  {can("impersonate.controlled") ? <option value="controlled">دسترسی محدود فنی</option> : null}
+                  {can("impersonate.full") ? <option value="full">دسترسی کامل — پرخطر</option> : null}
+                </select>
+              </Field>
+              <Field label="مدت">
+                <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} className={inputClass}>
+                  {[15, 30, 45, 60].map((value) => <option key={value} value={value}>{formatPersianNumber(value)} دقیقه</option>)}
+                </select>
+              </Field>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>انصراف</Button>
+              <Button variant={mode === "full" ? "danger" : "primary"} onClick={() => void enter()} disabled={busy || reason.trim().length < 10}>{busy ? "در حال ایجاد…" : "ایجاد و ورود"}</Button>
+            </div>
+          </DialogContent>
+      </Dialog>
+
+      <Card title="تاریخچه نشست‌ها">
+        {grants === null ? <SkeletonRows rows={4} /> : grants.length === 0 ? <p className="text-sm text-muted-foreground">نشستی ثبت نشده است.</p> : (
+          <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead><tr className="border-b border-border text-right text-xs text-muted-foreground"><th className="p-2">وضعیت</th><th className="p-2">اپراتور</th><th className="p-2">دسترسی</th><th className="p-2">دلیل</th><th className="p-2">شروع</th><th className="p-2">پایان</th></tr></thead><tbody>{grants.map((g) => <tr key={g.id} className="border-b border-border/60"><td className="p-2">{isActive(g) ? "فعال" : g.revokedAt ? "لغوشده" : g.endedAt ? "پایان‌یافته" : "منقضی"}</td><td className="p-2">{g.operatorName ?? "—"}</td><td className="p-2">{MODE_LABELS[g.mode]}</td><td className="max-w-xs truncate p-2">{g.reason}</td><td className="p-2">{new Date(g.createdAt).toLocaleString("fa-IR")}</td><td className="p-2">{g.endedAt ? new Date(g.endedAt).toLocaleString("fa-IR") : "—"}</td></tr>)}</tbody></table></div>
+        )}
+      </Card>
+      <Card title="سیاست امنیتی پشتیبانی"><p className="text-sm leading-6 text-muted-foreground">هر نشست موقت است، شناسهٔ دقیق مجوز در هر درخواست دوباره بررسی می‌شود و تغییرات مجاز با هویت اپراتور ثبت می‌شوند. اطلاعات محرمانه و خروجی‌های حساس جزو دسترسی عادی پشتیبانی نیستند.</p></Card>
+    </div>
   );
 }
 

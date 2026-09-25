@@ -33,6 +33,10 @@ export interface PlatformSessionPayload {
   fullName: string;
   email: string;
   tokenVersion?: number;
+  /** True only when this session was minted after a successful MFA challenge. */
+  mfaVerified?: boolean;
+  /** jose supplies this registered claim when verifying a signed session. */
+  iat?: number;
 }
 
 /**

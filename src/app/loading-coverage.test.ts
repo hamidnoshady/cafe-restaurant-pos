@@ -78,6 +78,9 @@ describe("route-level skeleton coverage", () => {
       // an action, with the button's own "در حال خروج…" state — and the menu
       // renders a fixed list of links, so there is no data region to reserve.
       "dashboard/platform-user-menu.tsx",
+      // Persistent support chrome has no initial read; its only request is the
+      // explicit end-session action and the button owns that pending state.
+      "dashboard/support-session-banner.tsx",
     ]);
     const offenders: string[] = [];
     for (const file of walkTsFiles(APP_DIR)) {

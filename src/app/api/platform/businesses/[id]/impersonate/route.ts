@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePlatformCapability, platformAudit, withPlatformScope } from "@/lib/platform-auth";
+import { requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import { businessHost, hostRoutingEnabled, preferredProto, rootDomain } from "@/lib/host";
 import {
   startImpersonation,
   getBusiness,
   BusinessNotImpersonableError,
+  SupportSessionConflictError,
   type ImpersonationMode,
 } from "@/lib/platform-service";
 
@@ -46,17 +47,24 @@ interface Ctx {
 export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => {
   const { id } = await ctx.params;
 
-  let body: { mode?: ImpersonationMode; reason?: string; minutes?: number };
+  let body: { mode?: ImpersonationMode; reason?: string; minutes?: number; ticketId?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const mode: ImpersonationMode = body.mode === "full" ? "full" : "read_only";
-  const capability = mode === "full" ? "impersonate.full" : "impersonate.readOnly";
+  const mode: ImpersonationMode = body.mode === "full" ? "full" : body.mode === "controlled" ? "controlled" : "read_only";
+  const capability = mode === "full" ? "impersonate.full" : mode === "controlled" ? "impersonate.controlled" : "impersonate.readOnly";
   const { session, error } = await requirePlatformCapability(capability);
   if (error) return error;
+  if (mode === "full") {
+    const authenticatedAt = (session.iat ?? 0) * 1000;
+    if (!authenticatedAt || Date.now() - authenticatedAt > 15 * 60_000) {
+      return NextResponse.json({ error: "recent_auth_required" }, { status: 403 });
+    }
+    if (!session.mfaVerified) return NextResponse.json({ error: "mfa_required" }, { status: 403 });
+  }
 
   try {
     const { grant, userId, fullName, handoff } = await startImpersonation({
@@ -65,15 +73,10 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
       mode,
       reason: body.reason,
       minutes: body.minutes,
-    });
-
-    await platformAudit({
-      adminId: session.padmin,
-      businessId: id,
-      action: "impersonation.start",
-      entity: "impersonation_grant",
-      entityId: grant.id,
-      payload: { mode, minutes: minutesBetween(grant.createdAt, grant.expiresAt), reason: grant.reason },
+      ticketId: body.ticketId,
+      allowedCapabilities: mode === "controlled" ? ["printer.test", "connection.test", "sync.retry", "integration.test", "diagnostics.run"] : [],
+      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      userAgent: request.headers.get("user-agent"),
     });
 
     // The business was just confirmed to exist by startImpersonation, so this
@@ -107,7 +110,7 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
       businessSubdomain: business?.subdomain,
       locationId: null,
       fullName,
-      imp: { grantId: grant.id, adminId: session.padmin, mode },
+      imp: { grantId: grant.id, adminId: session.padmin, mode, allowedCapabilities: grant.allowedCapabilities },
     });
 
     const res = NextResponse.json({
@@ -116,14 +119,12 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
     res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
     return res;
   } catch (err) {
+    if (err instanceof SupportSessionConflictError) {
+      return NextResponse.json({ error: err.message, code: "ACTIVE_SUPPORT_SESSION_EXISTS", sessionId: err.grant.id, expiresAt: err.grant.expiresAt }, { status: 409 });
+    }
     if (err instanceof BusinessNotImpersonableError) {
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
     throw err;
   }
 });
-
-/** Whole minutes between two ISO timestamps, for the audit payload. */
-function minutesBetween(from: string, to: string): number {
-  return Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60000);
-}

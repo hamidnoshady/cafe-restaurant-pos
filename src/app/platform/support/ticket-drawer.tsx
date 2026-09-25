@@ -190,6 +190,12 @@ export function SupportTicketDrawer({
               </div>
             ) : null}
           </div>
+          <Button asChild className="mb-4 w-full sm:w-auto">
+            <Link href={`/platform/businesses/${ticket.businessId}/support?ticketId=${ticket.id}`}>
+              شروع نشست پشتیبانی
+              <ExternalLinkIcon className="size-3.5" />
+            </Link>
+          </Button>
 
           {/* Conversation */}
           <PlatformDetailSection title="گفت‌وگو">

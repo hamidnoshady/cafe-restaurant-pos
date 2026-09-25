@@ -25,8 +25,11 @@ import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./t
 import { capabilityForApiPath, capabilityHttpStatus, resolveCapability } from "./capabilities";
 import { readDeploymentProfile } from "./deployment-mode";
 import { deploymentRole } from "./deployment-role";
+import { supportMutationAllowed } from "./support-session";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+export { supportMutationAllowed } from "./support-session";
 
 /**
  * Phase 17 security review — `imp.grantId`'s own doc comment (auth-edge.ts)
@@ -40,9 +43,9 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  */
 async function checkImpersonation(session: SessionPayload | null): Promise<SessionPayload | null> {
   if (!session?.imp) return session;
-  const grant = await activeGrant(session.imp.adminId, session.businessId);
-  if (!grant || grant.id !== session.imp.grantId) return null;
-  return session;
+  const grant = await activeGrant(session.imp.grantId, session.imp.adminId, session.businessId);
+  if (!grant || grant.mode !== session.imp.mode) return null;
+  return { ...session, imp: { ...session.imp, allowedCapabilities: grant.allowedCapabilities } };
 }
 
 /**
@@ -152,12 +155,20 @@ export function withTenantScope<Args extends unknown[]>(
   return async (...args: Args) => {
     const store = await cookies();
     const token = store.get(SESSION_COOKIE)?.value;
-    const session = token ? await verifySession(token) : null;
+    const unvalidatedSession = token ? await verifySession(token) : null;
+    const session = await checkImpersonation(unvalidatedSession);
     const scope = session
       ? businessScope(session.businessId, session.locationId, session.sub)
       : NO_SCOPE;
     return runInTenantScope(scope, () => withAuthorizationMemo(async () => {
       const request = args[0] as NextRequest | undefined;
+
+      if (session?.imp && request && MUTATING_METHODS.has(request.method) && !supportMutationAllowed(session, request.nextUrl.pathname)) {
+        return NextResponse.json(
+          { error: session.imp.mode === "read_only" ? "impersonation_read_only" : "support_capability_denied" },
+          { status: 403 },
+        );
+      }
 
       // Phase 17 — feature-flag enforcement. Only checked once a session
       // exists: an unauthenticated request still gets its ordinary 401 from

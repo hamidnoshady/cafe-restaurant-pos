@@ -28,7 +28,14 @@ export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
   if (!token) return NextResponse.json({ error: "missing_token" }, { status: 400 });
 
-  const result = await redeemImpersonationHandoff(token);
+  const parsedHost = hostRoutingEnabled() ? parseHost(requestHost(request.headers), rootDomain()) : null;
+  if (parsedHost && parsedHost.kind !== "business") {
+    return NextResponse.json({ error: "wrong_origin" }, { status: 400 });
+  }
+  const result = await redeemImpersonationHandoff(
+    token,
+    parsedHost?.kind === "business" ? parsedHost.label : undefined,
+  );
   if (!result.ok) {
     return NextResponse.json(
       { error: result.error },
@@ -42,8 +49,7 @@ export async function GET(request: NextRequest) {
   // navigation — refuse here instead, so a misdelivered or replayed token fails
   // at the point of use rather than somewhere confusing.
   if (hostRoutingEnabled()) {
-    const host = parseHost(requestHost(request.headers), rootDomain());
-    if (host.kind !== "business" || host.label !== result.businessSubdomain) {
+    if (parsedHost?.kind !== "business" || parsedHost.label !== result.businessSubdomain) {
       return NextResponse.json({ error: "wrong_origin" }, { status: 400 });
     }
   }
@@ -56,7 +62,7 @@ export async function GET(request: NextRequest) {
     businessSubdomain: result.businessSubdomain,
     locationId: null,
     fullName: result.fullName,
-    imp: { grantId: result.grantId, adminId: result.adminId, mode: result.mode },
+    imp: { grantId: result.grantId, adminId: result.adminId, mode: result.mode, allowedCapabilities: result.allowedCapabilities },
   });
 
   // The redirect target is built from the Host header, not `request.url`: inside
