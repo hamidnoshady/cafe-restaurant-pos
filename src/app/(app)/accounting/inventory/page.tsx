@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireFeatureForPage } from "@/lib/features";
 import {
   getBusinessIndustry,
@@ -10,7 +12,6 @@ import {
   inventoryModuleForWorkspace,
   inventoryWorkspaceModel,
 } from "@/lib/inventory-workspace";
-import { memberAccessFor } from "@/lib/member-access";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
 import { InventoryManager } from "@/app/dashboard/inventory/inventory-manager";

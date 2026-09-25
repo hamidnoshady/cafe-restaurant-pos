@@ -107,7 +107,7 @@ export const CRM_NAV_ITEMS: readonly CrmNavItem[] = [
 ];
 
 /**
- * The entries a role may open — `canViewCrmSection` is the only gate, so a
+ * The entries a member may open — `canViewCrmSection` is the only gate, so a
  * section that becomes floor-safe changes the menu by changing that one
  * function rather than this list.
  */

@@ -46,7 +46,7 @@ interface CreateBody {
 
 /** Starts a new reconciliation for an account. Only one may be in progress per account at a time. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeReconciliationManage);
   if (error) return error;
 
   let body: CreateBody;

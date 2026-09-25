@@ -26,7 +26,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 /**
- * A role's label, or the raw value when it is none of the six — platform-level
+ * A role's label, or the raw value when it is none of the built-in roles — platform-level
  * strings and stale tokens should degrade to readable text, never to
  * `undefined` rendered as nothing.
  */

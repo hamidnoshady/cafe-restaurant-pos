@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireFeatureForPage } from "@/lib/features";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { HolooMigrationWizard } from "./wizard";
@@ -12,7 +14,9 @@ export default async function HolooMigrationPage({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!["owner", "manager", "accountant"].includes(session.role)) redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set<string>();
+  if (!permissions.has(PERMISSIONS.ledgerView)) redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "integrations");
   const { connectionId } = await searchParams;
 

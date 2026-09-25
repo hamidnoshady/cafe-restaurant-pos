@@ -207,6 +207,7 @@ export interface CreateMembershipInput {
   phoneE164?: string | null;
   locationIds?: string[];
   defaultLocationId?: string | null;
+  locationScope?: "all" | "selected" | "home" | "none";
   overrides?: PermissionOverrides;
   actorId: string | null;
 }
@@ -301,6 +302,7 @@ export async function createMembership(
           phone_e164, location_id, permissions, location_scope)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
                CASE WHEN $3::user_role = 'owner'::user_role THEN 'all'::location_scope
+                    WHEN $11::text IS NOT NULL THEN $11::location_scope
                     WHEN cardinality($10::uuid[]) > 0 THEN 'selected'::location_scope
                     WHEN $8::uuid IS NOT NULL THEN 'home'::location_scope
                     ELSE 'all'::location_scope END) RETURNING id`,
@@ -315,6 +317,7 @@ export async function createMembership(
         locations.defaultLocationId,
         JSON.stringify(input.overrides ?? {}),
         locations.locationIds,
+        input.locationScope ?? null,
       ],
     );
     const userId = created[0].id;

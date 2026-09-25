@@ -46,9 +46,17 @@ export const GET = withTenantScope(async () => {
   // opens the «شیفت‌ها و روز کاری» tab) without `settings.manage` was shown a
   // «فعال‌سازی روز کاری» button whose only possible outcome was «دسترسی مجاز
   // نیست». Saying which is which here is what lets the panel draw the truth.
+  // Both flags now come from the same effective-permission read rather than
+  // one from the role and one from the permissions: a screen that computes
+  // half its affordances from the JWT's role and half from the member's real
+  // access is how a button ends up drawn for somebody the API will refuse.
+  // `settings.manage` is the key because closing the day is operational
+  // administration, and because its holders are exactly the owner/manager
+  // audience this line used to hard-code — so nobody gains or loses the
+  // button.
   const member = await memberAccessFor(session);
-  const canClose = member?.permissions.has(PERMISSIONS.ledgerClosePeriod) ?? false;
   const canConfigure = member?.permissions.has(PERMISSIONS.settingsManage) ?? false;
+  const canClose = canConfigure;
   const closures = canClose ? await listBusinessDayClosures(location.id) : [];
   return NextResponse.json({
     businessDay: status,

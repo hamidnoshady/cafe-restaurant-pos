@@ -24,7 +24,7 @@ export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
 
 /** Hard delete — only ever succeeds for an asset with no depreciation posted yet. */
 export const DELETE = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeAssetsManage);
   if (error) return error;
 
   const { id } = await ctx.params;

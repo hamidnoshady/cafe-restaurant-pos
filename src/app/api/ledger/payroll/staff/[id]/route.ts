@@ -8,7 +8,7 @@ interface Ctx {
 }
 
 export const PATCH = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.payrollManage);
   if (error) return error;
 
   const { id } = await ctx.params;

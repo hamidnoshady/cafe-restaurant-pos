@@ -1,6 +1,7 @@
+import { memberAccessFor } from "@/lib/member-access";
 import { NextRequest, NextResponse } from "next/server";
 import { withTenantScope, requirePermission } from "@/lib/auth";
-import { hasPermission, parseOverrides, PERMISSIONS } from "@/lib/permissions";
+import { PERMISSIONS } from "@/lib/permissions";
 import { type CartItemInput } from "@/lib/order-cart";
 import { createOrder } from "@/lib/order-mutations";
 import { listOrders, listSettledOrdersInWindow } from "@/lib/order-read-service";
@@ -56,13 +57,13 @@ export const GET = withTenantScope(async (request: NextRequest) => {
     return NextResponse.json({ orders });
   }
 
-  // The shift-review audience of /api/reports/shift-orders, minus accountant —
-  // who has no orders screen to render a picker on.
-  const canReviewShifts = hasPermission(
-    guard.membership.role,
-    parseOverrides(guard.membership.permissions),
-    PERMISSIONS.reportsView,
-  );
+  // The shift-review audience of /api/reports/shift-orders. `reports.view` is
+  // what reviewing a past shift's takings actually is, and it is held by
+  // exactly the roles that could reach this before plus the accountant — who
+  // has no orders screen to render the picker on, so the list is built and
+  // never displayed rather than being a new capability.
+  const reviewer = await memberAccessFor(session);
+  const canReviewShifts = reviewer?.permissions.has(PERMISSIONS.reportsView) ?? false;
   const shifts = canReviewShifts ? await listRecentShiftOptions(location.id) : [];
   const requestedShiftId = new URL(request.url).searchParams.get("shiftId");
   const selectedShift = requestedShiftId

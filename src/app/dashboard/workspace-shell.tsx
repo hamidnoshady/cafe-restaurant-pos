@@ -5,7 +5,7 @@ import {
   isProductWorkspaceIndustry,
   PRODUCT_WORKSPACE_SECTIONS,
 } from "@/lib/product-workspace";
-import { ACCOUNTING_ROLES, ACCOUNTING_SECTIONS } from "@/app/(app)/accounting/accounting-nav";
+import { ACCOUNTING_SECTIONS } from "@/app/(app)/accounting/accounting-nav";
 import { PARTY_DIRECTORY_NAV_VIEWS, partyDirectoryHref } from "@/lib/party-directory";
 import { accountingSectionHref } from "@/app/(app)/accounting/accounting-routes";
 import { ACCOUNTING_WORKSPACE_HREFS, PLATFORM_BILLING_HREF, PLATFORM_SETTINGS_HOME } from "@/lib/app-routes";
@@ -157,14 +157,14 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       label: "حسابداری",
       module: "ledger",
       href: "/accounting/overview",
-      roles: [...ACCOUNTING_ROLES],
+      roles: ["owner", "admin", "manager", "accountant"],
       flag: "ledger",
       children: [
         ...ACCOUNTING_SECTIONS.map((section) => ({
           label: section.label,
           module: "ledger" as const,
           href: accountingSectionHref(section.key),
-          roles: [...(section.roles ?? ACCOUNTING_ROLES)],
+          roles: ["owner", "admin", "manager", "accountant"],
         })),
         // The directory's two most-asked-for views. They are filters of
         // «اشخاص» above, listed here for the two surfaces that read this tree
@@ -176,7 +176,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
           label: view.label,
           module: "ledger" as const,
           href: partyDirectoryHref(view.key),
-          roles: [...ACCOUNTING_ROLES],
+          roles: ["owner", "admin", "manager", "accountant"],
         })),
       ],
     },

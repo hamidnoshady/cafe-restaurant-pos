@@ -4,6 +4,7 @@ import { markStepDone } from "@/lib/settings";
 import { resolveActiveLocation, requireManager } from "@/lib/setup-state";
 import { toLatinDigits } from "@/lib/digits";
 import { isPasswordRole, isPinRole, isValidPin } from "@/lib/team";
+import { SETUP_CREATABLE_ROLES } from "@/lib/roles";
 import { TeamError, createMembership, isPhoneTaken, isPinTaken } from "@/lib/team-service";
 import { canonicalMemberPhone } from "@/lib/phone-otp";
 import type { Role } from "@/lib/auth";
@@ -31,7 +32,6 @@ export const GET = withTenantScope(async () => {
  * screen offered it — a business setting up its books in the wizard had to
  * stop halfway and finish in Settings.
  */
-const CREATABLE_ROLES: Role[] = ["manager", "accountant", "cashier", "waiter", "kitchen"];
 
 /**
  * Creates a member during the setup wizard.
@@ -62,7 +62,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
   const role = body.role;
   const fullName = body.fullName?.trim();
-  if (!fullName || !role || !CREATABLE_ROLES.includes(role)) {
+  if (!fullName || !role || !SETUP_CREATABLE_ROLES.includes(role)) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
 

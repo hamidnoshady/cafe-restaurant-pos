@@ -38,6 +38,11 @@ export const PERMISSIONS = {
   // Floor
   tablesManage: "tables.manage",
   tablesEdit: "tables.edit",
+  /**
+   * Reading the reservation book versus writing in it. A waiter checks
+   * tonight's book; taking the booking is a separate act.
+   */
+  reservationsView: "reservations.view",
   reservationsManage: "reservations.manage",
   kitchenView: "kitchen.view",
   deliveryManage: "delivery.manage",
@@ -107,6 +112,8 @@ export const PERMISSIONS = {
    * rename or deletion reshapes every historical report built on it.
    */
   crmConfigure: "crm.configure",
+  /** Destroying a customer record together with its history. */
+  crmDelete: "crm.delete",
 
   /**
    * My Workspace — «میز کار من» (Phase G).
@@ -145,6 +152,27 @@ export const PERMISSIONS = {
   ledgerApprove: "ledger.approve",
   ledgerClosePeriod: "ledger.close_period",
   accountsEdit: "accounts.edit",
+  /**
+   * Drafting a manual journal. A draft has no ledger effect; approval stays
+   * on ledger.approve.
+   */
+  ledgerPropose: "ledger.propose",
+
+  /**
+   * Operational finance — money moving as a consequence of trading, distinct
+   * from accounting authority (ledger.post / approve / close_period).
+   */
+  financeExpensesManage: "finance.expenses_manage",
+  financeReceivablesManage: "finance.receivables_manage",
+  financePayablesManage: "finance.payables_manage",
+  financeChequesManage: "finance.cheques_manage",
+  financeInstallmentsManage: "finance.installments_manage",
+  financeReconciliationManage: "finance.reconciliation_manage",
+  financeAssetsManage: "finance.assets_manage",
+
+  /** Salary data is narrower than the surrounding ledger. Owner and accountant only. */
+  payrollView: "payroll.view",
+  payrollManage: "payroll.manage",
 
   // Insight
   reportsView: "reports.view",
@@ -176,7 +204,14 @@ export const PERMISSIONS = {
   dataExport: "data.export",
 
   // Administration
+  /** Reading the team list. Narrower than administering it. */
+  teamView: "team.view",
   teamManage: "team.manage",
+  /**
+   * Handing out capability. Separate from suspend/rename so a delegated
+   * administrator cannot quietly widen their own grants.
+   */
+  teamPermissionsManage: "team.permissions_manage",
   settingsManage: "settings.manage",
   locationsManage: "locations.manage",
   backupManage: "backup.manage",
@@ -300,16 +335,19 @@ export function isOwnerOnlyPermission(permission: Permission): boolean {
 
 const {
   ordersView, ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
-  tablesManage, tablesEdit, reservationsManage, kitchenView, deliveryManage, deliveryConfigure,
+  tablesManage, tablesEdit, reservationsView, reservationsManage, kitchenView, deliveryManage, deliveryConfigure,
   menuView, menuEdit,
   inventoryView, inventoryAdjust, purchasesManage,
   partiesView, partiesManage,
-  crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure,
+  crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure, crmDelete,
   workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
-  ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
+  ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit, ledgerPropose,
+  financeExpensesManage, financeReceivablesManage, financePayablesManage, financeChequesManage,
+  financeInstallmentsManage, financeReconciliationManage, financeAssetsManage,
+  payrollView, payrollManage,
   reportsView, reportsExport,
   dataImport, dataExport,
-  teamManage, settingsManage, locationsManage, backupManage,
+  teamView, teamManage, teamPermissionsManage, settingsManage, locationsManage, backupManage,
   websiteView, websiteManage, websiteSettingsManage,
   cmsView, cmsContentManage, cmsPublish, cmsConfigure,
   woocommerceView, woocommerceManage, woocommerceSync, woocommerceConfigure,
@@ -330,7 +368,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
   admin: ALL_PERMISSIONS.filter((permission) => !isOwnerOnlyPermission(permission)),
   manager: [
     ordersView, ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
-    tablesManage, tablesEdit, reservationsManage, kitchenView, deliveryManage, deliveryConfigure,
+    tablesManage, tablesEdit, reservationsView, reservationsManage, kitchenView, deliveryManage, deliveryConfigure,
     menuView, menuEdit,
     inventoryView, inventoryAdjust, purchasesManage,
     partiesView, partiesManage,
@@ -340,7 +378,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // access somebody already had — that is an outage, not a security
     // improvement. A business that wants a narrower manager revokes
     // individual capabilities per member.
-    crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure,
+    crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure, crmDelete,
     // Phase G, same rule as the CRM block: before these keys existed the
     // project pages gated on requireMember, so every manager could already
     // open them and do everything on them. Introducing a permission must not
@@ -348,6 +386,11 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // business that wants a narrower manager revokes the individual keys.
     workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
     ledgerView, reportsView, reportsExport,
+    // Operational finance the manager already did under a role gate. Not
+    // accounting authority, and not payroll.
+    financeExpensesManage, financeReceivablesManage, financePayablesManage, financeChequesManage,
+    financeInstallmentsManage, financeReconciliationManage, financeAssetsManage,
+    ledgerPropose,
     // «ورود و خروج داده». The manager already held every bulk door the product
     // had (crm.export gated both the customer export AND the customer import;
     // reports.export gated the report download), so granting these two keeps
@@ -370,7 +413,10 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     menuView,
     inventoryView,
     partiesView, partiesManage,
-    ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
+    ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit, ledgerPropose,
+    financeExpensesManage, financeReceivablesManage, financePayablesManage, financeChequesManage,
+    financeInstallmentsManage, financeReconciliationManage, financeAssetsManage,
+    payrollView, payrollManage,
     reportsView, reportsExport,
     // Same reasoning as the manager's: the accountant already downloaded the
     // financial statements through reports.export, and importing a chart of
@@ -384,10 +430,12 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
     // cost is accounting work, committing the business to a new contractor is
     // not.
     workspaceView,
+    // Growth accounting and customer reads were open to the accountant.
+    growthView,
   ],
   cashier: [
     ordersView, ordersCreate, ordersDiscount, paymentsTake,
-    tablesManage, reservationsManage,
+    tablesManage, reservationsView, reservationsManage,
     menuView, deliveryManage,
     inventoryView,
     partiesView, partiesManage,
@@ -404,7 +452,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner">, Permission[]> = {
   ],
   waiter: [
     ordersView, ordersCreate,
-    tablesManage, reservationsManage,
+    tablesManage, reservationsView, reservationsManage,
     menuView,
     // Read-only: a waiter may be a contributor on a project (a refit, an
     // event) and needs to see the tasks assigned to them.
@@ -426,6 +474,9 @@ export interface PermissionOverrides {
 export function isAbsoluteRole(role: Role): role is "owner" {
   return role === "owner";
 }
+
+/** Built-in roles that resolve to a preset. Kept in step with `roles.ts`. */
+export const ROLE_PRESET_ROLES: readonly Role[] = ["owner", ...(Object.keys(ROLE_PRESETS) as Exclude<Role, "owner">[])];
 
 /** The preset for a role, before any per-member overrides. */
 export function roleBasePermissions(role: Role): Permission[] {
@@ -453,13 +504,29 @@ const PERMISSION_DEPENDENCIES: Partial<Record<Permission, readonly Permission[]>
   [PERMISSIONS.crmMerge]: [PERMISSIONS.crmView],
   [PERMISSIONS.crmConsentManage]: [PERMISSIONS.crmView],
   [PERMISSIONS.crmConfigure]: [PERMISSIONS.crmView],
+  [PERMISSIONS.crmDelete]: [PERMISSIONS.crmView],
   [PERMISSIONS.inventoryAdjust]: [PERMISSIONS.inventoryView],
   [PERMISSIONS.purchasesManage]: [PERMISSIONS.inventoryView],
   [PERMISSIONS.menuEdit]: [PERMISSIONS.menuView],
   [PERMISSIONS.ledgerPost]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.ledgerPropose]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeExpensesManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeReceivablesManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financePayablesManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeChequesManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeInstallmentsManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeReconciliationManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.financeAssetsManage]: [PERMISSIONS.ledgerView],
+  [PERMISSIONS.payrollManage]: [PERMISSIONS.payrollView],
   [PERMISSIONS.ledgerApprove]: [PERMISSIONS.ledgerView],
   [PERMISSIONS.accountsEdit]: [PERMISSIONS.ledgerView],
   [PERMISSIONS.reportsExport]: [PERMISSIONS.reportsView],
+  [PERMISSIONS.reservationsManage]: [PERMISSIONS.reservationsView],
+  [PERMISSIONS.teamManage]: [PERMISSIONS.teamView],
+  [PERMISSIONS.teamPermissionsManage]: [PERMISSIONS.teamView],
+  [PERMISSIONS.woocommerceManage]: [PERMISSIONS.woocommerceView],
+  [PERMISSIONS.woocommerceSync]: [PERMISSIONS.woocommerceView],
+  [PERMISSIONS.woocommerceConfigure]: [PERMISSIONS.woocommerceView],
   [PERMISSIONS.websiteManage]: [PERMISSIONS.websiteView],
   [PERMISSIONS.websiteSettingsManage]: [PERMISSIONS.websiteView],
   [PERMISSIONS.cmsContentManage]: [PERMISSIONS.cmsView],

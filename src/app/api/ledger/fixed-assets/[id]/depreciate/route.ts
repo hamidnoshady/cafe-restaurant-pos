@@ -12,7 +12,7 @@ interface Ctx {
 
 /** Posts one period's straight-line depreciation for this asset. */
 export const POST = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeAssetsManage);
   if (error) return error;
 
   const { id } = await ctx.params;

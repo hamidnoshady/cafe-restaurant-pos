@@ -18,7 +18,7 @@ interface PatchBody {
 
 /** Clears or un-clears one — or a whole selection of — journal lines against this in-progress reconciliation. */
 export const PATCH = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeReconciliationManage);
   if (error) return error;
 
   const { id } = await ctx.params;

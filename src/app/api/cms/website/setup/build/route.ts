@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { buildWebsite } from "@/lib/website/setup-service";
 
 /**
@@ -13,11 +14,13 @@ import { buildWebsite } from "@/lib/website/setup-service";
  * key, subscription, and the order they must happen in — belongs to
  * `buildWebsite`, so this handler is only the HTTP shell around it.
  *
- * Owner/manager, like every other write in this manager: it spends the
- * business's platform credit and puts a public site on the internet.
+ * Gated on `website.configure` — the capability for standing a site up and
+ * changing what it is — rather than on a role. It spends the business's
+ * platform credit and puts a public site on the internet, so it is the
+ * strongest of the four website keys rather than plain `website.manage`.
  */
 export const POST = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.cmsConfigure);
   if (error) return error;
 
   const result = await buildWebsite(session.businessId);

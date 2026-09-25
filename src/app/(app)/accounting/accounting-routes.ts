@@ -155,10 +155,10 @@ export function isAccountingSectionKey(value: string | null | undefined): value 
   return typeof value === "string" && (ACCOUNTING_SECTION_KEYS as readonly string[]).includes(value);
 }
 
-/** The app's own door — owner, manager and accountant, the same line the page gate draws. */
-export function canOpenAccounting(role: string | null | undefined): boolean {
-  return ["owner", "manager", "accountant"].includes(role ?? "");
-}
+// The app's door used to be a second role list here. It is
+// `canOpenAccounting` in `accounting-nav.ts` now — one definition, expressed as
+// the `ledger.view` capability the routes enforce, so the door and the section
+// list cannot answer differently.
 
 /**
  * Where to send someone who lands on a section they may not open: back to the

@@ -28,7 +28,7 @@ const METHODS = ["cash", "bank"] as const;
 
 /** Records a customer paying down their AR balance. Same access as posting a manual journal entry. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeReceivablesManage);
   if (error) return error;
 
   let body: ReceiptBody;

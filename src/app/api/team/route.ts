@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, withTenantScope } from "@/lib/auth";
+import { requireAnyPermission, requirePermission, withTenantScope } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/permissions";
+import { isLocationScope } from "@/lib/location-access";
 import { toLatinDigits } from "@/lib/digits";
 import { isPinRole, isValidPin, sanitizeOverrides } from "@/lib/team";
 import {
@@ -13,9 +14,8 @@ import {
 } from "@/lib/team-service";
 import { listBranches } from "@/lib/branch-service";
 import { canonicalMemberPhone } from "@/lib/phone-otp";
+import { ASSIGNABLE_ROLES } from "@/lib/roles";
 import type { Role } from "@/lib/auth";
-
-const ASSIGNABLE_ROLES: Role[] = ["owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen"];
 
 /**
  * The business's members, with their effective permissions resolved, and the
@@ -26,7 +26,14 @@ const ASSIGNABLE_ROLES: Role[] = ["owner", "admin", "manager", "accountant", "ca
  * are assigning people to).
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requirePermission(PERMISSIONS.teamManage);
+  // `team.view` OR `team.manage`: the list is a read, and carving out a
+  // read-only key would be pointless if it did not actually open the read.
+  // The wider key still passes — a member granted only `team.manage` must not
+  // be locked out of the list they are allowed to edit.
+  const { session, error } = await requireAnyPermission(
+    PERMISSIONS.teamView,
+    PERMISSIONS.teamManage,
+  );
   if (error) return error;
 
   const [members, branches] = await Promise.all([
@@ -64,6 +71,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     phone?: string;
     locationIds?: string[];
     defaultLocationId?: string | null;
+    /** 'all' | 'selected' | 'home' — the explicit branch policy (migration 0170). */
+    locationScope?: string;
     permissions?: unknown;
   };
   try {
@@ -87,6 +96,12 @@ export const POST = withTenantScope(async (request: NextRequest) => {
     if (rows[0]?.role !== "owner") {
       return NextResponse.json({ error: "owner_only" }, { status: 403 });
     }
+  }
+
+  // Refused rather than ignored: silently dropping an unrecognised scope would
+  // create the member on a policy the caller did not ask for.
+  if (body.locationScope !== undefined && !isLocationScope(body.locationScope)) {
+    return NextResponse.json({ error: "invalid_location_scope" }, { status: 400 });
   }
 
   let pin: string | null = null;
@@ -123,6 +138,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       phoneE164: phone,
       locationIds: body.locationIds ?? [],
       defaultLocationId: body.defaultLocationId ?? null,
+      locationScope: isLocationScope(body.locationScope) ? body.locationScope : undefined,
       overrides: sanitizeOverrides(body.permissions),
       actorId: session.sub,
     });

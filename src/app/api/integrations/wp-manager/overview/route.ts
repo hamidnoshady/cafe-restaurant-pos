@@ -10,7 +10,7 @@ import { wpOverviewStats } from "@/lib/integrations/wp-manager-service";
  * same total an owner with several stores sees summed across them.
  */
 export const GET = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceView);
   if (error) return error;
 
   const connectionId = new URL(request.url).searchParams.get("connectionId");

@@ -9,7 +9,7 @@ import { listStaffWages } from "@/lib/payroll-service";
  * surfaces. Managers don't see or set staff wage amounts.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
+  const { session, error } = await requirePermission(PERMISSIONS.payrollView);
   if (error) return error;
 
   const staff = await listStaffWages(session.businessId);

@@ -14,6 +14,8 @@
  * report as an *action* rather than a route, and still sends a PIN-role member
  * back to the staff door when they sign out.
  */
+import type { Role } from "./auth-edge";
+import { isPinRole } from "./roles";
 
 import {
   PLATFORM_SETTINGS_HOME,
@@ -42,12 +44,12 @@ export type PlatformUserMenuItem =
    */
   | { key: string; label: string; kind: "switch-account" };
 
-/** Roles that sign in with a PIN (`team.ts`'s PIN_ROLES) — they return to the staff door. */
-const PIN_ROLES = ["cashier", "waiter", "kitchen"];
+
 
 /** Where signing out lands: the staff quick login, or the owner/manager door. */
 export function logoutReturnTo(role: string): string {
-  return PIN_ROLES.includes(role) ? "/login" : "/admin";
+  // PIN roles return to the staff door; password roles to the admin sign-in.
+  return isPinRole(role as Role) ? "/login" : "/admin";
 }
 
 export function platformUserMenuItems(role: string): PlatformUserMenuItem[] {

@@ -24,7 +24,7 @@ function isActionBody(value: unknown): value is ActionBody {
  */
 export const POST = withTenantScope(
   async (request: NextRequest, context: { params: Promise<{ id: string; action: string }> }) => {
-    const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+    const { session, error } = await requirePermission(PERMISSIONS.financeChequesManage);
     if (error) return error;
 
     const { id, action } = await context.params;

@@ -57,6 +57,7 @@ import {
 import { appShellNavFor, type AppShellNavProps } from "./app-shell-nav";
 import type { ModuleKey } from "@/lib/industry-profile";
 import type { Permission } from "@/lib/permissions";
+import { PIN_ROLES } from "@/lib/roles";
 import { toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import {
@@ -88,8 +89,6 @@ import { LockButton } from "./lock-screen";
 import { PlatformUserMenu } from "./platform-user-menu";
 import { ShiftButton } from "./shift-panel";
 
-/** Roles that sign in with a PIN (team.ts's PIN_ROLES) — the lock screen is a floor-terminal convenience for them. */
-const PIN_ROLES = ["cashier", "waiter", "kitchen"];
 
 const SIDEBAR_PREFERENCE_KEY = "dashboard-sidebar-preference";
 
@@ -548,7 +547,7 @@ function DashboardSidebarFooter({
   onSaveBottomNav: (hrefs: string[]) => void;
 }) {
   const { expandSidebar } = useSidebar();
-  const isPinRole = PIN_ROLES.includes(role);
+  const isPinRole = (PIN_ROLES as readonly string[]).includes(role);
 
   return (
     <SidebarFooter className="border-border/80 bg-card group-data-[state=collapsed]/sidebar:p-2">

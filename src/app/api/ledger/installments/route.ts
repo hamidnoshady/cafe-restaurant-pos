@@ -27,7 +27,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
 });
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeInstallmentsManage);
   if (error) return error;
 
   let body: Record<string, unknown>;

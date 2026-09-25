@@ -24,6 +24,13 @@ import type { Role } from "./auth-edge";
 
 export type LocationScope = "all" | "selected" | "home" | "none";
 
+export const LOCATION_SCOPES = ["all", "selected", "home", "none"] as const;
+
+export function isLocationScope(value: unknown): value is LocationScope {
+  return typeof value === "string" && (LOCATION_SCOPES as readonly string[]).includes(value);
+}
+
+
 export interface LocationAccessContext {
   role: Role;
   /** Explicit policy persisted on users.location_scope. */

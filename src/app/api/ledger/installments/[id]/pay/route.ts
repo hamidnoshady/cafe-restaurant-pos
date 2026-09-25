@@ -7,7 +7,7 @@ import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
 
 /** Settles one slice of a plan — posts the subledger pair atomically. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeInstallmentsManage);
   if (error) return error;
   const { id: planId } = await context.params;
 

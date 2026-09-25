@@ -44,7 +44,7 @@ function isChequeBody(value: unknown): value is ChequeBody {
  * the entry that puts it on the books.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeChequesManage);
   if (error) return error;
 
   let body: unknown;

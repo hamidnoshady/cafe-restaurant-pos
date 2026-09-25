@@ -17,7 +17,8 @@ import { featureForApiPath, isFeatureEnabled } from "./features";
 import { isModuleEnabled } from "./industry-guard";
 import { moduleForApiPath } from "./industry-profile";
 import { holooGuardedEntityType, holooLocalIdFromPath, holooOwnedIds, HOLOO_GUARDED_PREFIXES } from "./integrations/holoo/holoo-ownership";
-import { hasPermission, parseOverrides, PERMISSIONS, type Permission } from "./permissions";
+import { PERMISSIONS, type Permission } from "./permissions";
+import { authorize, denialResponse, withAuthorizationMemo } from "./authorize";
 import { activeGrant } from "./platform-service";
 import { platformAudit } from "./platform-auth";
 import { businessScope, enterTenantScope, NO_SCOPE, runInTenantScope } from "./tenant-context";
@@ -152,7 +153,7 @@ export function withTenantScope<Args extends unknown[]>(
     const scope = session
       ? businessScope(session.businessId, session.locationId, session.sub)
       : NO_SCOPE;
-    return runInTenantScope(scope, async () => {
+    return runInTenantScope(scope, () => withAuthorizationMemo(async () => {
       const request = args[0] as NextRequest | undefined;
 
       // Phase 17 — feature-flag enforcement. Only checked once a session
@@ -231,167 +232,100 @@ export function withTenantScope<Args extends unknown[]>(
       }
 
       return handler(...args);
-    });
+    }));
   };
 }
 
 type GuardResult =
-  | { session: SessionPayload; error: null; membership: CurrentMembership }
+  | { session: SessionPayload; error: null; membership: import("./authorize").MembershipContext }
   | { session: null; error: NextResponse; membership?: never };
 
-interface CurrentMembership {
-  role: Role;
-  permissions: unknown;
-  isActive: boolean;
-  status: string;
-  businessStatus: string;
-  customRolePermissions: string[] | null;
-}
-
-const unauthorized = (): GuardResult => ({
-  session: null,
-  error: NextResponse.json({ error: "unauthorized", code: "INVALID_SESSION" }, { status: 401 }),
-});
-
 /**
- * The single live security-context read used by every tenant guard.
+ * Session guard with no role restriction — any signed-in member of a business.
  *
- * JWT claims select a membership; they never prove that it is still usable.
- * Re-reading the membership means suspension/offboarding, role changes,
- * permission changes, password resets and tenant suspension take effect on
- * the next request for password, PIN and impersonated sessions alike.
+ * Deliberately narrow in what it may be used for: endpoints where every member
+ * acts only on **their own** rows, so the role that would gate the screen has
+ * nothing left to gate. Phase 35's notification devices, rules and inbox are
+ * the case it exists for — a kitchen member choosing which of their own alerts
+ * reach their own phone is not a manager-level act, and listing all six roles
+ * to say "everyone" reads as an oversight rather than as a decision.
+ *
+ * The handler is still responsible for scoping every query to
+ * `session.sub`; this guard proves who is asking, not what they may touch.
  */
-async function currentMembership(): Promise<GuardResult> {
-  const session = await getSession();
-  if (!session) return unauthorized();
-
-  const { rows } = await query<{
-    role: Role;
-    permissions: unknown;
-    is_active: boolean;
-    membership_status: string;
-    business_status: string;
-    identity_token_version: number | null;
-    custom_role_permissions: string[] | null;
-  }>(
-    `SELECT u.role, u.permissions, u.is_active,
-            u.membership_status::text AS membership_status,
-            b.status::text AS business_status,
-            pu.token_version AS identity_token_version,
-            CASE WHEN tr.is_active THEN ARRAY(SELECT jsonb_array_elements_text(tr.permissions)) ELSE NULL END AS custom_role_permissions
-       FROM users u
-       JOIN businesses b ON b.id = u.business_id
-       LEFT JOIN platform_users pu ON pu.id = u.platform_user_id
-       LEFT JOIN tenant_roles tr ON tr.id = u.custom_role_id AND tr.business_id = u.business_id
-      WHERE u.id = $1 AND u.business_id = $2`,
-    [session.sub, session.businessId],
-  );
-  const row = rows[0];
-  if (!row || !row.is_active || row.membership_status !== "active") return unauthorized();
-  if (session.platformUserId && (
-    row.identity_token_version === null ||
-    session.tokenVersion === undefined ||
-    row.identity_token_version !== session.tokenVersion
-  )) return unauthorized();
-  if (row.business_status !== "active") {
-    return {
-      session: null,
-      error: NextResponse.json(
-        { error: "forbidden", code: "TENANT_INACTIVE" },
-        { status: 403 },
-      ),
-    };
-  }
-
-  const membership: CurrentMembership = {
-    role: row.role,
-    permissions: row.permissions,
-    isActive: row.is_active,
-    status: row.membership_status,
-    businessStatus: row.business_status,
-    customRolePermissions: row.custom_role_permissions,
-  };
-  return { session: { ...session, role: row.role }, membership, error: null };
-}
-
-/** Any currently active member. Only use for resources scoped to session.sub. */
 export async function requireMember(): Promise<GuardResult> {
-  return currentMembership();
+  // Goes through `authorize()` with no capability requirement so that "any
+  // signed-in member" still means an *active* member of an *active* business
+  // holding a *non-revoked* identity. Before the consolidation it meant only
+  // "a token that verifies", which let a deactivated member keep managing
+  // their notification rules and reading their own inbox.
+  const decision = await authorize(await getSession());
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, membership: decision.membership, error: null };
 }
 
 /**
- * Semantic role guard. Ordinary capabilities must use requirePermission.
- * Kept for owner protection, login-method policy and intentionally role-shaped
- * workflows; unlike the legacy implementation it still uses the live context.
+ * Session + role guard for API routes.
+ *
+ * ## This is no longer a role comparison against the JWT
+ *
+ * It used to be, and that was the single largest security hole in the
+ * platform: `session.role` is the role that was baked into the token *at
+ * login*, so across the ~500 endpoints guarded this way a member who had since
+ * been deactivated, demoted, or whose business had been suspended kept the
+ * access they had that morning until their token expired. The guard never
+ * looked at `users.is_active`, never looked at `businesses.status`, and never
+ * re-read the role.
+ *
+ * It now delegates to `authorize()` like every other guard, which re-reads the
+ * membership and enforces the full chain (identity → membership → tenant →
+ * role/permission). The `roles` list still does what it always did — the
+ * signature and the semantics of the *allow* case are unchanged, so no call
+ * site needed editing — but the *deny* cases it was missing are now covered.
+ *
+ * New code should prefer `requirePermission`. This remains for role identity
+ * that is genuinely semantic, and for the legacy endpoints not yet migrated;
+ * both are inventoried in docs/authorization/ARCHITECTURE.md.
  */
 export async function requireRole(...roles: Role[]): Promise<GuardResult> {
-  const guard = await currentMembership();
-  if (guard.error) return guard;
-  if (!roles.includes(guard.membership.role)) {
-    return {
-      session: null,
-      error: NextResponse.json({ error: "forbidden", code: "ROLE_REQUIRED" }, { status: 403 }),
-    };
-  }
-  return guard;
+  const decision = await authorize(await getSession(), { roles });
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, membership: decision.membership, error: null };
 }
 
 /**
  * Fine-grained guard: does this member hold `permission` right now?
  *
- * Unlike `requireRole`, this re-reads the membership from the database rather
- * than trusting the token. That costs one indexed lookup and buys three
- * things: an owner revoking a permission takes effect on the member's next
- * request instead of at their next login, deactivating a member ends their
- * session's usefulness immediately, and a suspended business stops serving
- * traffic without waiting for tokens to expire.
+ * The preferred guard. It re-reads the membership through `authorize()`, so a
+ * revocation, a role change, a suspended tenant and a reset password all take
+ * effect on the next request.
  */
 export async function requirePermission(permission: Permission): Promise<GuardResult> {
-  const guard = await currentMembership();
-  if (guard.error) return guard;
-  if (!hasPermission(
-    guard.membership.role,
-    parseOverrides(guard.membership.permissions),
-    permission,
-    guard.membership.customRolePermissions,
-  )) {
-    return {
-      session: null,
-      error: NextResponse.json(
-        { error: "forbidden", code: "MISSING_PERMISSION", permission },
-        { status: 403 },
-      ),
-    };
-  }
-  return guard;
+  const decision = await authorize(await getSession(), { permission });
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, membership: decision.membership, error: null };
 }
 
 /** All listed capabilities are required; useful for bulk transfer boundaries. */
 export async function requirePermissions(...permissions: Permission[]): Promise<GuardResult> {
-  const guard = await currentMembership();
-  if (guard.error) return guard;
-  const overrides = parseOverrides(guard.membership.permissions);
-  const missing = permissions.find(
-    (permission) =>
-      !hasPermission(
-        guard.membership.role,
-        overrides,
-        permission,
-        guard.membership.customRolePermissions,
-      ),
-  );
-  if (missing) {
-    return {
-      session: null,
-      error: NextResponse.json(
-        { error: "forbidden", code: "MISSING_PERMISSION", permission: missing },
-        { status: 403 },
-      ),
-    };
-  }
-  return guard;
+  const decision = await authorize(await getSession(), { allPermissions: permissions });
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, membership: decision.membership, error: null };
 }
 
+
+/**
+ * As `requirePermission`, but any one of `permissions` is enough.
+ *
+ * For endpoints that serve both a reader and an editor: `GET /api/team` wants
+ * `team.view`, but a member who holds only the broader `team.manage` must not
+ * be locked out of the list they are allowed to edit.
+ */
+export async function requireAnyPermission(...permissions: Permission[]): Promise<GuardResult> {
+  const decision = await authorize(await getSession(), { anyPermission: permissions });
+  if (!decision.ok) return { session: null, error: denialResponse(decision) };
+  return { session: decision.session, membership: decision.membership, error: null };
+}
 
 /**
  * Wave 3 floor-assistant guard. It is intentionally separate from

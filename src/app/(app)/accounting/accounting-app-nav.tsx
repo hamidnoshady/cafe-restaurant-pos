@@ -48,13 +48,13 @@ import {
 const OPEN_GROUPS_KEY = "accounting-nav-open-groups";
 
 export function AccountingAppNav({
-  role,
+  permissions,
   pathname,
   search = "",
   navItems = [],
   onNavigate,
 }: AppShellNavProps) {
-  const groups = accountingWorkspaceGroups({ role, navItems });
+  const groups = accountingWorkspaceGroups({ permissions: new Set(permissions), navItems });
 
   const inLedger = groups
     .find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY)

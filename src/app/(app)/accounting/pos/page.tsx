@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getBusinessIndustry, requireModuleForPage } from "@/lib/industry-guard";
 import { industryProfile } from "@/lib/industry-profile";
 import { PosScreen } from "@/app/dashboard/pos/pos-screen";
@@ -19,7 +21,9 @@ export default async function PosPage({
   const session = await getSession();
   if (!session) redirect("/login");
   await requireModuleForPage(session.businessId, "pos");
-  if (!["owner", "manager", "cashier"].includes(session.role)) redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set<string>();
+  if (!permissions.has(PERMISSIONS.paymentsTake)) redirect("/dashboard");
 
   const industry = (await getBusinessIndustry(session.businessId)) ?? "food_service";
   if (industryProfile(industry).salesModel === "retail_invoice") {

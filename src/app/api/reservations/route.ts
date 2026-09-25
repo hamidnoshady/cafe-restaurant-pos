@@ -16,7 +16,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * out). `from`/`to` are ISO instants supplied by the client.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.reservationsManage);
+  const { session, error } = await requirePermission(PERMISSIONS.reservationsView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

@@ -13,7 +13,7 @@ const METHODS = ["cash", "bank"] as const;
 
 /** Pays out an accrued payroll run: Debit salariesPayable / Credit the chosen Cash or Bank-Clearing account. */
 export const POST = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.payrollManage);
   if (error) return error;
 
   const { id } = await ctx.params;

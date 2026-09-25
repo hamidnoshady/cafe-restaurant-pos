@@ -29,7 +29,7 @@ interface DraftLineInput {
  * on ledger.approve rather than this role list.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPropose);
   if (error) return error;
 
   let body: { entryDate?: unknown; memo?: unknown; lines?: unknown };

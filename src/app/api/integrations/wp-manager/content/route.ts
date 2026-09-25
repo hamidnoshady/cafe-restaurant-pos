@@ -19,7 +19,7 @@ import { isWpMediaKind, type WpMediaKind } from "@/lib/integrations/wp-media";
  * in REST mode it reads wp/v2 directly with the WooCommerce consumer keys.
  */
 export const GET = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceView);
   if (error) return error;
 
   const url = new URL(request.url);
@@ -67,7 +67,7 @@ export const GET = withTenantScope(async (request: Request) => {
 });
 
 export const POST = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceManage);
   if (error) return error;
 
   let body: { connectionId?: string; action?: string };

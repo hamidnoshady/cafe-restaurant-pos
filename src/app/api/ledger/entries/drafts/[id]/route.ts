@@ -23,7 +23,7 @@ export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
  * of reviewing it) may do this — everyone else needs one or the other.
  */
 export const DELETE = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPropose);
   if (error) return error;
 
   const { id } = await ctx.params;

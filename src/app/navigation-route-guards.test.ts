@@ -67,8 +67,8 @@ describe("tenant contextual-nav route guards", () => {
 
   it("uses the shared Accounting body and Workspace body to enforce their app/feature/permission gates", () => {
     const accounting = source("./(app)/accounting/accounting-page-body.tsx");
-    expect(accounting).toContain("canOpenAccounting(session.role)");
-    expect(accounting).toContain("canViewAccountingSection(session.role, section)");
+    expect(accounting).toContain("canOpenAccounting(permissions)");
+    expect(accounting).toContain("canViewAccountingSection(permissions, section)");
     expect(accounting).toContain('requireFeatureForPage(session.businessId, "ledger")');
 
     const workspace = source("./(app)/workspace/workspace-page-body.tsx");

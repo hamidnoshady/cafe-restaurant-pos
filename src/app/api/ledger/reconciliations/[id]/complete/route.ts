@@ -9,7 +9,7 @@ interface Ctx {
 
 /** Locks a reconciliation — only once its cleared lines exactly account for the statement balance. */
 export const POST = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerApprove);
+  const { session, error } = await requirePermission(PERMISSIONS.financeReconciliationManage);
   if (error) return error;
 
   const { id } = await ctx.params;

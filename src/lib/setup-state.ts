@@ -7,6 +7,7 @@ import { PERMISSIONS } from "./permissions";
 import { query, withTenant, withoutTenantScope } from "./db";
 import {
   accessibleLocationIds,
+  isLocationScope,
   canAccessLocation,
   canSwitchBranches,
   defaultAccessibleLocationId,
@@ -194,9 +195,12 @@ async function locationAccessContext(
   ]);
   return {
     role: userRows[0]?.role ?? "cashier",
-    locationScope: userRows[0]?.location_scope ?? "none",
     defaultLocationId: userRows[0]?.location_id ?? null,
     assignedLocationIds: assignmentRows.map((r) => r.location_id),
+    // The stored policy, which is what makes the widening fallback in the old
+    // resolution unreachable. A row that somehow holds an unrecognised value
+    // degrades to the narrowest scope rather than to the widest.
+    locationScope: isLocationScope(userRows[0]?.location_scope) ? userRows[0].location_scope : "home",
   };
 }
 

@@ -28,7 +28,7 @@ const METHODS = ["cash", "bank"] as const;
 
 /** Records the business paying down a supplier's AP balance. Same access as posting a manual journal entry. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financePayablesManage);
   if (error) return error;
 
   let body: PaymentBody;

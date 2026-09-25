@@ -31,7 +31,7 @@ export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
  * the next period's opening balance.
  */
 export const DELETE = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeReconciliationManage);
   if (error) return error;
 
   const { id } = await ctx.params;

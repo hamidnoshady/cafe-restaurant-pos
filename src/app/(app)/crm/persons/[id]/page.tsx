@@ -9,8 +9,9 @@ import { canViewCrmSection, crmFallbackHref } from "../../crm-routes";
  *
  * Floor-accessible: the person on the phone needs to know when the last order
  * was and what the complaint was about. The consent *controls* inside the page
- * are owner/manager only — the role is passed down so the component can render
- * the state without offering the change.
+ * need `crm.consent_manage`, so the member's effective permissions are passed
+ * down (as an array — a Set does not cross into a client component) and the
+ * component renders the state without offering the change.
  */
 export default async function CrmCustomerFilePage({
   params,

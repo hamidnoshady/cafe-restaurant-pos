@@ -70,7 +70,7 @@ describe("Growth settings", () => {
 describe("the Growth settings read route", () => {
   it("is tenant-scoped and management-only", () => {
     expect(ROUTE_SOURCE).toMatch(/withTenantScope/);
-    expect(ROUTE_SOURCE).toContain("requirePermission(PERMISSIONS.growthView)");
+    expect(ROUTE_SOURCE).toContain("requirePermission(PERMISSIONS.marketingConfigure)");
   });
 
   it("reports the four engines from their own services", () => {

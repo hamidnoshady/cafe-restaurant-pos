@@ -19,7 +19,7 @@ import { listPromotionCatalogue } from "@/lib/promotions-service";
  * sender before following the clearly labelled link to that owner screen.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requirePermission(PERMISSIONS.growthView);
+  const { session, error } = await requirePermission(PERMISSIONS.marketingConfigure);
   if (error) return error;
 
   const [today, programs, promotions, templates, messaging, commissionRules] = await Promise.all([

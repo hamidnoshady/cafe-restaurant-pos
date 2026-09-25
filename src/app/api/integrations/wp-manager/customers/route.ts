@@ -14,7 +14,7 @@ import { wpStoreCustomers } from "@/lib/integrations/wp-manager-service";
  * being handed an empty list next to a total of zero.
  */
 export const GET = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceView);
   if (error) return error;
 
   const url = new URL(request.url);

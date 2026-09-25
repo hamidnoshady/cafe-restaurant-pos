@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, withTenantScope } from "@/lib/auth";
-import { PERMISSIONS } from "@/lib/permissions";
-import { lockoutMessage, sanitizeOverrides } from "@/lib/team";
+import { PERMISSIONS, effectivePermissions, parseOverrides } from "@/lib/permissions";
+import { isLocationScope } from "@/lib/location-access";
+import { escalationRefusal, lockoutMessage, sanitizeOverrides } from "@/lib/team";
 import {
   TeamError,
   removeMembership,
@@ -10,9 +11,8 @@ import {
 } from "@/lib/team-service";
 import { canonicalMemberPhone } from "@/lib/phone-otp";
 import { query } from "@/lib/db";
+import { ASSIGNABLE_ROLES } from "@/lib/roles";
 import type { Role } from "@/lib/auth";
-
-const ASSIGNABLE_ROLES: Role[] = ["owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen"];
 
 function errorResponse(err: unknown): NextResponse {
   if (err instanceof TeamError) {
@@ -56,14 +56,23 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   if (body.locationScope === "selected" && (!body.locationIds || body.locationIds.length === 0)) {
     return NextResponse.json({ error: "selected_locations_required" }, { status: 400 });
   }
-  if (body.locationScope === "home" && !body.defaultLocationId) {
-    return NextResponse.json({ error: "home_location_required" }, { status: 400 });
+
+  const changesAccess = body.role !== undefined || body.permissions !== undefined;
+  if (changesAccess) {
+    const escalation = await requirePermission(PERMISSIONS.teamPermissionsManage);
+    if (escalation.error) return escalation.error;
   }
 
   // Managing routine team details may be delegated; managing an owner or
   // granting ownership may not. Enforce this server-side, not merely in UI.
-  const { rows: roleRows } = await query<{ actor_role: Role; target_role: Role }>(
-    `SELECT actor.role AS actor_role, target.role AS target_role
+  const { rows: roleRows } = await query<{
+    actor_role: Role;
+    actor_permissions: unknown;
+    target_role: Role;
+    target_permissions: unknown;
+  }>(
+    `SELECT actor.role AS actor_role, actor.permissions AS actor_permissions,
+            target.role AS target_role, target.permissions AS target_permissions
        FROM users actor
        JOIN users target ON target.id = $3 AND target.business_id = actor.business_id
       WHERE actor.id = $1 AND actor.business_id = $2 AND actor.is_active = true`,
@@ -73,6 +82,38 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
   if (!roles) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (roles.actor_role !== "owner" && (roles.target_role === "owner" || body.role === "owner")) {
     return NextResponse.json({ error: "owner_only" }, { status: 403 });
+  }
+
+  // `team.permissions.manage` delegates access administration; it must not be
+  // usable to out-rank the owner who delegated it. The rule and its reasoning
+  // live in `escalationRefusal` — refuse an edit that hands out a capability
+  // the editor lacks, or that moves the editor's own role.
+  //
+  // This runs on the role as the *database* holds it, never `session.role`:
+  // a token minted before a demotion would otherwise still spend the access
+  // it was minted with.
+  if (changesAccess) {
+    const nextOverrides =
+      body.permissions === undefined
+        ? parseOverrides(roles.target_permissions)
+        : sanitizeOverrides(body.permissions);
+    const refusal = escalationRefusal({
+      actorRole: roles.actor_role,
+      actorPermissions: effectivePermissions(
+        roles.actor_role,
+        parseOverrides(roles.actor_permissions),
+      ),
+      isSelf: id === session.sub,
+      currentPermissions: effectivePermissions(
+        roles.target_role,
+        parseOverrides(roles.target_permissions),
+      ),
+      nextPermissions: effectivePermissions(body.role ?? roles.target_role, nextOverrides),
+      roleChanges: body.role !== undefined && body.role !== roles.target_role,
+    });
+    if (refusal) {
+      return NextResponse.json({ error: "forbidden", code: refusal }, { status: 403 });
+    }
   }
 
   // A phone change is its own action rather than a field on updateMembership:

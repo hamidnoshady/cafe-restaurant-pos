@@ -25,6 +25,7 @@ import {
 } from "@/lib/permissions";
 import { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isValidPin } from "@/lib/pin-policy";
 import { roleLabel } from "@/lib/role-labels";
+import { INVITABLE_ROLES, PIN_ROLES } from "@/lib/roles";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -51,10 +52,6 @@ import {
   inputClass,
 } from "../ui";
 
-/** Roles that sign in with an email and password, so can be invited. */
-const INVITABLE_ROLES = ["admin", "manager", "accountant", "owner"] as const;
-/** Roles that sign in with a PIN on a shared device, so are created directly. */
-const PIN_ROLES = ["cashier", "waiter", "kitchen"] as const;
 
 const PERMISSION_LABELS: Record<string, string> = {
   "orders.create": "ثبت سفارش",

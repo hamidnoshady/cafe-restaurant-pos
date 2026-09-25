@@ -3,7 +3,7 @@
  *
  * Every section is a real route now (`accounting-routes.ts` answers the path),
  * so this file carries what a menu and a gate need: what each section is
- * *called*, and the roles that may open it. The same list is read by the
+ * *called*, and the capability that opens it. The same list is read by the
  * dashboard's sidebar (built server-side in `layout.tsx`) and the in-page rail
  * (`accounting-manager.tsx`, a client component), so the two can never
  * disagree about what «حسابداری» contains or what each section is called.
@@ -12,19 +12,28 @@
  * manager keeps its own icon map, the way `crm-nav.ts` does.
  */
 
+import { PERMISSIONS, type Permission } from "@/lib/permissions";
 import type { AccountingSectionKey } from "./accounting-routes";
 
-/** The app's own door — owner, manager and accountant, the line every page draws. */
-export const ACCOUNTING_ROLES = ["owner", "manager", "accountant"] as const;
+/**
+ * The app's own door.
+ *
+ * `ledger.view` rather than a role list: it is the key every Accounting route
+ * enforces, and its audience is exactly the owner/manager/accountant the old
+ * `ACCOUNTING_ROLES` named — plus `viewer`, the read-only auditor role, for
+ * whom being able to read the books is the entire point.
+ */
+export const ACCOUNTING_DOOR_PERMISSION: Permission = PERMISSIONS.ledgerView;
 
 export interface AccountingSectionDef {
   key: AccountingSectionKey;
   label: string;
   /**
-   * The roles that may open this section. Omitted means the app's own door
-   * (`ACCOUNTING_ROLES`), which the page gate already enforces.
+   * The capability this section needs beyond the app's own door. Omitted means
+   * `ACCOUNTING_DOOR_PERMISSION` is enough, which the page gate already
+   * enforces.
    */
-  roles?: readonly string[];
+  permission?: Permission;
 }
 
 /** The app's sections, in menu order. The dashboard (the app's home) is first. */
@@ -48,8 +57,13 @@ export const ACCOUNTING_SECTIONS: readonly AccountingSectionDef[] = [
   { key: "reconciliation", label: "تطبیق بانکی" },
   { key: "chart-of-accounts", label: "سرفصل حساب‌ها" },
   // Wages are compensation data — owner + accountant only, the same line the
-  // in-page rail draws. A manager may open every other section.
-  { key: "payroll", label: "حقوق و دستمزد", roles: ["owner", "accountant"] },
+  // in-page rail draws. A manager may open every other section. This used to
+  // borrow `ledger.post` because that preset happened to be the right
+  // audience; it now asks for the key that actually means "may see payroll",
+  // which is also what `/api/ledger/payroll/*` enforces. Borrowing a key for
+  // its preset rather than its meaning is how a menu and an API drift apart
+  // the next time either preset changes.
+  { key: "payroll", label: "حقوق و دستمزد", permission: PERMISSIONS.payrollView },
   { key: "vat", label: "گزارش مالیات" },
   { key: "fixed-assets", label: "دارایی‌های ثابت" },
   { key: "financial-reports", label: "گزارش‌های مالی" },
@@ -107,20 +121,25 @@ export const ACCOUNTING_NAV_GROUPS: readonly {
   { label: "پیکربندی", keys: ["settings"] },
 ];
 
-/** The sections a role may open — the same list the sidebar and the rail draw. */
-export function accountingSectionsForRole(
-  role: string | null | undefined,
+/** The sections a member may open — the same list the sidebar and the rail draw. */
+export function accountingSectionsFor(
+  permissions: ReadonlySet<string>,
 ): AccountingSectionDef[] {
-  if (!(ACCOUNTING_ROLES as readonly string[]).includes(role ?? "")) return [];
+  if (!permissions.has(ACCOUNTING_DOOR_PERMISSION)) return [];
   return ACCOUNTING_SECTIONS.filter(
-    (section) => !section.roles || section.roles.includes(role ?? ""),
+    (section) => !section.permission || permissions.has(section.permission),
   );
 }
 
-/** Whether a given role may open a section — the page gate and the menu agree by construction. */
+/** Whether a member may open a section — the page gate and the menu agree by construction. */
 export function canViewAccountingSection(
-  role: string | null | undefined,
+  permissions: ReadonlySet<string>,
   key: AccountingSectionKey,
 ): boolean {
-  return accountingSectionsForRole(role).some((section) => section.key === key);
+  return accountingSectionsFor(permissions).some((section) => section.key === key);
+}
+
+/** Whether a member has any Accounting surface at all — the app door. */
+export function canOpenAccounting(permissions: ReadonlySet<string>): boolean {
+  return permissions.has(ACCOUNTING_DOOR_PERMISSION);
 }

@@ -2,7 +2,7 @@
 
 import { SectionCardSkeleton } from "@/app/dashboard/page-chrome";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SectionNav } from "@/app/dashboard/section-nav";
 import { api, ErrorBox, SecondaryButton } from "@/app/dashboard/ui";
@@ -19,7 +19,7 @@ import {
   accountingSectionHref,
   type AccountingSectionKey,
 } from "./accounting-routes";
-import { accountingSectionsForRole } from "./accounting-nav";
+import { accountingSectionsFor } from "./accounting-nav";
 import {
   LEDGER_WORKSPACE_DESCRIPTION,
   LEDGER_WORKSPACE_LABEL,
@@ -148,9 +148,10 @@ export function AccountingManager({
    * ledger tools.
    *
    * Wages stay owner + accountant: the keys are filtered through
-   * `accountingSectionsForRole`, the same gate the pages use.
+   * `accountingSectionsFor`, the same gate the pages use.
    */
-  const allowed = accountingSectionsForRole(role);
+  const permissionSet = useMemo(() => new Set(permissions), [permissions]);
+  const allowed = accountingSectionsFor(permissionSet);
   /*
    * Whether this member may restructure the chart of accounts.
    *

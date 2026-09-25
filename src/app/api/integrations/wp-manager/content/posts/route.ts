@@ -18,7 +18,7 @@ import {
  * of that HTML merely to draw twenty titles.
  */
 export const GET = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceView);
   if (error) return error;
 
   const url = new URL(request.url);
@@ -65,7 +65,7 @@ const FIELD_LIMITS: Partial<Record<(typeof CONTENT_FIELDS)[number], number>> = {
 };
 
 export const POST = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceManage);
   if (error) return error;
 
   let body: Record<string, unknown>;

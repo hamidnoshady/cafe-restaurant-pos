@@ -16,7 +16,7 @@ interface Ctx {
  * paying, since a void is an equally ledger-altering action.
  */
 export const POST = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.payrollManage);
   if (error) return error;
 
   const { id } = await ctx.params;

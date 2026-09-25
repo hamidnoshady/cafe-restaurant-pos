@@ -14,7 +14,7 @@ export const GET = withTenantScope(async () => {
 
 /** Registers a fixed asset — no posting yet; depreciation is posted separately, per period, via .../[id]/depreciate. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeAssetsManage);
   if (error) return error;
 
   let body: {

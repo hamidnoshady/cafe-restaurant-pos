@@ -24,7 +24,7 @@ export const GET = withTenantScope(async (request: NextRequest) => {
 
 /** Records a paid operating expense and posts it immediately (Debit the chosen expense account / Credit the payment account). */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
+  const { session, error } = await requirePermission(PERMISSIONS.financeExpensesManage);
   if (error) return error;
 
   let body: {

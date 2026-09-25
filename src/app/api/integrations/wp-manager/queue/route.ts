@@ -18,7 +18,7 @@ import {
  * رویدادها» section reads this so «چرا این سفارش نیامد؟» has one place to look.
  */
 export const GET = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceView);
   if (error) return error;
 
   const url = new URL(request.url);
@@ -55,7 +55,7 @@ export const GET = withTenantScope(async (request: Request) => {
 
 /** Action handler: retry single, retry all failed, flush outbox queue. */
 export const POST = withTenantScope(async (request: Request) => {
-  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceSync);
   if (error) return error;
 
   let body: {

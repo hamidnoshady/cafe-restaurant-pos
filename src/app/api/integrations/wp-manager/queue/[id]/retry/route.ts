@@ -6,7 +6,7 @@ import { retryWpQueueRow } from "@/lib/integrations/wp-manager-service";
 
 /** Put a failed or dead WP queue row (outbox or inbox) back in the queue, due now. */
 export const POST = withTenantScope(async (request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
+  const { session, error } = await requirePermission(PERMISSIONS.woocommerceSync);
   if (error) return error;
 
   const { id } = await context.params;

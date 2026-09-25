@@ -8,10 +8,9 @@ import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
 import { AskAssistant } from "@/components/ai/ask-assistant";
 import { AccountingManager } from "./accounting-manager";
-import { canViewAccountingSection } from "./accounting-nav";
+import { canOpenAccounting, canViewAccountingSection } from "./accounting-nav";
 import {
   accountingFallbackHref,
-  canOpenAccounting,
   type AccountingSectionKey,
 } from "./accounting-routes";
 
@@ -63,12 +62,15 @@ const ACCOUNTING_HEADINGS: Partial<Record<AccountingSectionKey, { title: string;
 export async function AccountingPageBody({ section }: { section: AccountingSectionKey }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canOpenAccounting(session.role)) redirect("/dashboard");
-  if (!canViewAccountingSection(session.role, section)) redirect(accountingFallbackHref());
+  // Resolved before the gates, because the gates are now asked in terms of
+  // effective permissions — the same set the Accounting routes enforce.
+  const member = await memberAccessFor(session);
+  const permissions: ReadonlySet<string> = member?.permissions ?? new Set<string>();
+  if (!canOpenAccounting(permissions)) redirect("/dashboard");
+  if (!canViewAccountingSection(permissions, section)) redirect(accountingFallbackHref());
   await requireFeatureForPage(session.businessId, "ledger");
   const holooCompanion = await withTenant(session.businessId, () => hasActiveHolooCompanion(session.businessId));
   const features = await effectiveFeatures(session.businessId);
-  const member = await memberAccessFor(session);
   const heading = ACCOUNTING_HEADINGS[section] ?? DEFAULT_ACCOUNTING_HEADING;
 
   return (

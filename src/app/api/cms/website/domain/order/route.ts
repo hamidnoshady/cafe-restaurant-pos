@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withTenantScope, requirePermission } from "@/lib/auth";
-import { PERMISSIONS } from "@/lib/permissions";
+import { withTenantScope, requireRole } from "@/lib/auth";
 import { purchaseWebsiteDomain, type DomainPurchaseInput } from "@/lib/website/domain-service";
 
 /**
@@ -12,7 +11,7 @@ import { purchaseWebsiteDomain, type DomainPurchaseInput } from "@/lib/website/d
  * registration.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.cmsConfigure);
+  const { session, error } = await requireRole("owner");
   if (error) return error;
 
   let body: DomainPurchaseInput;
