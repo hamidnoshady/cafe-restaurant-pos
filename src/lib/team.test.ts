@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   INVITATION_TTL_DAYS,
   checkLastOwner,
+  escalationRefusal,
   generateInvitationToken,
   hashInvitationToken,
   invitationExpiry,
@@ -259,5 +260,95 @@ describe("resolveMemberLocationAssignment", () => {
       locationIds: [],
       defaultLocationId: null,
     });
+  });
+});
+
+describe("escalationRefusal", () => {
+  const set = (...keys: string[]) => new Set(keys);
+
+  /** A convenience for the common shape: nothing changes unless a test says so. */
+  function check(over: Partial<Parameters<typeof escalationRefusal>[0]>) {
+    return escalationRefusal({
+      actorRole: "manager",
+      actorPermissions: set("menu.edit", "orders.void"),
+      isSelf: false,
+      currentPermissions: set("menu.view"),
+      nextPermissions: set("menu.view"),
+      roleChanges: false,
+      ...over,
+    });
+  }
+
+  it("allows an edit that adds nothing", () => {
+    expect(check({})).toBeNull();
+  });
+
+  it("allows adding a capability the editor holds", () => {
+    expect(check({ nextPermissions: set("menu.view", "menu.edit") })).toBeNull();
+  });
+
+  it("refuses adding a capability the editor lacks", () => {
+    expect(check({ nextPermissions: set("menu.view", "ledger.post") })).toBe("grants_beyond_actor");
+  });
+
+  it("allows removing a capability the editor lacks", () => {
+    // Reducing access is never escalation, whoever is doing it.
+    expect(
+      check({ currentPermissions: set("menu.view", "ledger.post"), nextPermissions: set("menu.view") }),
+    ).toBeNull();
+  });
+
+  it("measures the delta, not the resulting set", () => {
+    // The target keeps a capability the editor has never had; that is the
+    // status quo, not something this edit is handing out. Checking the whole
+    // resulting set instead would block a manager from ever touching an
+    // accountant.
+    expect(
+      check({
+        currentPermissions: set("menu.view", "ledger.post"),
+        nextPermissions: set("menu.view", "ledger.post", "menu.edit"),
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses a non-owner changing their own role, even sideways", () => {
+    expect(check({ isSelf: true, roleChanges: true })).toBe("self_role_change");
+  });
+
+  it("allows a non-owner editing their own non-role fields", () => {
+    expect(check({ isSelf: true, roleChanges: false })).toBeNull();
+  });
+
+  it("allows a non-owner changing someone else's role within their own authority", () => {
+    expect(check({ isSelf: false, roleChanges: true })).toBeNull();
+  });
+
+  it("exempts the owner from both rules", () => {
+    expect(
+      check({
+        actorRole: "owner",
+        actorPermissions: set(),
+        isSelf: true,
+        roleChanges: true,
+        nextPermissions: set("menu.view", "ledger.post"),
+      }),
+    ).toBeNull();
+  });
+
+  it("does not exempt an admin, who is reducible and so not the last word", () => {
+    // `admin` is every permission except the owner-only ones *by rule*, but it
+    // is deliberately not an absolute role: overrides still apply to it, so an
+    // admin whose access has been trimmed must not be able to top itself back
+    // up through the team screen.
+    expect(
+      check({ actorRole: "admin", actorPermissions: set("menu.edit"), nextPermissions: set("menu.view", "ledger.post") }),
+    ).toBe("grants_beyond_actor");
+  });
+
+  it("reports the self-role rule ahead of the grant rule when both apply", () => {
+    // Deterministic, so the API's error code is stable for the UI.
+    expect(
+      check({ isSelf: true, roleChanges: true, nextPermissions: set("menu.view", "ledger.post") }),
+    ).toBe("self_role_change");
   });
 });

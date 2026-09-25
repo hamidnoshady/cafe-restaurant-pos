@@ -127,7 +127,8 @@ const DRAFTS: Draft[] = [
 
   // --- Floor ---------------------------------------------------------------
   { key: P.tablesManage, group: "floor", label: "مدیریت میزها", description: "باز و بسته کردن میز و جابه‌جایی سفارش بین میزها.", risk: "low", audit: false },
-  { key: P.reservationsManage, group: "floor", label: "مدیریت رزرو", description: "ثبت، تغییر و لغو رزرو.", risk: "low", audit: false },
+  { key: P.reservationsView, group: "floor", label: "مشاهده رزروها", description: "دیدن دفتر رزرو و رزروهای امروز.", risk: "low", audit: false },
+  { key: P.reservationsManage, group: "floor", label: "مدیریت رزرو", description: "ثبت، تغییر و لغو رزرو.", risk: "low", audit: false, implies: [P.reservationsView] },
   { key: P.kitchenView, group: "floor", label: "نمایشگر آشپزخانه", description: "مشاهده و به‌روزرسانی وضعیت اقلام در آشپزخانه.", risk: "low", audit: false },
   { key: P.deliveryManage, group: "floor", label: "مدیریت ارسال", description: "تخصیص پیک و پیگیری وضعیت ارسال.", risk: "low", audit: false },
 
@@ -151,6 +152,7 @@ const DRAFTS: Draft[] = [
   { key: P.crmConsentManage, group: "crm", label: "مدیریت رضایت بازاریابی", description: "تغییر رضایت مشتری برای دریافت پیام. یک سابقه حقوقی است.", risk: "high", audit: true },
   { key: P.crmExport, group: "crm", label: "خروجی گرفتن از مشتریان", description: "دانلود فهرست مشتریان. راهی است که یک بانک اطلاعاتی از سازمان خارج می‌شود.", risk: "high", audit: true, implies: [P.crmView] },
   { key: P.crmConfigure, group: "crm", label: "پیکربندی CRM", description: "تغییر مراحل قیف، تعریف بخش‌ها و ساختار گزارش‌ها.", risk: "medium", audit: true, implies: [P.crmView] },
+  { key: P.crmDelete, group: "crm", label: "حذف رکورد CRM", description: "حذف کامل پرونده یا فعالیت مشتری همراه با تاریخچه آن.", risk: "high", audit: true, implies: [P.crmView] },
 
   // --- Workspace -----------------------------------------------------------
   { key: P.workspaceView, group: "workspace", label: "مشاهده میز کار", description: "دیدن پروژه‌ها، وظایف و اسناد.", risk: "low", audit: false },

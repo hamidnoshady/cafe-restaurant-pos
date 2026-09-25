@@ -29,7 +29,7 @@
 
 import type { AccountingSectionKey } from "./accounting-routes";
 import { accountingSectionHref, isAccountingSectionPathname } from "./accounting-routes";
-import { accountingSectionsForRole, type AccountingSectionDef } from "./accounting-nav";
+import { accountingSectionsFor, type AccountingSectionDef } from "./accounting-nav";
 import { ACCOUNTING_WORKSPACE_HREFS, accountingProductsHref } from "@/lib/app-routes";
 import { partyDirectoryHref } from "@/lib/party-directory";
 
@@ -229,14 +229,15 @@ export const LEDGER_WORKSPACE_ICON_KEY = "/accounting";
  * for the two to disagree.
  */
 export function accountingWorkspaceGroups({
-  role,
+  permissions,
   navItems,
 }: {
-  role: string | null | undefined;
+  /** The member's effective permissions — the same set the routes enforce. */
+  permissions: ReadonlySet<string>;
   /** The business nav, flattened (parents and children alike), already gated. */
   navItems: readonly { label: string; href: string; iconKey?: string }[];
 }): WorkspaceNavGroup[] {
-  const allowed = accountingSectionsForRole(role);
+  const allowed = accountingSectionsFor(permissions);
   const byKey = new Map<AccountingSectionKey, AccountingSectionDef>(
     allowed.map((section) => [section.key, section]),
   );

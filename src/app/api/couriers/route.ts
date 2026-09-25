@@ -1,13 +1,13 @@
 import { memberAccessFor } from "@/lib/member-access";
 import { PERMISSIONS } from "@/lib/permissions";
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {requirePermission, withTenantScope } from "@/lib/auth";
 import { createCourier, listCouriers } from "@/lib/delivery-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** In-house couriers for delivery dispatch. Cashiers list them (to assign); managers/owners manage the roster. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.deliveryManage);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -33,7 +33,7 @@ interface CreateCourierBody {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

@@ -7,9 +7,9 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { PIN_MAX_LENGTH, isValidPin } from "@/lib/pin-policy";
 import { roleLabel } from "@/lib/role-labels";
+import { SETUP_CREATABLE_ROLES, isPasswordRole } from "@/lib/roles";
+import type { Role } from "@/lib/auth-edge";
 import { api, ErrorBox, errorMessage, Field, inputClass, PrimaryButton, StepShell } from "../ui";
-
-type CreatableRole = "manager" | "accountant" | "cashier" | "waiter" | "kitchen";
 
 interface UserRow {
   id: string;
@@ -21,7 +21,7 @@ interface UserRow {
 
 export default function UsersStep() {
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [role, setRole] = useState<CreatableRole>("cashier");
+  const [role, setRole] = useState<Role>("cashier");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,8 +38,15 @@ export default function UsersStep() {
   }, []);
   useEffect(load, [load]);
 
-  // The two password roles the wizard can create (the owner already exists).
-  const needsEmail = role === "manager" || role === "accountant";
+  /*
+   * Which credential the form asks for. This must be the same question the API
+   * asks in `POST /api/setup/users`, which branches on `isPasswordRole`. The
+   * hand-written `role === "manager" || role === "accountant"` this replaces
+   * had already fallen behind: picking `admin` or `viewer` showed the PIN field
+   * and then failed server-side with `invalid_pin`, because the API correctly
+   * classified both as password roles and went looking for an email.
+   */
+  const needsEmail = isPasswordRole(role);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,14 +92,8 @@ export default function UsersStep() {
             <SearchableSelect
               className={inputClass}
               value={role}
-              onChange={(value) => setRole(value as CreatableRole)}
-              options={[
-                { value: "manager", label: roleLabel("manager") },
-                { value: "accountant", label: roleLabel("accountant") },
-                { value: "cashier", label: roleLabel("cashier") },
-                { value: "waiter", label: roleLabel("waiter") },
-                { value: "kitchen", label: roleLabel("kitchen") },
-              ]}
+              onChange={(value) => setRole(value as Role)}
+              options={SETUP_CREATABLE_ROLES.map((value) => ({ value, label: roleLabel(value) }))}
             />
           </Field>
           <Field label="نام و نام خانوادگی *">

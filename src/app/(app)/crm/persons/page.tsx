@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { SectionCard } from "@/app/dashboard/page-chrome";
 import { canViewCrmSection, crmFallbackHref, crmSectionHref } from "../crm-routes";
 import { CustomerPicker } from "./customer-picker";
@@ -16,7 +17,9 @@ import { CustomerPicker } from "./customer-picker";
 export default async function CrmCustomerIndexPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewCrmSection(session.role, "persons")) redirect(crmFallbackHref(session.role));
+  const access = await memberAccessFor(session);
+  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  if (!canViewCrmSection(permissions, "persons")) redirect(crmFallbackHref(permissions));
 
   return (
     <SectionCard

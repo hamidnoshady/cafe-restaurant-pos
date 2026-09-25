@@ -14,8 +14,9 @@ export default async function OrdersPage({
   const session = await getSession();
   if (!session) redirect("/login");
   await requireModuleForPage(session.businessId, "orders");
-  if (!["owner", "manager", "cashier", "waiter"].includes(session.role))
-    redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set<string>();
+  if (!permissions.has(PERMISSIONS.ordersCreate)) redirect("/dashboard");
 
   // Amending a *closed* order is its own permission, not part of the till's
   // edit rights — see permissions.ts. The member's effective set comes from
@@ -28,7 +29,7 @@ export default async function OrdersPage({
 
   return (
     <OrdersList
-      canEdit={["owner", "manager", "cashier"].includes(session.role)}
+      canEdit={permissions.has(PERMISSIONS.paymentsTake)}
       canAmendClosed={canAmendClosed}
       initialOrderId={order ?? null}
     />

@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireFeatureForPage } from "@/lib/features";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
@@ -10,7 +12,9 @@ export default async function DeliveryPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   await requireModuleForPage(session.businessId, "delivery");
-  if (!["owner", "manager", "cashier"].includes(session.role)) redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set<string>();
+  if (!permissions.has(PERMISSIONS.deliveryManage)) redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "delivery");
 
   return (
@@ -20,7 +24,12 @@ export default async function DeliveryPage() {
         description="تخصیص سفارش‌های ارسالی به پیک‌ها و پیگیری وضعیت تحویل."
         actions={<KnowledgeHelpButton section="delivery" />}
       />
-      <DeliveryBoard canManageCouriers={session.role === "owner" || session.role === "manager"} />
+      {/*
+        Dispatching a delivery is `delivery.manage`; maintaining the courier
+        roster is master data, so it is `settings.manage` — the same split
+        `/api/couriers` enforces between its GET and its writes.
+      */}
+      <DeliveryBoard canManageCouriers={permissions.has(PERMISSIONS.settingsManage)} />
     </PageShell>
   );
 }

@@ -63,20 +63,19 @@ export function invitationStatus(
 // Roles an owner may hand out
 // ---------------------------------------------------------------------------
 
-/**
- * Roles that authenticate with an email and password (and therefore need a
- * global identity), versus roles that use a numeric PIN on a shared device.
- */
-export const PASSWORD_ROLES: Role[] = ["owner", "admin", "manager", "accountant", "viewer"];
-export const PIN_ROLES: Role[] = ["cashier", "waiter", "kitchen"];
-
-export function isPasswordRole(role: Role): boolean {
-  return PASSWORD_ROLES.includes(role);
-}
-
-export function isPinRole(role: Role): boolean {
-  return PIN_ROLES.includes(role);
-}
+// The role taxonomy lives in `roles.ts` so that `"use client"` components can
+// import it without dragging in this file's `node:crypto`. Re-exported here for
+// the server callers that already read it from `team.ts` — the same
+// arrangement made for `pin-policy.ts` below.
+export {
+  ALL_ROLES,
+  ASSIGNABLE_ROLES,
+  INVITABLE_ROLES,
+  PASSWORD_ROLES,
+  PIN_ROLES,
+  isPasswordRole,
+  isPinRole,
+} from "./roles";
 
 // ---------------------------------------------------------------------------
 // Lockout guards
@@ -236,3 +235,71 @@ export function overridesAreEmpty(overrides: PermissionOverrides): boolean {
 // `node:crypto`. Re-exported here for the server callers that already read it
 // from `team.ts`.
 export { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isValidPin } from "./pin-policy";
+
+// ---------------------------------------------------------------------------
+// Privilege escalation
+// ---------------------------------------------------------------------------
+
+/** Why a membership edit that changes access was refused, or null when allowed. */
+export type EscalationRefusal = "self_role_change" | "grants_beyond_actor";
+
+export interface EscalationCheck {
+  /** The editor's role as the database holds it. */
+  actorRole: Role;
+  /** The editor's own effective permissions. */
+  actorPermissions: ReadonlySet<string>;
+  /** True when the editor is editing their own membership row. */
+  isSelf: boolean;
+  /** What the target may do right now. */
+  currentPermissions: ReadonlySet<string>;
+  /** What the target would be able to do if this edit were applied. */
+  nextPermissions: ReadonlySet<string>;
+  /** Set only when the request actually changes the target's role. */
+  roleChanges: boolean;
+}
+
+/**
+ * Whether an edit that changes a member's access is an escalation, and so must
+ * be refused.
+ *
+ * `team.permissions.manage` exists so that an owner can delegate day-to-day
+ * access administration without handing over the business. Delegation is only
+ * safe if the delegate cannot use it to out-rank the person who delegated it,
+ * and two distinct moves would let them:
+ *
+ * 1. Granting a capability they do not hold themselves. A team administrator
+ *    without `payments.refund` could tick it onto a colleague — or onto their
+ *    own row — and the refund route would honour it, because the route asks
+ *    only whether the *member* holds the key. So the permissions an edit
+ *    *adds* must be a subset of what the editor already has. Only additions
+ *    are tested: taking access away is never an escalation, and checking the
+ *    whole resulting set instead would wrongly block a manager from adjusting
+ *    an accountant whose preset contains `ledger.post` that the manager lacks.
+ *
+ * 2. Changing their own role. The permission delta alone does not catch this,
+ *    because a handful of decisions are deliberately made on role *identity*
+ *    rather than capability — the AI autonomous-approval routes and the
+ *    first-run wizard among them (see JUSTIFIED_ROLE_CHECKS in
+ *    authorization-contract.test.ts). Someone could move themselves to a role
+ *    whose permission set is a subset of their current one and still cross one
+ *    of those role-identity gates. Self-promotion is therefore refused
+ *    outright rather than measured.
+ *
+ * An owner is exempt: they already hold everything, so neither move can gain
+ * them anything, and the last-owner rule is what protects the business from
+ * an owner demoting themselves.
+ *
+ * Pure, so team.test.ts can pin the matrix without a database.
+ */
+export function escalationRefusal(check: EscalationCheck): EscalationRefusal | null {
+  if (check.actorRole === "owner") return null;
+
+  if (check.isSelf && check.roleChanges) return "self_role_change";
+
+  for (const permission of check.nextPermissions) {
+    if (check.currentPermissions.has(permission)) continue;
+    // A capability being added that the editor cannot exercise themselves.
+    if (!check.actorPermissions.has(permission)) return "grants_beyond_actor";
+  }
+  return null;
+}

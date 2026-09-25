@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { MediaManager } from "@/app/dashboard/media/media-manager";
@@ -14,7 +16,9 @@ import { MediaManager } from "@/app/dashboard/media/media-manager";
 export default async function MediaPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set<string>();
+  if (!permissions.has(PERMISSIONS.settingsManage)) redirect("/dashboard");
   await requireModuleForPage(session.businessId, "media");
 
   return (

@@ -5,7 +5,8 @@ import {
   isProductWorkspaceIndustry,
   PRODUCT_WORKSPACE_SECTIONS,
 } from "@/lib/product-workspace";
-import { ACCOUNTING_ROLES, ACCOUNTING_SECTIONS } from "@/app/(app)/accounting/accounting-nav";
+import { PERMISSIONS } from "@/lib/permissions";
+import { ACCOUNTING_DOOR_PERMISSION, ACCOUNTING_SECTIONS } from "@/app/(app)/accounting/accounting-nav";
 import { PARTY_DIRECTORY_NAV_VIEWS, partyDirectoryHref } from "@/lib/party-directory";
 import { accountingSectionHref } from "@/app/(app)/accounting/accounting-routes";
 import { ACCOUNTING_WORKSPACE_HREFS, PLATFORM_BILLING_HREF, PLATFORM_SETTINGS_HOME } from "@/lib/app-routes";
@@ -52,13 +53,13 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       label: labelFor(industry, "saleDocumentPlural"),
       module: "orders",
       href: "/accounting/orders",
-      roles: ["owner", "manager", "cashier", "waiter"],
+      requiredAnyPermission: [PERMISSIONS.ordersCreate],
     },
     {
       label: labelFor(industry, "sellScreen"),
       module: "pos",
       href: ACCOUNTING_WORKSPACE_HREFS.pos,
-      roles: ["owner", "manager", "cashier"],
+      requiredAnyPermission: [PERMISSIONS.paymentsTake],
     },
     // The CRM app's door (Phase 36 — it is its own app, not a section of any
     // other). It is anchored on the `customers` module — core for every trade,
@@ -84,7 +85,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       label: "ارتباط با مشتری",
       module: "customers",
       href: "/crm/overview",
-      roles: ["owner", "manager", "cashier"],
+      requiredAnyPermission: [PERMISSIONS.crmView, PERMISSIONS.crmManage],
     },
     // Phase 36b — loyalty, campaigns/gift cards and commission are one app
     // now («رشد و بازاریابی», /growth), with its own dashboard the
@@ -97,7 +98,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       label: "رشد و بازاریابی",
       module: "loyalty",
       href: "/growth/overview",
-      roles: ["owner", "manager", "cashier"],
+      requiredAnyPermission: [PERMISSIONS.growthView, PERMISSIONS.growthManage, PERMISSIONS.loyaltyView],
     },
     // Its own app (issue #378) — an integration with an external system of
     // record (eshobe-cms), not a Growth engine. Owner/manager only, the same
@@ -106,22 +107,22 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       label: "وب‌سایت",
       module: "website",
       href: "/websites/overview",
-      roles: ["owner", "manager"],
+      requiredAnyPermission: [PERMISSIONS.websiteView],
     },
     {
       label: "خرید و انبار",
       module: "stock",
       href: ACCOUNTING_WORKSPACE_HREFS.inventory,
-      roles: ["owner", "manager"],
+      requiredAnyPermission: [PERMISSIONS.inventoryAdjust],
     },
-    { label: "میزها", module: "tables", href: ACCOUNTING_WORKSPACE_HREFS.floor, roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
-    { label: "میزهای من", module: "waiter", href: "/accounting/waiter", roles: ["cashier", "waiter"], flag: "reservations" },
-    { label: "آشپزخانه", module: "kitchen", href: ACCOUNTING_WORKSPACE_HREFS.kitchen, roles: ["owner", "manager", "kitchen"] },
-    { label: "رزروها", module: "reservations", href: ACCOUNTING_WORKSPACE_HREFS.reservations, roles: ["owner", "manager", "cashier", "waiter"], flag: "reservations" },
-    { label: "ارسال و پیک", module: "delivery", href: ACCOUNTING_WORKSPACE_HREFS.delivery, roles: ["owner", "manager", "cashier"], flag: "delivery" },
-    { label: "انبار", module: "inventory", href: ACCOUNTING_WORKSPACE_HREFS.inventory, roles: ["owner", "manager"], flag: "inventory" },
-    { label: INDUSTRY_LABELS.jewelry, module: "jewelry", href: "/accounting/jewelry", roles: ["owner", "manager"] },
-    { label: INDUSTRY_LABELS.watch, module: "watch", href: "/accounting/watch", roles: ["owner", "manager"] },
+    { label: "میزها", module: "tables", href: ACCOUNTING_WORKSPACE_HREFS.floor, requiredAnyPermission: [PERMISSIONS.tablesManage], flag: "reservations" },
+    { label: "میزهای من", module: "waiter", href: "/accounting/waiter", requiredAnyPermission: [PERMISSIONS.ordersCreate], flag: "reservations" },
+    { label: "آشپزخانه", module: "kitchen", href: ACCOUNTING_WORKSPACE_HREFS.kitchen, requiredAnyPermission: [PERMISSIONS.kitchenView] },
+    { label: "رزروها", module: "reservations", href: ACCOUNTING_WORKSPACE_HREFS.reservations, requiredAnyPermission: [PERMISSIONS.reservationsView], flag: "reservations" },
+    { label: "ارسال و پیک", module: "delivery", href: ACCOUNTING_WORKSPACE_HREFS.delivery, requiredAnyPermission: [PERMISSIONS.deliveryManage], flag: "delivery" },
+    { label: "انبار", module: "inventory", href: ACCOUNTING_WORKSPACE_HREFS.inventory, requiredAnyPermission: [PERMISSIONS.inventoryAdjust], flag: "inventory" },
+    { label: INDUSTRY_LABELS.jewelry, module: "jewelry", href: "/accounting/jewelry", requiredAnyPermission: [PERMISSIONS.inventoryAdjust] },
+    { label: INDUSTRY_LABELS.watch, module: "watch", href: "/accounting/watch", requiredAnyPermission: [PERMISSIONS.inventoryAdjust] },
     // Phase 42 — the retail trade-goods trades manage their catalogue in the
     // shared products workspace: a collapsible sidebar group — افزودن محصول،
     // لیست محصولات، لیست قیمت، ویژگی محصول، الگوی بارکد وزنی and the trade's
@@ -134,18 +135,18 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
             label: "محصولات",
             module: industry,
             iconKey: ACCOUNTING_WORKSPACE_HREFS.products,
-            roles: ["owner", "manager"],
+            requiredAnyPermission: [PERMISSIONS.inventoryAdjust],
             children: PRODUCT_WORKSPACE_SECTIONS.map((section) => ({
               label: section.label,
               module: industry,
               href: section.href,
-              roles: ["owner", "manager"],
+              requiredAnyPermission: [PERMISSIONS.inventoryAdjust],
             })),
           },
         ]
       : []),
     ...(industry === "cosmetics"
-      ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: ACCOUNTING_WORKSPACE_HREFS.cosmetics, roles: ["owner", "manager"] }]
+      ? [{ label: INDUSTRY_LABELS.cosmetics, module: "cosmetics" as const, href: ACCOUNTING_WORKSPACE_HREFS.cosmetics, requiredAnyPermission: [PERMISSIONS.inventoryAdjust] }]
       : []),
     // The «حسابداری» sub-menu — the Accounting app's sections, each a real
     // route under the app's own prefix (`/accounting/…`), drawn as a
@@ -157,14 +158,14 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       label: "حسابداری",
       module: "ledger",
       href: "/accounting/overview",
-      roles: [...ACCOUNTING_ROLES],
+      requiredAnyPermission: [ACCOUNTING_DOOR_PERMISSION],
       flag: "ledger",
       children: [
         ...ACCOUNTING_SECTIONS.map((section) => ({
           label: section.label,
           module: "ledger" as const,
           href: accountingSectionHref(section.key),
-          roles: [...(section.roles ?? ACCOUNTING_ROLES)],
+          requiredAnyPermission: [section.permission ?? ACCOUNTING_DOOR_PERMISSION],
         })),
         // The directory's two most-asked-for views. They are filters of
         // «اشخاص» above, listed here for the two surfaces that read this tree
@@ -176,7 +177,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
           label: view.label,
           module: "ledger" as const,
           href: partyDirectoryHref(view.key),
-          roles: [...ACCOUNTING_ROLES],
+          requiredAnyPermission: [ACCOUNTING_DOOR_PERMISSION],
         })),
       ],
     },
@@ -189,19 +190,19 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
       label: "کتابخانهٔ رسانه",
       module: "media",
       href: "/media",
-      roles: ["owner", "manager"],
+      requiredAnyPermission: [PERMISSIONS.settingsManage],
     },
     {
       label: "گزارش‌ها",
       module: "reports",
       href: ACCOUNTING_WORKSPACE_HREFS.reports,
-      roles: ["owner", "manager", "accountant"],
+      requiredAnyPermission: [PERMISSIONS.reportsView],
       flag: "reporting",
       children: REPORTS_TABS.map((tab) => ({
         label: tab.label,
         module: "reports" as const,
         href: reportsTabHref(tab.key),
-        roles: tab.roles ?? ["owner", "manager", "accountant"],
+        requiredAnyPermission: [PERMISSIONS.reportsView],
       })),
     },
     // The assistant itself is not an entry: it IS the dashboard (`/dashboard`
@@ -214,7 +215,7 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
     // Wallet/credits & plans — platform-owned, so the door is the platform
     // settings area's billing page, never an app's. The small credit badge in
     // the chrome links to the same URL.
-    { label: "اعتبار و پرداخت‌ها", module: "settings", href: PLATFORM_BILLING_HREF, roles: ["owner", "manager"] },
+    { label: "اعتبار و پرداخت‌ها", module: "settings", href: PLATFORM_BILLING_HREF, requiredAnyPermission: [PERMISSIONS.settingsManage] },
     // Settings tabs are already role/permission/feature-filtered server-side
     // (`visibleSettingsTabs`), so they carry no further gate here.
     {
@@ -244,9 +245,20 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
   ];
 }
 
+/**
+ * Whether a nav entry is shown.
+ *
+ * Note the absence of a role test. Every entry used to carry a `roles: [...]`
+ * list alongside the optional `requiredAnyPermission`, and the two asked
+ * different questions from the routes behind them: «رزروها» admitted the
+ * waiter while `POST /api/reservations` did not, «ارسال و پیک» named three
+ * roles while `/api/couriers` named a capability, and an override that granted
+ * a capability to one person changed nothing in their menu. Every entry states
+ * a capability now, so the menu and the route ask the same question by
+ * construction.
+ */
 function canSee(
   item: NavItem,
-  role: Role,
   permissions: Set<Permission>,
   features: Record<string, boolean>,
   industry: Industry,
@@ -259,7 +271,6 @@ function canSee(
   // LOCKABLE_FEATURES in features.ts). Its page renders a read-only preview
   // rather than redirecting, so the link goes somewhere real either way.
   if (item.flag && !features[item.flag] && !isLockableFeature(item.flag)) return false;
-  if (item.roles && !item.roles.includes(role)) return false;
   return !item.requiredAnyPermission || item.requiredAnyPermission.some((permission) => permissions.has(permission));
 }
 
@@ -332,11 +343,11 @@ export async function WorkspaceShell({
     // rather than an empty disclosure.
     .map((item) =>
       item.children
-        ? { ...item, children: item.children.filter((child) => canSee(child, member.role, permissions, features, industry)) }
+        ? { ...item, children: item.children.filter((child) => canSee(child, permissions, features, industry)) }
         : item,
     )
     .filter((item) => !item.children || item.children.length > 0)
-    .filter((item) => canSee(item, member.role, permissions, features, industry))
+    .filter((item) => canSee(item, permissions, features, industry))
     .filter((item) => item.href !== "/settings" || settingsTabs.length > 0)
     .map((item) => {
       // An app that is off is *announced*, not hidden: the entry stays and

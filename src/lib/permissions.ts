@@ -36,6 +36,16 @@ export const PERMISSIONS = {
 
   // Floor
   tablesManage: "tables.manage",
+  /**
+   * Reading the reservation book versus writing in it.
+   *
+   * Split because the two audiences really did differ: `GET /api/reservations`
+   * was requireRole("owner","manager","cashier","waiter") while `POST` was
+   * requireRole("owner","manager","cashier"). A waiter checks tonight's book;
+   * taking the booking is the till's job. One `reservations.manage` covering
+   * both would have quietly handed the waiter the write.
+   */
+  reservationsView: "reservations.view",
   reservationsManage: "reservations.manage",
   kitchenView: "kitchen.view",
   deliveryManage: "delivery.manage",
@@ -104,6 +114,16 @@ export const PERMISSIONS = {
    * rename or deletion reshapes every historical report built on it.
    */
   crmConfigure: "crm.configure",
+  /**
+   * Delete a CRM record outright — a case, an activity — rather than close or
+   * archive it.
+   *
+   * Its own key because deletion is not the destructive end of `crm.manage`
+   * but a different act: `crm.manage` is floor work (logging that a customer
+   * called) and a cashier has it, whereas `DELETE /api/crm/cases/[id]` was
+   * requireRole("owner","manager") and destroys the record and its history.
+   */
+  crmDelete: "crm.delete",
 
   /**
    * My Workspace — «میز کار من» (Phase G).
@@ -262,11 +282,11 @@ export function isOwnerOnlyPermission(permission: Permission): boolean {
 
 const {
   ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
-  tablesManage, reservationsManage, kitchenView, deliveryManage,
+  tablesManage, reservationsView, reservationsManage, kitchenView, deliveryManage,
   menuView, menuEdit,
   inventoryView, inventoryAdjust, purchasesManage,
   partiesView, partiesManage,
-  crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure,
+  crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure, crmDelete,
   workspaceView, workspaceManage, workspaceContractsManage, workspaceApprove,
   ledgerView, ledgerPost, ledgerApprove, ledgerClosePeriod, accountsEdit,
   reportsView, reportsExport,
@@ -287,7 +307,7 @@ const {
 const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
   manager: [
     ordersCreate, ordersVoid, ordersAmendClosed, ordersDiscount, paymentsTake, paymentsRefund,
-    tablesManage, reservationsManage, kitchenView, deliveryManage,
+    tablesManage, reservationsView, reservationsManage, kitchenView, deliveryManage,
     menuView, menuEdit,
     inventoryView, inventoryAdjust, purchasesManage,
     partiesView, partiesManage,
@@ -297,7 +317,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
     // access somebody already had — that is an outage, not a security
     // improvement. A business that wants a narrower manager revokes
     // individual capabilities per member.
-    crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure,
+    crmView, crmManage, crmMerge, crmConsentManage, crmExport, crmConfigure, crmDelete,
     // Phase G, same rule as the CRM block: before these keys existed the
     // project pages gated on requireMember, so every manager could already
     // open them and do everything on them. Introducing a permission must not
@@ -374,7 +394,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
   ],
   cashier: [
     ordersCreate, ordersDiscount, paymentsTake,
-    tablesManage, reservationsManage,
+    tablesManage, reservationsView, reservationsManage,
     menuView, deliveryManage,
     inventoryView,
     partiesView, partiesManage,
@@ -395,7 +415,9 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
   ],
   waiter: [
     ordersCreate,
-    tablesManage, reservationsManage,
+    // Reads tonight's book; taking the booking is the till's job, which is why
+    // this is `reservationsView` and not `reservationsManage`.
+    tablesManage, reservationsView,
     menuView,
     // Read-only: a waiter may be a contributor on a project (a refit, an
     // event) and needs to see the tasks assigned to them.
@@ -421,6 +443,7 @@ const ROLE_PRESETS: Record<Exclude<Role, "owner" | "admin">, Permission[]> = {
     inventoryView,
     partiesView,
     crmView,
+    reservationsView,
     workspaceView,
     ledgerView,
     reportsView,
@@ -454,6 +477,21 @@ export interface PermissionOverrides {
 export function isAbsoluteRole(role: Role): role is "owner" {
   return role === "owner";
 }
+
+/**
+ * Every role the preset system resolves a set for: the two rule-derived
+ * absolute-ish roles plus each role with a written preset.
+ *
+ * Exported so `roles.test.ts` can assert the catalogue and the permission
+ * model agree. A role in one but not the other is a real defect — unassignable
+ * in one direction, or a member who can sign in and do nothing in the other,
+ * because `roleBasePermissions` falls back to an empty list.
+ */
+export const ROLE_PRESET_ROLES: readonly Role[] = [
+  "owner",
+  "admin",
+  ...(Object.keys(ROLE_PRESETS) as (keyof typeof ROLE_PRESETS)[]),
+];
 
 /** The preset for a role, before any per-member overrides. */
 export function roleBasePermissions(role: Role): Permission[] {

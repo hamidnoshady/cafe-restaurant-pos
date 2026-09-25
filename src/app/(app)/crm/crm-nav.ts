@@ -107,10 +107,10 @@ export const CRM_NAV_ITEMS: readonly CrmNavItem[] = [
 ];
 
 /**
- * The entries a role may open — `canViewCrmSection` is the only gate, so a
+ * The entries a member may open — `canViewCrmSection` is the only gate, so a
  * section that becomes floor-safe changes the menu by changing that one
  * function rather than this list.
  */
-export function crmNavItemsForRole(role: string | null | undefined): CrmNavItem[] {
-  return CRM_NAV_ITEMS.filter((item) => canViewCrmSection(role ?? "", item.key));
+export function crmNavItemsFor(permissions: ReadonlySet<string>): CrmNavItem[] {
+  return CRM_NAV_ITEMS.filter((item) => canViewCrmSection(permissions, item.key));
 }

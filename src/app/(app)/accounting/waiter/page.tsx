@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireModuleForPage } from "@/lib/industry-guard";
 import { requireFeatureForPage } from "@/lib/features";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
@@ -10,7 +12,12 @@ export default async function WaiterPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   await requireModuleForPage(session.businessId, "waiter");
-  if (!["cashier", "waiter"].includes(session.role)) redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set<string>();
+  // «میزهای من» is the floor-staff view of their own tables. Anyone who can
+  // open a table and take an order has it; the manager's own overview is the
+  // full floor plan instead.
+  if (!permissions.has(PERMISSIONS.ordersCreate)) redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "reservations");
 
   return (

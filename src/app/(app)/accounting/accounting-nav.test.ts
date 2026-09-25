@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACCOUNTING_ROLES,
+  ACCOUNTING_DOOR_PERMISSION,
   ACCOUNTING_SECTIONS,
-  accountingSectionsForRole,
+  accountingSectionsFor,
   canViewAccountingSection,
 } from "./accounting-nav";
+import { roleBasePermissions } from "@/lib/permissions";
+import type { Role } from "@/lib/auth";
 import {
   ACCOUNTING_SECTION_KEYS,
   accountingCustomerHref,
@@ -55,33 +57,57 @@ describe("ACCOUNTING_SECTIONS", () => {
   });
 });
 
-describe("accountingSectionsForRole", () => {
+/**
+ * The section list is driven by effective permissions now. These tests still
+ * name roles because what they pin is a migration invariant: each built-in
+ * preset must see exactly the sections its old role list produced.
+ */
+function of(role: Role | "none"): ReadonlySet<string> {
+  return new Set<string>(role === "none" ? [] : roleBasePermissions(role));
+}
+
+describe("accountingSectionsFor", () => {
   it("shows owner, manager and accountant the whole app", () => {
-    expect(accountingSectionsForRole("owner").map((s) => s.key)).toEqual(ACCOUNTING_SECTIONS.map((s) => s.key));
-    expect(accountingSectionsForRole("accountant").map((s) => s.key)).toEqual(ACCOUNTING_SECTIONS.map((s) => s.key));
+    expect(accountingSectionsFor(of("owner")).map((s) => s.key)).toEqual(ACCOUNTING_SECTIONS.map((s) => s.key));
+    expect(accountingSectionsFor(of("accountant")).map((s) => s.key)).toEqual(ACCOUNTING_SECTIONS.map((s) => s.key));
   });
 
   it("hides payroll from a manager but keeps the rest", () => {
-    const keys = accountingSectionsForRole("manager").map((s) => s.key);
+    const keys = accountingSectionsFor(of("manager")).map((s) => s.key);
     expect(keys).not.toContain("payroll");
     expect(keys).toContain("trial-balance");
     expect(keys).toContain("directory");
     expect(keys).toContain("dashboard");
   });
 
-  it("shows nothing to a role the app already refuses", () => {
-    for (const role of ["cashier", "waiter", "kitchen", ""]) {
-      expect(accountingSectionsForRole(role)).toEqual([]);
+  it("shows nothing to someone the app already refuses", () => {
+    for (const role of ["cashier", "waiter", "kitchen", "none"] as const) {
+      expect(accountingSectionsFor(of(role))).toEqual([]);
       for (const key of ACCOUNTING_SECTION_KEYS) {
-        expect(canViewAccountingSection(role, key)).toBe(false);
+        expect(canViewAccountingSection(of(role), key)).toBe(false);
       }
     }
   });
 
-  it("agrees with ACCOUNTING_ROLES, the app's own door", () => {
-    for (const role of ACCOUNTING_ROLES) {
-      expect(accountingSectionsForRole(role).length).toBeGreaterThan(0);
+  it("opens the app to everyone holding its door capability", () => {
+    // Including `viewer`, the read-only auditor role: being able to read the
+    // books is the entire point of that role, and `ledger.view` is in its
+    // preset deliberately.
+    for (const role of ["owner", "admin", "manager", "accountant", "viewer"] as const) {
+      expect(of(role).has(ACCOUNTING_DOOR_PERMISSION), role).toBe(true);
+      expect(accountingSectionsFor(of(role)).length, role).toBeGreaterThan(0);
     }
+  });
+
+  it("gates payroll on the capability, not on a role name", () => {
+    // A manager individually granted `ledger.post` sees payroll; the preset
+    // alone does not. This is the whole reason the gate moved off role strings.
+    const managerPlusPosting = new Set([...of("manager"), "ledger.post"]);
+    expect(accountingSectionsFor(managerPlusPosting).map((s) => s.key)).toContain("payroll");
+    const accountantMinusPosting = new Set(
+      [...of("accountant")].filter((p) => p !== "ledger.post"),
+    );
+    expect(accountingSectionsFor(accountantMinusPosting).map((s) => s.key)).not.toContain("payroll");
   });
 });
 

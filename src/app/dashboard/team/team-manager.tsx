@@ -24,6 +24,7 @@ import {
 import { isLocationScope, type LocationScope } from "@/lib/location-access";
 import { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isValidPin } from "@/lib/pin-policy";
 import { roleLabel } from "@/lib/role-labels";
+import { ASSIGNABLE_ROLES, INVITABLE_ROLES, PIN_ROLES } from "@/lib/roles";
 import { toLatinDigits, toPersianDigits } from "@/lib/digits";
 import { formatJalali } from "@/lib/jalali";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -50,10 +51,7 @@ import {
   inputClass,
 } from "../ui";
 
-/** Roles that sign in with an email and password, so can be invited. */
-const INVITABLE_ROLES = ["manager", "accountant", "owner"] as const;
-/** Roles that sign in with a PIN on a shared device, so are created directly. */
-const PIN_ROLES = ["cashier", "waiter", "kitchen"] as const;
+
 
 
 /** How a member's branch reach reads in the list. One sentence, from the policy. */
@@ -116,10 +114,15 @@ const INVITATION_STATUS_LABELS: Record<Invitation["status"], string> = {
   expired: "منقضی",
 };
 
-/** Which role options the editor offers — every assignable role, labelled once. */
-const ROLE_OPTIONS = (["owner", "manager", "accountant", "cashier", "waiter", "kitchen"] as const).map(
-  (value) => ({ value, label: roleLabel(value) }),
-);
+/**
+ * Which role options the editor offers — every assignable role, labelled once.
+ *
+ * Derived from `ASSIGNABLE_ROLES` rather than written out here, because the
+ * hand-written copy this replaces had silently fallen two roles behind the
+ * catalogue: `admin` and `viewer` were accepted by `PATCH /api/team/[id]` and
+ * carried real presets, but no screen could assign them.
+ */
+const ROLE_OPTIONS = ASSIGNABLE_ROLES.map((value) => ({ value, label: roleLabel(value) }));
 
 export function TeamManager({
   currentUserId,

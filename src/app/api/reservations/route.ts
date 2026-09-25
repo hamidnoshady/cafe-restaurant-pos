@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool, query } from "@/lib/db";
 import {
   decryptReservationPhones,
@@ -15,7 +16,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * out). `from`/`to` are ISO instants supplied by the client.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.reservationsView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
@@ -52,7 +53,7 @@ interface CreateBody {
 
 /** Book a reservation. Overlaps on the same table are flagged (409) unless overridden. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.reservationsManage);
   if (error) return error;
 
   let body: CreateBody;

@@ -16,12 +16,14 @@ import { LoadingSkeleton, SectionCardSkeleton } from "@/app/dashboard/page-chrom
  *   notes, activities, deals, cases, consent, merges) and merges them. So the
  *   history can never drift from the documents it describes — the sale *is* the
  *   row it shows.
- * - **Consent is a control here, not a checkbox.** Changing it is owner/manager
- *   only, always asks for a reason, and writes an audit event in the same
- *   transaction. A cashier sees the state and cannot flip it.
+ * - **Consent is a control here, not a checkbox.** Changing it needs
+ *   `crm.consent_manage`, always asks for a reason, and writes an audit event
+ *   in the same transaction. A cashier sees the state and cannot flip it —
+ *   and because the screen asks the same key the route does, the control is
+ *   absent exactly when the write would have been refused.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { PinIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,7 @@ import {
 import type { CustomerFile } from "@/lib/crm-service";
 import { EmptyState, SectionCard, StatusBadge } from "@/app/dashboard/page-chrome";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "@/app/dashboard/ui";
+import { PERMISSIONS } from "@/lib/permissions";
 import { canViewCrmSection, crmCustomerHref, crmSectionHref } from "./crm-routes";
 import { CustomerRelationshipsCard } from "./customer-relationships-card";
 import { CrmCardHeading } from "./crm-card-heading";
@@ -61,13 +64,23 @@ interface Note {
   createdAt: string;
 }
 
-export function CustomerFileSection({ customerId, role }: { customerId: string; role: string }) {
+export function CustomerFileSection({
+  customerId,
+  permissions: permissionList,
+}: {
+  customerId: string;
+  /** The member's effective permissions, serialised across the server boundary. */
+  permissions: readonly string[];
+}) {
+  const permissions = useMemo(() => new Set(permissionList), [permissionList]);
   const money = useMoney();
-  const canManageConsent = role === "owner" || role === "manager";
+  // The same key `POST /api/crm/consent` enforces, so the control is shown to
+  // exactly the people whose change would be accepted.
+  const canManageConsent = permissions.has(PERMISSIONS.crmConsentManage);
   // A cashier can open this file (it's floor work) but not the CRM
   // «میز کار» — `overview` is management-only in `crm-routes.ts`. Telling
   // them to go recompute there anyway would be a dead end.
-  const canOpenOverview = canViewCrmSection(role, "overview");
+  const canOpenOverview = canViewCrmSection(permissions, "overview");
 
   const [file, setFile] = useState<CustomerFile | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -441,7 +454,7 @@ export function CustomerFileSection({ customerId, role }: { customerId: string; 
       <CustomerRelationshipsCard
         customerId={customerId}
         // A merged file is a tombstone; its links belong to the winner.
-        canManage={canViewCrmSection(role, "directory") && !isMerged}
+        canManage={canViewCrmSection(permissions, "directory") && !isMerged}
       />
 
       <SectionCard

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ACCOUNTING_SECTIONS,
-  accountingSectionsForRole,
+  accountingSectionsFor,
 } from "./accounting-nav";
+import { roleBasePermissions } from "@/lib/permissions";
+import type { Role } from "@/lib/auth";
 import {
   ACCOUNTING_SECTION_KEYS,
   accountingSectionHref,
@@ -53,8 +55,18 @@ const BUSINESS_NAV = [
   { label: "مرکز آموزش", href: "/knowledge" },
 ];
 
-function groupsFor(role: string, navItems = BUSINESS_NAV) {
-  return accountingWorkspaceGroups({ role, navItems });
+/**
+ * The rail is driven by effective permissions now. These helpers keep the
+ * tests reading in terms of roles, because what they pin is the migration
+ * invariant: each built-in preset must see exactly the rail its old role list
+ * produced.
+ */
+function of(role: Role | "none"): ReadonlySet<string> {
+  return new Set<string>(role === "none" ? [] : roleBasePermissions(role));
+}
+
+function groupsFor(role: Role | "none", navItems = BUSINESS_NAV) {
+  return accountingWorkspaceGroups({ permissions: of(role), navItems });
 }
 
 describe("the Accounting workspace menu", () => {
@@ -127,7 +139,7 @@ describe("the Accounting workspace menu", () => {
     // for every section an owner may open — a section with no home is a
     // section that silently vanished from the app.
     const hrefs = new Set(accountingWorkspaceHrefs(groupsFor("owner")));
-    for (const section of accountingSectionsForRole("owner")) {
+    for (const section of accountingSectionsFor(of("owner"))) {
       expect(
         hrefs,
         `section "${section.key}" has no entry in the Accounting menu`,
@@ -220,7 +232,7 @@ describe("the Accounting workspace menu", () => {
   it("drops a sub-group the member's role empties, rather than showing an empty heading", () => {
     // Payroll is owner + accountant; a manager keeps «دوره، مالیات و حقوق»
     // (it still holds دوره‌های مالی و مالیات) but never an empty heading.
-    for (const role of ["owner", "manager", "accountant"]) {
+    for (const role of ["owner", "manager", "accountant"] as const) {
       const ledger = groupsFor(role).find((group) => group.key === LEDGER_WORKSPACE_GROUP_KEY);
       for (const subGroup of ledger?.subGroups ?? []) {
         expect(subGroup.entries.length, `«${subGroup.label}» is empty for ${role}`).toBeGreaterThan(0);
@@ -339,7 +351,7 @@ describe("which menu entry is the page you are on", () => {
   });
 
   it("never lights two entries of the real menu at once", () => {
-    const groups = accountingWorkspaceGroups({ role: "owner", navItems: [] });
+    const groups = accountingWorkspaceGroups({ permissions: of("owner"), navItems: [] });
     const entries = groups.flatMap((group) => group.entries);
     for (const current of entries) {
       const [pathname, search = ""] = current.href.split("?");

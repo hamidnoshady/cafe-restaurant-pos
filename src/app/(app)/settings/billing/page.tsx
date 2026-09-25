@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { BillingManager } from "./billing-manager";
 
@@ -18,7 +20,9 @@ export default async function PlatformBillingPage() {
   const session = await getSession();
   if (!session) redirect("/login");
   // Only owner/manager spend business money.
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set<string>();
+  if (!permissions.has(PERMISSIONS.settingsManage)) redirect("/dashboard");
 
   return (
     <PageShell className="max-w-[1500px]">

@@ -58,7 +58,7 @@ describe("built-in role presets", () => {
   it("holds the manager preset exactly", () => {
     expect(effective("manager")).toEqual([
       "backup.manage",
-      "crm.configure", "crm.consent_manage", "crm.export", "crm.manage", "crm.merge", "crm.view",
+      "crm.configure", "crm.consent_manage", "crm.delete", "crm.export", "crm.manage", "crm.merge", "crm.view",
       "data.export", "data.import",
       "delivery.manage",
       "growth.manage", "growth.view",
@@ -72,7 +72,7 @@ describe("built-in role presets", () => {
       "payments.refund", "payments.take",
       "purchases.manage",
       "reports.export", "reports.view",
-      "reservations.manage",
+      "reservations.manage", "reservations.view",
       "settings.manage",
       "tables.manage",
       "website.configure", "website.manage", "website.publish", "website.view",
@@ -104,7 +104,7 @@ describe("built-in role presets", () => {
       "orders.create", "orders.discount",
       "parties.manage", "parties.view",
       "payments.take",
-      "reservations.manage",
+      "reservations.manage", "reservations.view",
       "tables.manage",
       "workspace.manage", "workspace.view",
     ]);
@@ -114,7 +114,9 @@ describe("built-in role presets", () => {
     expect(effective("waiter")).toEqual([
       "menu.view",
       "orders.create",
-      "reservations.manage",
+      // Reads tonight's book but cannot write in it: `GET /api/reservations`
+      // admitted the waiter and `POST` never did.
+      "reservations.view",
       "tables.manage",
       "workspace.view",
     ]);
@@ -135,6 +137,7 @@ describe("built-in role presets", () => {
       "menu.view",
       "parties.view",
       "reports.view",
+      "reservations.view",
       "team.view",
       "website.view",
       "workspace.view",

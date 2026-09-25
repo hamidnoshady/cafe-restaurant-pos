@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
+import { PERMISSIONS } from "@/lib/permissions";
 import { effectiveFeatures, requireFeatureForPage } from "@/lib/features";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { KnowledgeHelpButton } from "@/app/dashboard/knowledge-help";
@@ -10,7 +12,9 @@ import { AskAssistant } from "@/components/ai/ask-assistant";
 export default async function ReportsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!["owner", "manager", "accountant"].includes(session.role)) redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set<string>();
+  if (!permissions.has(PERMISSIONS.reportsView)) redirect("/dashboard");
   await requireFeatureForPage(session.businessId, "reporting");
   const features = await effectiveFeatures(session.businessId);
 
@@ -33,7 +37,7 @@ export default async function ReportsPage() {
       />
       <ReportsManager
         role={session.role}
-        canExplain={(session.role === "owner" || session.role === "manager") && features.ai_assistant}
+        canExplain={permissions.has(PERMISSIONS.reportsExport) && features.ai_assistant}
       />
     </PageShell>
   );

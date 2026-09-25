@@ -39,6 +39,8 @@ import {
   workspaceSectionHref,
 } from "@/lib/app-routes";
 import { bestNavMatch, flattenNav } from "@/lib/nav-tree";
+import { isPinRole } from "@/lib/roles";
+import type { Role } from "@/lib/auth-edge";
 import { appForModule, type AppKey } from "@/lib/apps";
 import type { AppAvailabilityState } from "@/lib/app-availability";
 import { appShellForPathname, type AppShellDef } from "@/lib/app-shells";
@@ -88,8 +90,7 @@ import { LockButton } from "./lock-screen";
 import { PlatformUserMenu } from "./platform-user-menu";
 import { ShiftButton } from "./shift-panel";
 
-/** Roles that sign in with a PIN (team.ts's PIN_ROLES) — the lock screen is a floor-terminal convenience for them. */
-const PIN_ROLES = ["cashier", "waiter", "kitchen"];
+
 
 const SIDEBAR_PREFERENCE_KEY = "dashboard-sidebar-preference";
 
@@ -186,7 +187,6 @@ export interface NavItem {
    */
   children?: NavItem[];
   iconKey?: string;
-  roles?: string[];
   /** Set when this page is gated by a Phase 17 feature flag; already filtered out of navItems if disabled and not lockable. */
   flag?: string;
   /**
@@ -553,7 +553,10 @@ function DashboardSidebarFooter({
   onSaveBottomNav: (hrefs: string[]) => void;
 }) {
   const { expandSidebar } = useSidebar();
-  const isPinRole = PIN_ROLES.includes(role);
+  // The lock screen, the shift button and biometric enrolment are
+  // floor-terminal conveniences, so they are for the roles that sign in with a
+  // PIN on a shared device.
+  const isPinMember = isPinRole(role as Role);
 
   return (
     <SidebarFooter className="border-border/80 bg-card group-data-[state=collapsed]/sidebar:p-2">
@@ -573,9 +576,9 @@ function DashboardSidebarFooter({
           current={bottomNavHrefs}
           onSave={onSaveBottomNav}
         />
-        {isPinRole && <ShiftButton />}
-        {isPinRole && <BiometricSettingsButton />}
-        {isPinRole && <LockButton />}
+        {isPinMember && <ShiftButton />}
+        {isPinMember && <BiometricSettingsButton />}
+        {isPinMember && <LockButton />}
       </div>
 
       {/*

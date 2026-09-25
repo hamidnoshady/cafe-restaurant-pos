@@ -14,9 +14,9 @@ import {
 } from "@/lib/team-service";
 import { listBranches } from "@/lib/branch-service";
 import { canonicalMemberPhone } from "@/lib/phone-otp";
+import { ASSIGNABLE_ROLES } from "@/lib/roles";
 import type { Role } from "@/lib/auth";
 
-const ASSIGNABLE_ROLES: Role[] = ["owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen", "viewer"];
 
 /**
  * The business's members, with their effective permissions resolved, and the

@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { ALL_ROLES, SETUP_CREATABLE_ROLES } from "@/lib/roles";
 
 /**
  * The wiring invariants of the persons directory, the team screen, and the
@@ -106,11 +107,30 @@ describe("the pre-rename CRM addresses are redirects, not a second screen", () =
 });
 
 describe("the setup wizard and its route agree on the creatable roles", () => {
-  it("offers the accountant the team screen has always offered", () => {
-    // The wizard's copy of the role list was missing «حسابدار» while its own
-    // route would have created one — the screen refused what the API accepted.
-    expect(SETUP_USERS_PAGE).toContain('"accountant"');
-    expect(SETUP_USERS_API).toContain('"accountant"');
+  it("derives the list from the catalogue instead of restating it", () => {
+    /*
+     * The wizard used to hold three separate copies of "which roles can be
+     * created here": an inline `options` array in the page, a `CreatableRole`
+     * union beside it, and a `CREATABLE_ROLES` array in the route. The first
+     * copy was already missing «حسابدار» while the route would happily create
+     * one — the screen refused what the API accepted — and when `admin` and
+     * `viewer` were added, all three fell behind at once.
+     *
+     * Both sides now read `SETUP_CREATABLE_ROLES`, so the question is asked in
+     * exactly one place and the two cannot disagree again.
+     */
+    expect(SETUP_USERS_PAGE).toContain("SETUP_CREATABLE_ROLES");
+    expect(SETUP_USERS_API).toContain("SETUP_CREATABLE_ROLES");
+    expect(SETUP_USERS_PAGE, "no hand-written role options").not.toMatch(
+      /options=\{\[\s*\{\s*value:\s*"manager"/,
+    );
+  });
+
+  it("can create every role except the owner, who already exists", () => {
+    expect(SETUP_CREATABLE_ROLES).not.toContain("owner");
+    for (const role of ALL_ROLES.filter((r) => r !== "owner")) {
+      expect(SETUP_CREATABLE_ROLES, role).toContain(role);
+    }
   });
 
   it("gates the email fields on the shared password-role rule, not one role", () => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { setCourierActive } from "@/lib/delivery-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
@@ -9,7 +10,7 @@ interface PatchBody {
 
 /** Activate / deactivate a courier. Deactivating keeps history intact but drops them from the assign list. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.settingsManage);
   if (error) return error;
   const { id } = await context.params;
 
