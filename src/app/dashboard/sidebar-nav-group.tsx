@@ -16,9 +16,10 @@
  *
  * The rules it keeps (docs/design-system.md §Rail navigation, §Radius scale,
  * §Colour roles):
- *  - a group header is a **nav-sized control**: `min-h-12 rounded-xl px-3`,
- *    icon + label + chevron, the same `APP_NAV_BUTTON_CLASS` amber hover and
- *    selection skin its rows wear — amber is selection, everywhere;
+ *  - a collapsible group header uses the **same metadata label** as every
+ *    other group (`NAV_GROUP_LABEL_CLASS`), with a chevron and a touch-sized
+ *    hit target — not a second, always-bold nav row that reads as a stray
+ *    section link between the real group headings;
  *  - a closed group whose current page is inside it stays marked as selected,
  *    so «you are here» survives collapsing;
  *  - group labels are the metadata style `text-[11px] font-semibold
@@ -51,6 +52,14 @@ import { ACCOUNTING_SECTION_ICONS } from "@/app/(app)/accounting/accounting-icon
 /** The metadata type a group heading is written in — stated once. */
 export const NAV_GROUP_LABEL_CLASS =
   "px-3 pb-1 pt-2 text-[11px] font-semibold tracking-wide text-muted-foreground group-data-[state=collapsed]/sidebar:hidden";
+
+/**
+ * The disclosure control for a long group — same words and weight as
+ * `NAV_GROUP_LABEL_CLASS`, plus chevron and selection when closed over the
+ * current page.
+ */
+export const NAV_COLLAPSIBLE_GROUP_TOGGLE_CLASS =
+  "flex min-h-12 w-full items-center gap-2 rounded-xl px-3 pb-1 pt-2 text-[11px] font-semibold tracking-wide text-muted-foreground transition-colors hover:bg-amber-50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:hover:bg-amber-500/15 dark:hover:text-amber-300 dark:focus-visible:ring-amber-400/45 group-data-[state=collapsed]/sidebar:hidden";
 
 /**
  * The hairline that replaces a heading at the 4rem rail, where words are
@@ -137,10 +146,10 @@ export function NavGroup({
 /**
  * A group that discloses — the long one.
  *
- * Its header is a real menu row (icon, label, chevron) rather than a caption
- * with an arrow, so it sits in the same column as everything it opens. When it
- * is closed over the page you are on it keeps the selected skin, and it says
- * so in words on the label's tooltip rather than only in colour.
+ * Its header is the same group label every other block wears, with a chevron —
+ * not a full nav row that sits between «اشخاص» and «گزارش و تحلیل» looking like
+ * a duplicate menu entry. When it is closed over the page you are on it keeps
+ * the selected skin so «you are here» survives collapsing.
  */
 export function NavCollapsibleGroup({
   group,
@@ -160,7 +169,6 @@ export function NavCollapsibleGroup({
 }) {
   const panelId = `${idPrefix}-${group.key}`;
   const holdsCurrentPage = group.entries.some((entry) => isActive(entry));
-  const GroupIcon = (group.iconKey ? NAV_ICONS[group.iconKey] : undefined) ?? CircleIcon;
   const subGroups = group.subGroups?.length
     ? group.subGroups
     : [{ key: group.key, label: "", entries: group.entries }];
@@ -168,32 +176,29 @@ export function NavCollapsibleGroup({
   return (
     <div className="space-y-1.5">
       <div aria-hidden="true" className={NAV_GROUP_RULE_CLASS} />
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            type="button"
-            onClick={onToggle}
-            aria-expanded={open}
-            aria-controls={panelId}
-            // Closed over the current page, the header is the only thing left
-            // showing «you are here»; open, the row inside owns it.
-            isActive={holdsCurrentPage && !open}
-            className={cn(APP_NAV_BUTTON_CLASS, "font-semibold group-data-[state=collapsed]/sidebar:hidden")}
-          >
-            <GroupIcon aria-hidden="true" className="size-5 shrink-0" />
-            <span className={NAV_LABEL_CLASS}>{group.label}</span>
-            <ChevronDownIcon
-              aria-hidden="true"
-              // Closed, the chevron points toward the inline start — which in
-              // this RTL product is the left, hence the extra flip under `rtl:`.
-              className={cn(
-                "size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out group-data-[state=collapsed]/sidebar:hidden",
-                open ? "" : "-rotate-90 rtl:rotate-90",
-              )}
-            />
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className={cn(
+          NAV_COLLAPSIBLE_GROUP_TOGGLE_CLASS,
+          holdsCurrentPage &&
+            !open &&
+            "bg-amber-100 font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-200",
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate text-start">{group.label}</span>
+        <ChevronDownIcon
+          aria-hidden="true"
+          // Closed, the chevron points toward the inline start — which in
+          // this RTL product is the left, hence the extra flip under `rtl:`.
+          className={cn(
+            "ms-auto size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out",
+            open ? "" : "-rotate-90 rtl:rotate-90",
+          )}
+        />
+      </button>
 
       {/*
         At the 4rem rail there is no chevron to reopen a closed group with, so

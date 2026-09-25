@@ -20,11 +20,9 @@
  * use.
  *
  * Every group — plain or collapsible — is drawn by the shared
- * `sidebar-nav-group.tsx`, so «فضای کار حسابداری» wears the design system's
- * nav skin (a 48px `rounded-xl` amber row with an icon, a label and a
- * chevron) instead of the small bespoke caption-with-an-arrow it used to be,
- * and it carries named sub-groups the way every other group carries a
- * heading.
+ * `sidebar-nav-group.tsx`, so «فضای کار حسابداری» wears the same group-heading
+ * label as «اشخاص» and «گزارش و تحلیل», with a chevron when it discloses, and
+ * named sub-groups the way every other long group is divided.
  *
  * RTL: every inset is logical (`ms`/`me`, `border-s`, `text-start`), the
  * disclosure chevron points down when open and toward the inline start when
