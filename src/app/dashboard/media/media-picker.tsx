@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toPersianDigits } from "@/lib/digits";
+import { uploadFiles } from "@/lib/media-uploader";
 import { cardClass, EmptyState, LoadingSkeleton } from "../page-chrome";
 import { api, ErrorBox, inputClass } from "../ui";
 
@@ -105,24 +106,21 @@ export function MediaPickerDialog({
     setBusy(true);
     setError("");
     setNotice("");
-    const form = new FormData();
-    form.set("file", file);
-    const res = await fetch("/api/media", { method: "POST", body: form });
+    // Same central uploader the library manager uses (src/lib/media-uploader.ts)
+    // — a picker upload is a one-file batch, but it still gets the retry on a
+    // transient failure that a bare fetch here never had.
+    const { done } = uploadFiles([file]);
+    const [result] = await done;
     setBusy(false);
-    const body = (await res.json().catch(() => ({}))) as {
-      message?: string;
-      asset?: PickerAsset;
-      duplicate?: boolean;
-    };
-    if (!res.ok || !body.asset) {
-      setError(body.message ?? "بارگذاری ناموفق بود.");
+    if (result.status !== "success" || !result.asset) {
+      if (result.status === "error") setError(result.message ?? "بارگذاری ناموفق بود.");
       return;
     }
     // Inside a picker, an exact duplicate is reused rather than offered as a
     // second copy — the caller only needs an id, and the library gains
     // nothing from two identical objects.
-    if (body.duplicate) setNotice("این تصویر از قبل در کتابخانه بود؛ همان انتخاب شد.");
-    onPick({ id: body.asset.id, fileName: body.asset.fileName });
+    if (result.asset.duplicate) setNotice("این تصویر از قبل در کتابخانه بود؛ همان انتخاب شد.");
+    onPick({ id: result.asset.id, fileName: result.asset.fileName });
   }
 
   return (

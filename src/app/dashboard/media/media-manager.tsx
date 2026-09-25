@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { toPersianDigits } from "@/lib/digits";
 import { MEDIA_KIND_LABELS, MEDIA_SORTS, MEDIA_SORT_LABELS, type MediaKind, type MediaSort } from "@/lib/media";
+import { summarizeUploadResults, uploadFiles, type UploadProgressEvent } from "@/lib/media-uploader";
 import { EmptyState, SectionCard, SectionCardSkeleton, StatusBadge, cardClass } from "../page-chrome";
 import { FilterChip } from "../filters";
 import { api, ErrorBox, Field, InfoBox, inputClass } from "../ui";
@@ -83,6 +84,15 @@ interface LibraryPayload {
   };
 }
 
+const UPLOAD_STATUS_LABELS: Record<UploadProgressEvent["status"], string> = {
+  queued: "در صف",
+  uploading: "در حال بارگذاری",
+  retrying: "تلاش دوباره…",
+  success: "موفق",
+  error: "ناموفق",
+  canceled: "لغو شد",
+};
+
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) return `${toPersianDigits((bytes / (1024 * 1024 * 1024)).toFixed(2))} گیگابایت`;
   if (bytes >= 1024 * 1024) return `${toPersianDigits((bytes / (1024 * 1024)).toFixed(1))} مگابایت`;
@@ -130,6 +140,13 @@ export function MediaManager() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [movingFolderId, setMovingFolderId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // The central uploader (src/lib/media-uploader.ts) drives every batch: this
+  // is only the progress list the operator watches and the cancel switch, in
+  // the same "one implementation, a view on top of it" spirit as the search
+  // debounce shared with the WordPress mirror.
+  const [uploadEvents, setUploadEvents] = useState<UploadProgressEvent[]>([]);
+  const uploadCancelRef = useRef<(() => void) | null>(null);
 
   // Trash — a second view over the same grid, not a second screen: the
   // library's own filters (folder/kind/category/tag) do not apply to a view
@@ -245,24 +262,50 @@ export function MediaManager() {
     setBusy(true);
     setError("");
     setNotice("");
-    let stored = 0;
-    let reused = 0;
-    for (const file of Array.from(files)) {
-      const form = new FormData();
-      form.set("file", file);
-      if (folderId && folderId !== "root") form.set("folderId", folderId);
-      const res = await fetch("/api/media", { method: "POST", body: form });
-      const body = (await res.json().catch(() => ({}))) as { message?: string; duplicate?: boolean };
-      if (res.ok && body.duplicate) reused += 1;
-      else if (res.ok) stored += 1;
-      else setError(body.message ?? "بارگذاری فایل ناموفق بود.");
-    }
+    const list = Array.from(files);
+    setUploadEvents(list.map((file, index) => ({ id: `${index}:${file.name}:${file.size}:${file.lastModified}`, file, status: "queued", attempt: 0 })));
+    const { done, cancel } = uploadFiles(list, {
+      folderId: folderId && folderId !== "root" ? folderId : null,
+      onProgress: (event) => {
+        setUploadEvents((current) => {
+          const next = current.filter((e) => e.id !== event.id);
+          next.push(event);
+          return next;
+        });
+      },
+    });
+    uploadCancelRef.current = cancel;
+    const results = await done;
+    uploadCancelRef.current = null;
+    const { stored, reused, failed, canceled } = summarizeUploadResults(results);
     const parts: string[] = [];
     if (stored > 0) parts.push(`${toPersianDigits(stored)} فایل ذخیره شد`);
     if (reused > 0) parts.push(`${toPersianDigits(reused)} فایل از قبل در کتابخانه بود و دوباره اضافه نشد`);
+    if (canceled > 0) parts.push(`${toPersianDigits(canceled)} فایل لغو شد`);
+    if (failed > 0) {
+      const firstFailure = results.find((r) => r.status === "error");
+      parts.push(`${toPersianDigits(failed)} فایل بارگذاری نشد${firstFailure?.message ? ` (${firstFailure.message})` : ""}`);
+    }
+    // Every other mutating action in this screen calls `reload()` only on
+    // its own success path, so it and a freshly-set `error` never collide.
+    // An upload batch is the one action that must `reload()` even after a
+    // *partial* failure (the files that did succeed still belong in the
+    // grid) — so its summary, including the failed count, goes into
+    // `notice`, not the shared `error` state `load()`'s own success handler
+    // unconditionally clears. The per-file "ناموفق" row above already
+    // carries the visual weight of a failure; this line is just the count.
     if (parts.length > 0) setNotice(`${parts.join("؛ ")}.`);
     setBusy(false);
+    // The per-file panel itself is cleared on the *next* click of
+    // "بارگذاری فایل", not immediately — the operator should still see the
+    // finished list (what succeeded, what failed) until they choose to
+    // upload again, not have it vanish under them the instant the batch
+    // settles.
     reload();
+  }
+
+  function cancelUpload() {
+    uploadCancelRef.current?.();
   }
 
   async function createFolder() {
@@ -474,6 +517,39 @@ export function MediaManager() {
         <InfoBox>
           فضای ذخیره‌سازی رسانه هنوز توسط مدیر پلتفرم پیکربندی نشده است؛ تا آن زمان بارگذاری فایل ممکن نیست.
         </InfoBox>
+      ) : null}
+
+      {/* Upload progress — one row per file in the current batch, driven by
+          src/lib/media-uploader.ts's bounded-concurrency pool. Stays visible
+          after the batch settles so the operator can see what failed, and is
+          replaced (not merged) the next time a batch starts. */}
+      {uploadEvents.length > 0 ? (
+        <SectionCard title="وضعیت بارگذاری">
+          <div className="space-y-1.5">
+            {uploadEvents.map((event) => (
+              <div key={event.id} className="flex items-center justify-between gap-3 text-xs">
+                <span className="truncate">{event.file.name}</span>
+                <span
+                  className={
+                    event.status === "error"
+                      ? "text-destructive"
+                      : event.status === "success"
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-muted-foreground"
+                  }
+                >
+                  {UPLOAD_STATUS_LABELS[event.status]}
+                  {event.status === "error" && event.message ? ` — ${event.message}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+          {busy && uploadEvents.some((e) => e.status === "queued" || e.status === "uploading" || e.status === "retrying") ? (
+            <Button size="sm" variant="outline" className="mt-3" onClick={cancelUpload}>
+              لغو بارگذاری
+            </Button>
+          ) : null}
+        </SectionCard>
       ) : null}
 
       {/* Usage strip */}

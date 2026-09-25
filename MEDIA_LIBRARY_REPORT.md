@@ -49,16 +49,22 @@ What actually changed, in the order it was built:
    previously-unguarded trust-boundary gap — a CRM party's profile image had **zero**
    server-side format/signature validation before this session (client-side `file.type`
    checks only, trivially bypassable) — see Section O.2.
+6. **Central uploader** (follow-up session): `src/lib/media-uploader.ts`, a
+   bounded-concurrency/retry/cancel engine both the manager and the universal picker now
+   call for `POST /api/media` instead of each running its own bare sequential `fetch`
+   loop — closing the single largest concretely-scoped gap this report had previously
+   named. Found and fixed a real bug while wiring it in: the manager's upload failure
+   summary was being silently erased by its own subsequent `reload()` call (Section J).
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
 `0174`/`0175`, a full naming-system rebuild, AI-tagging review-workflow states
 (`pending_review`/`confirmed`/`rejected` semantics), a visual folder explorer with a
-mobile drawer, rich filter-chip UI, a bounded-concurrency/retry/cancel upload manager, a
-WordPress push route/UI built on top of the new mapping table, centralized
-OCR/document-intelligence consumption by Accounting/CRM/Workspace, new AI editing
-operations beyond crop/rotate/resize (background removal, upscale, variations), a new
-numbered migration beyond `0174`/`0175`, dead-route removal, or E2E/mobile/accessibility/
-performance tests/CI changes. Section V lists these as genuine open work.
+mobile drawer, rich filter-chip UI, a WordPress push route/UI built on top of the new
+mapping table, centralized OCR/document-intelligence consumption by
+Accounting/CRM/Workspace, new AI editing operations beyond crop/rotate/resize (background
+removal, upscale, variations), a new numbered migration beyond `0174`/`0175`, dead-route
+removal, or E2E/mobile/accessibility/performance tests/CI changes. Section V lists these
+as genuine open work.
 
 Why the scope stopped where it did: the requested scope is a multi-week, multi-team
 program. Given the choice between (a) shipping a shallow, unverified pass across the
@@ -211,10 +217,47 @@ not removable chips.
 `findMediaAssetByHash` scoped to the caller's tenant before creating a new asset; a match
 returns the existing asset with `duplicate: true` and HTTP 200 (an `allowDuplicate` form
 field forces a genuine second copy). Both the manager and the universal picker surface
-this with a Persian toast. **No bounded-concurrency/retry/cancel upload manager was
-built** — uploads remain one-at-a-time, sequential, with no client-side retry on a
-transient failure and no cancel-in-flight affordance. This is the single largest
-concretely-scoped piece of the original request that was never attempted.
+this with a Persian toast.
+
+**Central uploader — closed in a follow-up session.** `src/lib/media-uploader.ts` is now
+the one client-side engine both call sites use for `POST /api/media`: a worker-pool
+running at most `concurrency` uploads at once (default 3), retrying a transient failure
+(network error, or 408/429/5xx) with exponential backoff but never a validation
+rejection (a 422 gets one attempt, not a delay-then-repeat of the same rejection), and a
+single `cancel()` that both stops every not-yet-started file and aborts every in-flight
+request via a shared `AbortController`. It never throws — every file resolves to exactly
+one terminal `UploadProgressEvent`, the same "never rejects, `ok:false` instead" contract
+`dashboard/ui.tsx`'s `api()` already uses elsewhere in this app.
+- The library manager (`media-manager.tsx`) drives it for multi-file batches and renders
+  a per-file progress panel (queued/uploading/retrying/موفق/ناموفق/لغو‌شد) plus a "لغو
+  بارگذاری" button while a batch is running.
+- The universal picker (`media-picker.tsx`)'s one-file "upload a new image" path now
+  goes through the same engine too — a picker upload is a one-file batch, but it gets
+  the same retry-on-transient-failure a bare `fetch` there never had.
+- Real bug found and fixed while wiring this in: the manager's `upload()` is the *only*
+  mutating action in this screen that must call `reload()` even after a **partial**
+  failure (the files that did succeed still belong in the grid) — every other action
+  (`createFolder`, `renameFolder`, `restoreAsset`, …) only calls `reload()` on its own
+  success path, so it never collides with a freshly-set `error`. But `reload()`'s
+  underlying `load()` unconditionally clears the shared `error` state on every
+  successful library refresh — so a failed-upload message set right before `reload()`
+  was silently wiped before the operator ever saw it, every time. Fixed by routing the
+  upload batch's summary (including the failed count) through `notice`, which `load()`
+  never touches; the per-file "ناموفق" row in the progress panel is unaffected either way
+  and already carried the visual weight of the failure. Caught by, and regression-tested
+  in, `media-manager.test.tsx`.
+- Tests: `src/lib/media-uploader.test.ts` (8 tests, pure Node — bounded concurrency
+  measured directly via a shared in-flight counter, retry backoff timing, no-retry on a
+  422, give-up after `maxRetries`, cancel of not-yet-started files, cancel aborting an
+  in-flight request through the shared signal) and three new cases in
+  `media-manager.test.tsx` (progress panel shows fresh-store vs. reused-duplicate
+  distinctly; a rejected file's server message survives to the toast, not just the
+  per-file row — the bug above; "لغو بارگذاری" settles a batch where 3 of 5 files were
+  already in flight and 2 were still queued, with exactly 3 network calls made).
+- Not done: no persisted client-side upload queue (a page reload mid-batch still loses
+  in-flight progress — this was never a stated requirement, just noting the boundary),
+  and the picker's single-file path has no dedicated test of its own (it is a thin,
+  low-risk call into the now-tested engine, not a second implementation).
 
 ## K. WordPress
 
@@ -472,15 +515,32 @@ duplication to consolidate, not dead code to delete.
   2×-downscaled image geometry; "انصراف" discards the rectangle and never calls the
   transform endpoint. `AssetDrawer` and `AssetRow` were exported from `media-manager.tsx`
   (previously module-local) solely so this test can render the drawer in isolation
-  without mounting the full library page and its data-fetching grid.
+  without mounting the full library page and its data-fetching grid. Extended later the
+  same session with a `MediaManager upload panel` suite (3 more tests, full-component
+  render with a mocked `fetch` router and `@testing-library/user-event`'s `upload()`):
+  one progress row per selected file with fresh-store vs. reused-duplicate reported
+  distinctly; a rejected file's server message reaching the visible summary rather than
+  being erased (the `reload()`-clobbers-`error` bug, Section J); "لغو بارگذاری" settling
+  a 5-file batch under the manager's default concurrency-3 with exactly 3 network calls
+  made (3 in flight, 2 still queued when canceled).
+- `src/lib/media-uploader.ts` **(new file, follow-up session)** and
+  `src/lib/media-uploader.test.ts` **(new file, 8 tests, pure Node — no DOM)**: the
+  central upload engine itself. Bounded concurrency measured directly (a shared in-flight
+  counter never exceeds the configured cap across 8 files), retry backoff timing
+  (exponential: 100ms then 200ms before two retries), a 422 never retried (one attempt,
+  reported as `error`), giving up cleanly after `maxRetries` (no infinite loop),
+  `cancel()` settling every remaining file as `canceled` without a network call for the
+  ones a worker had not reached, and `cancel()` aborting an already in-flight request
+  through the shared `AbortSignal`.
 
-No tests were skipped, stubbed, or marked as TODO anywhere in this program. This is now
-one dedicated Media *component* test (the crop interaction above) — a first, narrow
-instance of the RTL-component layer of the requested test pyramid for Media, not the
-full breadth of it. No E2E, mobile, or accessibility tests were added for Media; the
-repo's existing generic design/RTL/dark-mode lint suites, which run against every
-dashboard page including the media manager, were re-run and pass, but that remains
-distinct from dedicated Media E2E/mobile/a11y coverage.
+No tests were skipped, stubbed, or marked as TODO anywhere in this program. Media now has
+two dedicated component-test files (`media-manager.test.tsx`'s crop and upload-panel
+suites) plus one pure-Node engine suite (`media-uploader.test.ts`) — a first, narrow
+instance of the RTL-component layer of the requested test pyramid for Media, not the full
+breadth of it. No E2E, mobile, or accessibility tests were added for Media; the repo's
+existing generic design/RTL/dark-mode lint suites, which run against every dashboard page
+including the media manager, were re-run and pass, but that remains distinct from
+dedicated Media E2E/mobile/a11y coverage.
 
 ## U. Verification results (commands actually run this session, in order)
 
@@ -550,13 +610,34 @@ distinct from dedicated Media E2E/mobile/a11y coverage.
     does not persist `node_modules` or the Postgres data directory across sessions —
     `npm ci` and the numbered migrations in `migrations/` were re-applied from scratch,
     all 216 including `0174`/`0175` applying cleanly) and passed.
+12. **Same follow-up session — central uploader**: closed the "no bounded-
+    concurrency/retry/cancel upload manager" gap (Section J). `npx tsc --noEmit` clean;
+    `npx eslint src/app/dashboard/media/media-manager.tsx
+    src/app/dashboard/media/media-manager.test.tsx src/app/dashboard/media/media-picker.tsx
+    src/lib/media-uploader.ts src/lib/media-uploader.test.ts --max-warnings=0` clean.
+    While building the manager's upload-panel tests, found and fixed a real bug (upload
+    failure summaries being silently erased by the upload flow's own `reload()` call,
+    Section J) — the bug was caught by a test, not observed manually, and the fix was
+    verified by re-running that test against the corrected code. Full unit suite re-run
+    after all changes: **427/427 files, 5993/5993 tests passed** (427/5993, up from the
+    prior 426/5982 by exactly the 1 new file / 11 new tests this step added: 8 in
+    `media-uploader.test.ts` + 3 in `media-manager.test.tsx`'s new upload-panel suite — 0
+    regressions elsewhere). Both Media integration suites were re-run once more against
+    the same freshly-migrated local database and passed (40/40, 6/6) — this step touched
+    no server-side code, so this was a regression check, not new integration coverage.
+    One residual, disclosed rather than hidden: `media-manager.test.tsx`'s upload-panel
+    suite intermittently logs (not fails on) a React "not configured to support
+    act(...)" warning from an async `reload()` state update settling outside an explicit
+    `act()` boundary in one of its three new tests; the test's assertions are
+    deterministic and pass on every repeated run, but the warning itself was not fully
+    eliminated.
 
-Net effect on the test suite across this whole program: **+24 unit tests
-(`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx` 0→3),
-+14 integration tests from the prior session (3 transform + 6 orphan-reconciliation + 5
-parties), plus the phase-2 trash/collections/WordPress-mapping integration coverage from
-the middle of this program — 0 net regressions** at every checkpoint where the full
-suite was re-run.
+Net effect on the test suite across this whole program: **+35 unit tests
+(`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx` 0→6,
+`media-uploader.test.ts` 0→8), +14 integration tests from an earlier session (3
+transform + 6 orphan-reconciliation + 5 parties), plus the phase-2
+trash/collections/WordPress-mapping integration coverage from the middle of this program
+— 0 net regressions** at every checkpoint where the full suite was re-run.
 
 ## V. Second audit / genuine remaining work
 
@@ -566,9 +647,10 @@ full-suite re-run this session, after every change, was green.
 
 **Before closing, an honest list of what remains — not "limitations," open scope:**
 
-- **Central uploader** with bounded concurrency, retry, and cancel — uploads are still
-  one at a time with no retry or cancel affordance (Section J). This is the largest
-  single piece of concretely-scoped, named work never attempted.
+- ~~**Central uploader** with bounded concurrency, retry, and cancel~~ — closed in a
+  follow-up session: `src/lib/media-uploader.ts` now backs both the manager's multi-file
+  upload and the picker's single-file upload, tested and verified (Section J, Section U
+  item 12).
 - **WordPress as "a view over central Media"** — the mapping table and its service
   functions exist and are tested, but nothing pushes a canonical asset to a connected
   WordPress site through them yet, and the existing independent WordPress media mirror
