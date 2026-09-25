@@ -12,6 +12,7 @@ import {
   RetailInvoiceError,
   type RetailInvoiceLineInput,
 } from "@/lib/retail-invoice-service";
+import { listRetailInvoices } from "@/lib/retail-invoice/list-service";
 import type { SettlementMethod } from "@/lib/ledger";
 import { enqueueHolooSaleForOrder } from "@/lib/integrations/holoo/outbox-producer";
 import { ledgerSettlementFor, type PaymentSettlement } from "@/lib/payment-methods";
@@ -212,6 +213,26 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   if (method && !INVOICE_METHODS.has(method)) {
     return NextResponse.json({ error: "invalid_payment_method" }, { status: 400 });
   }
+  const rawStatus = params.get("status") ?? ""; // completed | voided | "" = all
+  if (rawStatus && rawStatus !== "completed" && rawStatus !== "voided") {
+    return NextResponse.json({ error: "invalid_invoice_status" }, { status: 400 });
+  }
+  // A Jalali date range on the screen, stored and compared as plain ISO
+  // calendar dates against the branch's own business day (`app_business_date`
+  // — migration 0076), the same function the dashboard and reports use, so a
+  // sale rung up after midnight but before the branch's day-start still lands
+  // on the day the cashier rang it up, not the calendar day the clock read.
+  const isoDate = (value: string | null) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
+  const rawDateFrom = params.get("dateFrom");
+  const rawDateTo = params.get("dateTo");
+  const dateFrom = isoDate(rawDateFrom);
+  const dateTo = isoDate(rawDateTo);
+  if ((rawDateFrom && !dateFrom) || (rawDateTo && !dateTo)) {
+    return NextResponse.json({ error: "invalid_date" }, { status: 400 });
+  }
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    return NextResponse.json({ error: "invalid_date_range" }, { status: 400 });
+  }
 
   const requestedPage = Number(params.get("page") ?? 1);
   const requestedPageSize = Number(params.get("pageSize") ?? 20);
@@ -223,88 +244,23 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   // Keep the public API vocabulary stable (`bank`) for the POS and installments
   // screens, while still allowing the named payment-way join to render its name.
   const dbMethod = method === "bank" ? "card" : method;
-  const offset = (page - 1) * pageSize;
 
-  const { rows } = await query<{
-    id: string;
-    order_number: string;
-    status: string;
-    total: string;
-    closed_at: string;
-    customer_name: string | null;
-    line_count: string;
-    pay_method: string | null;
-    payment_method_name: string | null;
-    credit_total: string;
-    has_installment_plan: boolean;
-    result_count: string;
-  }>(
-    `WITH invoice_rows AS (
-       SELECT o.id, o.order_number, o.status, o.total, o.closed_at,
-              c.name AS customer_name,
-              (SELECT count(*) FROM order_items oi WHERE oi.order_id = o.id) AS line_count,
-              tender.method::text AS pay_method,
-              pm.name AS payment_method_name,
-              COALESCE((SELECT sum(p.amount) FROM payments p
-                          WHERE p.order_id = o.id AND p.method = 'credit'), 0)::text AS credit_total,
-              EXISTS (SELECT 1 FROM installments ip
-                        WHERE ip.business_id = $2 AND ip.invoice_order_id = o.id) AS has_installment_plan
-         FROM orders o
-         LEFT JOIN parties c ON c.id = o.customer_id
-         LEFT JOIN LATERAL (
-           SELECT p.method, p.payment_method_id
-             FROM payments p
-            WHERE p.order_id = o.id
-            ORDER BY p.received_at, p.id
-            LIMIT 1
-         ) tender ON true
-         LEFT JOIN payment_methods pm ON pm.id = tender.payment_method_id
-        WHERE o.location_id = $1
-          AND o.type = 'retail'
-          AND o.status IN ('completed', 'voided')
-          AND ($3 = '' OR c.name ILIKE '%' || $3 || '%' OR o.order_number::text LIKE '%' || $3 || '%')
-          AND ($4 = '' OR tender.method::text = $4)
-     )
-     SELECT invoice_rows.*, count(*) OVER ()::text AS result_count
-       FROM invoice_rows
-      WHERE ($5 = false OR (status = 'completed' AND credit_total::bigint > 0 AND NOT has_installment_plan))
-      ORDER BY order_number DESC
-      LIMIT $6 OFFSET $7`,
-    [location.id, session.businessId, q, dbMethod, installmentEligible, pageSize, offset],
-  );
-
-  const invoices = rows.map((r) => ({
-    id: r.id,
-    orderNumber: Number(r.order_number),
-    status: r.status,
-    total: Number(r.total),
-    closedAt: r.closed_at,
-    customerName: r.customer_name,
-    lineCount: Number(r.line_count),
-    // The API deliberately exposes settlement vocabulary, not the underlying
-    // payment enum (`card` is what a retail bank payment stores).
-    paymentMethod:
-      r.pay_method === "card"
-        ? "bank"
-        : r.pay_method === "cash" || r.pay_method === "credit"
-          ? r.pay_method
-          : r.pay_method,
-    paymentMethodName:
-      r.payment_method_name ??
-      (r.pay_method === "cash"
-        ? "نقدی"
-        : r.pay_method === "card"
-          ? "کارت‌خوان"
-          : r.pay_method === "credit"
-            ? "نسیه"
-            : r.pay_method),
-    creditTotal: Number(r.credit_total),
-    hasInstallmentPlan: r.has_installment_plan,
-  }));
+  const { invoices, count } = await listRetailInvoices({
+    businessId: session.businessId,
+    locationId: location.id,
+    q,
+    method: dbMethod,
+    status: rawStatus,
+    dateFrom: dateFrom ?? "",
+    dateTo: dateTo ?? "",
+    installmentEligible,
+    page,
+    pageSize,
+  });
 
   return NextResponse.json({
     invoices,
-    count: rows[0] ? Number(rows[0].result_count) : 0,
+    count,
     page,
     pageSize,
     timeZone: location.timezone,

@@ -327,9 +327,14 @@ shipped. Not done, in the order the brief recommended tackling them:
   such mechanism exists in the code; not built.
 - **Invoice-management redesign** (rich filters, debounced/cancelable search,
   desktop table + mobile cards, export in multiple formats, server-side
-  pagination) — `invoice-management-view.tsx` was only changed to render
-  `RetailInvoiceDetailModal` instead of `OrderDetailModal` (a prior session);
-  its filtering/export/pagination behaviour is otherwise unchanged.
+  pagination) — mostly unchanged from prior sessions (debounced/cancelable
+  search, method filter, desktop table + mobile cards, current-page CSV
+  export, and rendering `RetailInvoiceDetailModal` instead of
+  `OrderDetailModal` were already there). This session added the two filters
+  that were still missing — invoice status (completed/voided) and a Jalali
+  date range — end to end (server route, extracted service, and UI); see §11.
+  Still **not** done: export of all-filtered/selected rows (only the current
+  page exports), and any other filter/search UI beyond method/status/date/q.
 - **Permission normalisation to `sales.invoice.*`** — not done; `grep` for
   `sales.invoice` in `src/lib/permissions.ts` returns nothing. The existing
   `orders.view`/`payments.take`/etc. identifiers are unchanged and untouched
@@ -372,3 +377,93 @@ automated tests for all of the above. `npx tsc --noEmit`, `npx eslint .`, the
 full unit suite, the relevant DB integration suites, and `npm run build` all
 pass as of this report. The items in §9 remain open against the original
 91-point brief and are not claimed as done.
+
+## 11. Follow-up session — invoice-management status & date-range filters
+
+`invoice-management-view.tsx` (the «مدیریت فاکتورها» screen) let a cashier
+filter sales history by payment method and free-text search, but could not
+filter by invoice status (completed vs. voided) or by a date range, even
+though the underlying `orders` table already carries both. This closes that
+specific gap from §9's list — it is not the full invoice-management redesign
+the original brief described (no all-filtered/selected export, no additional
+filters beyond what's listed below).
+
+**Server (`src/app/api/sales/invoices/route.ts` GET handler):**
+- New optional query params: `status` (`completed` | `voided` | omitted =
+  all; 400 `invalid_invoice_status` otherwise — renamed from an initial
+  `invalid_status` to avoid colliding with the floor-plan table-status error
+  code already registered under that name in the shared `ERROR_MESSAGES` map)
+  and `dateFrom`/`dateTo` (ISO `YYYY-MM-DD`, matched against the location's
+  Jalali/local business-day boundary via the existing `app_business_date()`
+  DB function from migration `0076_business_day.sql` — the same function the
+  rest of the ledger already uses for date filters, so "today" means the same
+  thing here as everywhere else in the app). Malformed dates or `dateFrom` >
+  `dateTo` return 400 `invalid_date`/`invalid_date_range` (both already
+  Persian-mapped, reused from the ledger's existing filter errors).
+- **Extracted** the route's inline SQL query and row-mapping into a new,
+  independently testable service: `src/lib/retail-invoice/list-service.ts`
+  (`listRetailInvoices()`). Reason: this GET route had no integration test
+  before this change, and the codebase's established convention (see the
+  other `integration/*.test.ts` files) is to test service functions directly
+  against a real database rather than reconstruct a `NextRequest`/session to
+  test a route handler in isolation. The route itself is now a thin
+  validate-params-then-call-the-service-then-format-JSON layer.
+- **Bug fixed, found only via the new test**: the status filter's SQL
+  (`o.status = $8`) failed with `operator does not exist: order_status =
+  text` — Postgres would not implicitly compare its `order_status` enum
+  column against a bound `text` parameter. Fixed with an explicit
+  `o.status::text = $8` cast.
+
+**Client (`invoice-management-view.tsx`):**
+- Added a status filter as chips (همه وضعیت‌ها / تکمیل‌شده / باطل‌شده),
+  matching the existing method-filter-chip pattern exactly (`chipClass`,
+  `role="group"`, `aria-pressed`).
+- Added two `JalaliDatePicker`s (از تاریخ / تا تاریخ), the same component and
+  layout convention `entries-section.tsx` (the journal's own date-range
+  filter) already uses, so a cashier picks Jalali dates while the client
+  stores/sends Gregorian ISO strings underneath — consistent with the rest of
+  the app.
+- Both new filters participate in the existing debounce/cancel/page-reset
+  machinery unchanged (added to the same `useEffect` dependency arrays that
+  already reset `page` to 1 and re-fetch on filter change).
+- Added the two new server error codes to the shared `ERROR_MESSAGES` map in
+  `src/app/dashboard/ui.tsx` (`invalid_invoice_status`, `invalid_date_range`)
+  so they render as the same Persian message convention every other filter
+  error in the app uses.
+
+**Tests added:**
+- `integration/retail-invoice-list.integration.test.ts` (new, 3 tests, real
+  DB) — status filter, Jalali date-range filter (backdates an order's
+  `closed_at`/`status` directly via SQL to simulate a historical/voided
+  invoice, since no void or backdating API exists yet), and pagination/count
+  correctness across pages. Self-contained: its own scratch database
+  (`pos_retail_invoice_list_<uuid>`), not sharing state with the sibling
+  `retail-invoice.integration.test.ts`.
+- `src/app/dashboard/pos/invoice-management-view.test.tsx` (new, 5 tests,
+  jsdom + fake timers + a stubbed `fetch`) — default load sends no
+  status/date params; selecting a status chip sends `status=voided` and
+  resets to page 1; re-selecting «همه وضعیت‌ها» clears it; setting both date
+  pickers to «امروز» sends `dateFrom`/`dateTo` as ISO dates; a server
+  `invalid_date_range` response renders the mapped Persian message.
+
+**Tool run results (this follow-up):**
+- `NODE_OPTIONS="--max-old-space-size=3200" npx tsc --noEmit -p tsconfig.json`
+  → 0 errors.
+- `npx eslint` on every file touched or added in this follow-up → 0
+  errors/warnings.
+- `npx vitest run` (full unit suite) → 428 files, 5980 tests, all pass (no
+  regressions from the `ui.tsx` error-map addition or the route extraction).
+- `DATABASE_URL=... npx vitest run --config vitest.db.config.ts
+  integration/retail-invoice.integration.test.ts
+  integration/retail-invoice-list.integration.test.ts
+  integration/trade-goods.integration.test.ts` → 19/19 pass (the pre-existing
+  13 + 3 retail-invoice-list tests + the unrelated 3 trade-goods tests, run
+  together to confirm the route extraction didn't regress the sibling
+  suites).
+- `NODE_OPTIONS="--max-old-space-size=4096" npx next build` → succeeds, no
+  new errors or warnings attributable to this change.
+
+**Not done in this follow-up** (unchanged from §9): export of
+all-filtered/selected rows (still current-page-only CSV), any filter beyond
+method/status/date/free-text search, and everything else §9 already lists as
+out of scope.

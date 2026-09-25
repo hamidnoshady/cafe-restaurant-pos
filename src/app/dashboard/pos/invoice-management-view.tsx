@@ -7,6 +7,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { DownloadIcon, EyeIcon, RefreshCwIcon } from "lucide-react";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
+import { JalaliDatePicker } from "../jalali-date-picker";
 import { RetailInvoiceDetailModal } from "./retail-invoice-detail-modal";
 
 /**
@@ -29,6 +30,7 @@ interface InvoiceRow {
 }
 
 type MethodFilter = "" | "cash" | "bank" | "credit";
+type StatusFilter = "" | "completed" | "voided";
 
 function fmtJalali(iso: string | null, timeZone: string): string {
   if (!iso) return "—";
@@ -50,6 +52,9 @@ export function InvoiceManagementView() {
   const money = useMoney();
   const [q, setQ] = useState("");
   const [method, setMethod] = useState<MethodFilter>("");
+  const [status, setStatus] = useState<StatusFilter>("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<InvoiceRow[] | null>(null);
   const [count, setCount] = useState(0);
@@ -63,7 +68,7 @@ export function InvoiceManagementView() {
 
   useEffect(() => {
     setPage(1);
-  }, [q, method]);
+  }, [q, method, status, dateFrom, dateTo]);
 
   useEffect(() => {
     const currentRequest = ++requestId.current;
@@ -71,6 +76,9 @@ export function InvoiceManagementView() {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (q.trim()) params.set("q", q.trim());
     if (method) params.set("method", method);
+    if (status) params.set("status", status);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
 
     // Keep the previous page visible while a filter is loading. This avoids a
     // distracting flash of skeletons during normal cashier typing, while the
@@ -102,7 +110,7 @@ export function InvoiceManagementView() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [method, page, q, refreshKey]);
+  }, [method, status, dateFrom, dateTo, page, q, refreshKey]);
 
   const pageCount = Math.max(Math.ceil(count / pageSize), 1);
 
@@ -187,6 +195,11 @@ export function InvoiceManagementView() {
             <button type="button" aria-pressed={method === "bank"} className={chipClass(method === "bank")} onClick={() => setMethod("bank")}>بانکی</button>
             <button type="button" aria-pressed={method === "credit"} className={chipClass(method === "credit")} onClick={() => setMethod("credit")}>اعتباری</button>
           </div>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="وضعیت فاکتور">
+            <button type="button" aria-pressed={status === ""} className={chipClass(status === "")} onClick={() => setStatus("")}>همه وضعیت‌ها</button>
+            <button type="button" aria-pressed={status === "completed"} className={chipClass(status === "completed")} onClick={() => setStatus("completed")}>تکمیل‌شده</button>
+            <button type="button" aria-pressed={status === "voided"} className={chipClass(status === "voided")} onClick={() => setStatus("voided")}>باطل‌شده</button>
+          </div>
           <div className="min-w-0 sm:ms-auto sm:w-64">
             <label htmlFor="invoice-history-search" className="sr-only">جست‌وجوی مشتری یا شماره فاکتور</label>
             <input
@@ -197,6 +210,17 @@ export function InvoiceManagementView() {
               onChange={(event) => setQ(event.target.value)}
             />
           </div>
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 sm:max-w-md">
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-muted-foreground">از تاریخ</span>
+            <JalaliDatePicker value={dateFrom} onChange={setDateFrom} placeholder="از ابتدا" ariaLabel="از تاریخ" />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-muted-foreground">تا تاریخ</span>
+            <JalaliDatePicker value={dateTo} onChange={setDateTo} placeholder="تا امروز" ariaLabel="تا تاریخ" />
+          </label>
         </div>
 
         <div className="relative mt-4" aria-busy={loading}>
