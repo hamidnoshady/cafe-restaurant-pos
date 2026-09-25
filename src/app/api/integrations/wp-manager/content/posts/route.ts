@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection, wooClientFor } from "@/lib/integrations/connections-service";
 import { query } from "@/lib/db";
 import { writeIntegrationAudit } from "@/lib/integrations/audit";
@@ -16,7 +17,7 @@ import {
  * of that HTML merely to draw twenty titles.
  */
 export const GET = withTenantScope(async (request: Request) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteView);
   if (error) return error;
 
   const url = new URL(request.url);
@@ -63,7 +64,7 @@ const FIELD_LIMITS: Partial<Record<(typeof CONTENT_FIELDS)[number], number>> = {
 };
 
 export const POST = withTenantScope(async (request: Request) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.websiteManage);
   if (error) return error;
 
   let body: Record<string, unknown>;

@@ -31,6 +31,7 @@ describe("tenant contextual-nav route guards", () => {
     const apps = [
       { path: "./(app)/crm/layout.tsx", gate: "canOpenCrm" },
       { path: "./(app)/growth/layout.tsx", gate: "canOpenGrowth" },
+      { path: "./(app)/websites/layout.tsx", gate: "canOpenWebsiteApp" },
     ] as const;
 
     for (const app of apps) {
@@ -47,15 +48,6 @@ describe("tenant contextual-nav route guards", () => {
       );
       expect(page, `${app.path} must reject a member without the app`).toContain('redirect("/dashboard")');
     }
-  });
-
-  it("still guards the Website app's door", () => {
-    // Not yet migrated to the permission model — its gate is still a role
-    // predicate, and this asserts it is at least present and server-side.
-    const page = source("./(app)/websites/layout.tsx");
-    expect(page).toContain('redirect("/login")');
-    expect(page).toContain("canOpenWebsiteApp(session.role)");
-    expect(page).toContain('redirect("/dashboard")');
   });
 
   it("has a section-level CRM guard on every canonical page, including Contacts details", () => {
@@ -127,5 +119,16 @@ describe("tenant contextual-nav route guards", () => {
         `requireWpSection("${section}")`,
       );
     }
+  });
+
+  it("asks the WP guard for a capability rather than a role", () => {
+    // Every WP page delegates to one guard, so this is the single place the
+    // manager's authorization can regress. `website.view` opens the sections
+    // and `website.manage` opens the sync queue — the same keys the wp-manager
+    // routes enforce.
+    const guard = source("./(app)/websites/wp/wp-guard.ts");
+    expect(guard).toContain("memberAccessFor(session)");
+    expect(guard).toContain("canViewWpSection(permissions, key)");
+    expect(guard).not.toContain("canViewWpSection(session.role");
   });
 });

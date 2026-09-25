@@ -20,6 +20,8 @@
  * call; this is the *management surface*, not the only caller.
  */
 
+import { PERMISSIONS, type Permission } from "@/lib/permissions";
+
 export const WP_SECTION_KEYS = [
   "overview",
   "products",
@@ -34,10 +36,26 @@ export const WP_SECTION_KEYS = [
 export type WpSectionKey = (typeof WP_SECTION_KEYS)[number];
 
 /**
- * Role gate. Like the integrations panel this manager supersedes, everything
- * here is owner/manager work — it writes to a live shopfront and sees every
- * customer record. Cashiers see the launcher but land on the dashboard.
+ * The capability each WP Manager section needs.
+ *
+ * Reading the shopfront's state is `website.view`; the sync queue is the one
+ * section that exists only to *act* on the live store — retrying and cancelling
+ * jobs that push stock and prices outward — so it asks for `website.manage`,
+ * the key its own route enforces. Splitting the two means a read-only member
+ * sees the store without being handed its controls, instead of being refused
+ * the whole manager.
  */
-export function canViewWpSection(role: string, _key: WpSectionKey): boolean {
-  return ["owner", "manager"].includes(role);
+const WP_SECTION_PERMISSION: Record<WpSectionKey, Permission> = {
+  overview: PERMISSIONS.websiteView,
+  products: PERMISSIONS.websiteView,
+  orders: PERMISSIONS.websiteView,
+  customers: PERMISSIONS.websiteView,
+  taxonomies: PERMISSIONS.websiteView,
+  content: PERMISSIONS.websiteView,
+  media: PERMISSIONS.websiteView,
+  queue: PERMISSIONS.websiteManage,
+};
+
+export function canViewWpSection(permissions: ReadonlySet<string>, key: WpSectionKey): boolean {
+  return permissions.has(WP_SECTION_PERMISSION[key]);
 }

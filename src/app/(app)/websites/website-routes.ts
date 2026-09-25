@@ -28,6 +28,8 @@
  * client sidebar and the app home alike — the same split `crm-routes.ts` and
  * `growth-routes.ts` keep.
  */
+
+import { PERMISSIONS } from "@/lib/permissions";
 import { WP_SECTION_KEYS, type WpSectionKey } from "./wp/wp-routes";
 
 /** The app's public prefix. Every route below lives under it. */
@@ -89,13 +91,20 @@ export function isWpSectionPathname(pathname: string, key: WpSectionKey): boolea
 }
 
 /**
- * Role gate. Both managers write to a live public site and read the whole
- * order book behind it, so both are owner/manager work — the same line the WP
- * Manager drew for itself and the connections hub draws for a machine
- * credential. A cashier sees the launcher and lands back on the dashboard.
+ * The app's door, as a capability rather than a role list.
+ *
+ * `website.view` is what every read in this app's API enforces, and its
+ * audience is exactly the owner/manager the old role test named, plus the
+ * read-only `viewer` — for whom seeing the public shopfront the business
+ * operates is squarely within an auditor's remit.
+ *
+ * Opening the app is a read. Writing to the live site needs `website.manage`,
+ * publishing needs `website.publish` and rebinding the connection needs
+ * `website.configure`; those are enforced per action, not at the door, so a
+ * member who may look but not touch gets a working app rather than a redirect.
  */
-export function canOpenWebsiteApp(role: string): boolean {
-  return role === "owner" || role === "manager";
+export function canOpenWebsiteApp(permissions: ReadonlySet<string>): boolean {
+  return permissions.has(PERMISSIONS.websiteView);
 }
 
 /**

@@ -9,7 +9,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
-    requireRole: vi.fn(),
+    requirePermission: vi.fn(),
     withTenantScope: (handler: (...args: unknown[]) => Promise<NextResponse>) => handler,
   };
 });
@@ -44,7 +44,10 @@ const MOCK_CONNECTION = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(auth.requireRole).mockResolvedValue({ session: SESSION, error: null } as never);
+  // The queue's GET reads on `website.view` and its writes on `website.manage`
+  // (it retries and cancels jobs that push stock and prices to the live shop).
+  // The mock grants both; wp-routes.ts is where the split itself is pinned.
+  vi.mocked(auth.requirePermission).mockResolvedValue({ session: SESSION, error: null } as never);
   vi.mocked(connectionsService.getConnection).mockResolvedValue(MOCK_CONNECTION as never);
 });
 

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { roleBasePermissions } from "@/lib/permissions";
+import type { Role } from "@/lib/auth";
 import {
   canOpenWebsiteApp,
   cmsSectionHref,
@@ -22,6 +24,15 @@ const state = (patch: Partial<WebsiteManagersState> = {}): WebsiteManagersState 
   ...EMPTY_WEBSITE_MANAGERS_STATE,
   ...patch,
 });
+
+/**
+ * The app's gates read effective permissions now. These tests still name roles
+ * because what they pin is the migration invariant: each built-in preset must
+ * reach exactly what its old role list reached.
+ */
+function of(role: Role | "none"): ReadonlySet<string> {
+  return new Set<string>(role === "none" ? [] : roleBasePermissions(role));
+}
 
 describe("the app's two managers", () => {
   it("has exactly two, and a menu group for each", () => {
@@ -72,11 +83,27 @@ describe("routing", () => {
     expect(managerForPathname(WEBSITE_HOME)).toBeNull();
   });
 
-  it("is owner/manager work — both managers write to a live public site", () => {
-    expect(canOpenWebsiteApp("owner")).toBe(true);
-    expect(canOpenWebsiteApp("manager")).toBe(true);
-    expect(canOpenWebsiteApp("cashier")).toBe(false);
-    expect(canOpenWebsiteApp("kitchen")).toBe(false);
+  it("opens to the capability, reproducing the audience the role test had", () => {
+    // Was `role === "owner" || role === "manager"`. `website.view` is the key
+    // every read in the app's API enforces and its preset audience is the same
+    // two roles — plus `viewer`, the read-only auditor, for whom seeing the
+    // shopfront the business operates is squarely in remit.
+    for (const role of ["owner", "admin", "manager", "viewer"] as const) {
+      expect(canOpenWebsiteApp(of(role)), role).toBe(true);
+    }
+    for (const role of ["cashier", "kitchen", "waiter", "accountant", "none"] as const) {
+      expect(canOpenWebsiteApp(of(role)), role).toBe(false);
+    }
+  });
+
+  it("follows an override rather than the preset it came from", () => {
+    // The point of the migration: a cashier individually granted the read gets
+    // the app, and a manager whose read is revoked does not — neither of which
+    // a role test could express.
+    expect(canOpenWebsiteApp(new Set([...of("cashier"), "website.view"]))).toBe(true);
+    expect(
+      canOpenWebsiteApp(new Set([...of("manager")].filter((p) => p !== "website.view"))),
+    ).toBe(false);
   });
 });
 

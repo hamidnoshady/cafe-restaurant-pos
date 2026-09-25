@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { canOpenWebsiteApp } from "../website-routes";
 import { WebsiteSettingsSection } from "../settings-section";
 
@@ -14,7 +15,9 @@ import { WebsiteSettingsSection } from "../settings-section";
 export default async function WebsiteSettingsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canOpenWebsiteApp(session.role)) redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions: ReadonlySet<string> = access?.permissions ?? new Set<string>();
+  if (!canOpenWebsiteApp(permissions)) redirect("/dashboard");
 
   return <WebsiteSettingsSection />;
 }

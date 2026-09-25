@@ -161,6 +161,6 @@ describe("the legacy role guard is confined and shrinking", () => {
    */
   it("does not grow the number of role-gated API routes", () => {
     const roleGated = ROUTES.filter((relative) => /requireRole\(/.test(read(relative)));
-    expect(roleGated.length).toBeLessThanOrEqual(324);
+    expect(roleGated.length).toBeLessThanOrEqual(318);
   });
 });
