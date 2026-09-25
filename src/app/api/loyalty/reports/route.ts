@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { loyaltyRedemptionReport } from "@/lib/loyalty-service";
 
 /** گزارش وفاداری — earned vs redeemed points (and redeemed Rial value) over a window. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyView);
   if (error) return error;
 
   const params = request.nextUrl.searchParams;

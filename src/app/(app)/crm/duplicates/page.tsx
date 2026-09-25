@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { CrmSection } from "../crm-section";
 import { canViewCrmSection, crmFallbackHref } from "../crm-routes";
 
@@ -7,7 +8,9 @@ import { canViewCrmSection, crmFallbackHref } from "../crm-routes";
 export default async function CrmDuplicatesPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewCrmSection(session.role, "duplicates")) redirect(crmFallbackHref(session.role));
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set();
+  if (!canViewCrmSection(permissions, "duplicates")) redirect(crmFallbackHref(permissions));
 
-  return <CrmSection section="duplicates" role={session.role} />;
+  return <CrmSection section="duplicates" role={access?.role ?? session.role} permissions={[...permissions]} />;
 }

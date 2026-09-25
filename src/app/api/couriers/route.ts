@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { createCourier, listCouriers } from "@/lib/delivery-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** In-house couriers for delivery dispatch. Cashiers list them (to assign); managers/owners manage the roster. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.deliveryManage);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ couriers: [] });
 
-  const includeInactive =
-    (session.role === "owner" || session.role === "manager") &&
-    request.nextUrl.searchParams.get("includeInactive") === "true";
+  const askedForInactive = request.nextUrl.searchParams.get("includeInactive") === "true";
+  const configureGuard = askedForInactive ? await requirePermission(PERMISSIONS.deliveryConfigure) : null;
+  if (configureGuard?.error) return configureGuard.error;
+  const includeInactive = askedForInactive;
   const couriers = await listCouriers(location.id, { includeInactive });
   return NextResponse.json({ couriers });
 });
@@ -24,7 +26,7 @@ interface CreateCourierBody {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.deliveryConfigure);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

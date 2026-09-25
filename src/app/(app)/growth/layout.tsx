@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { canOpenGrowth } from "./growth-routes";
 import { GrowthAppShell } from "./growth-app-shell";
 
@@ -25,7 +26,9 @@ import { GrowthAppShell } from "./growth-app-shell";
 export default async function GrowthLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canOpenGrowth(session.role)) redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set();
+  if (!canOpenGrowth(permissions)) redirect("/dashboard");
 
   return <GrowthAppShell>{children}</GrowthAppShell>;
 }

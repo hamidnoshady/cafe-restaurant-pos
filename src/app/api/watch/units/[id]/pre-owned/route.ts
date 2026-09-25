@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItem, getSerial } from "@/lib/items-service";
@@ -9,7 +10,7 @@ import { CONDITION_GRADES, type ConditionGrade } from "@/lib/watch";
 /** Records a pre-owned intake's provenance on the unit: condition grade and the box-and-papers checklist. */
 export const POST = withTenantScope(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
     if (error) return error;
     const industryError = await requireIndustryForApi(session, "watch");
     if (industryError) return industryError;

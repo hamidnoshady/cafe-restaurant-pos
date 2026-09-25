@@ -26,8 +26,9 @@ describe("tenant contextual-nav route guards", () => {
     for (const app of apps) {
       const page = source(app.path);
       expect(page, `${app.path} must require a signed-in member`).toContain('redirect("/login")');
+      expect(page, `${app.path} must resolve current effective permissions`).toContain("memberAccessFor(session)");
       expect(page, `${app.path} must enforce ${app.gate}, not only hide nav`).toContain(
-        `${app.gate}(session.role)`,
+        `${app.gate}(`,
       );
       expect(page, `${app.path} must reject a member without the app`).toContain('redirect("/dashboard")');
     }
@@ -41,13 +42,13 @@ describe("tenant contextual-nav route guards", () => {
           : `./(app)/crm/${section}/page.tsx`,
       );
       expect(page, `/crm/${section} must check its own section gate`).toContain(
-        `canViewCrmSection(session.role, "${section}")`,
+        `canViewCrmSection(permissions, "${section}")`,
       );
-      expect(page).toContain("crmFallbackHref(session.role)");
+      expect(page).toContain("crmFallbackHref(permissions)");
     }
     const detail = source("./(app)/crm/persons/[id]/page.tsx");
-    expect(detail).toContain('canViewCrmSection(session.role, "persons")');
-    expect(detail).toContain("crmFallbackHref(session.role)");
+    expect(detail).toContain('canViewCrmSection(permissions, "persons")');
+    expect(detail).toContain("crmFallbackHref(permissions)");
   });
 
   it("has a section-level Growth guard on every canonical page", () => {
@@ -58,9 +59,9 @@ describe("tenant contextual-nav route guards", () => {
           : `./(app)/growth/${section}/page.tsx`,
       );
       expect(page, `/growth/${section} must check its own section gate`).toContain(
-        `canViewGrowthSection(session.role, "${section}")`,
+        `canViewGrowthSection(permissions, "${section}")`,
       );
-      expect(page).toContain("growthFallbackHref(session.role)");
+      expect(page).toContain("growthFallbackHref(permissions)");
     }
   });
 

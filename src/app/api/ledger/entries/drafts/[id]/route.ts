@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { deleteDraft, getDraft, ManualJournalError } from "@/lib/manual-journal-service";
 
@@ -8,7 +8,7 @@ interface Ctx {
 }
 
 export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const { id } = await ctx.params;
@@ -23,7 +23,7 @@ export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
  * of reviewing it) may do this — everyone else needs one or the other.
  */
 export const DELETE = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
   if (error) return error;
 
   const { id } = await ctx.params;

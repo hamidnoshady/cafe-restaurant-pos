@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { PartyValidationError, createParty } from "@/lib/parties-service";
 import { PARTY_ROLE_STORAGE } from "@/lib/parties";
@@ -7,7 +7,7 @@ import { query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.purchasesManage);
   if (error) return error;
 
   let body: { name?: string; phone?: string; notes?: string; partyId?: string };

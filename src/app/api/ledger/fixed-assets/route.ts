@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { FixedAssetError, createFixedAsset, listFixedAssets } from "@/lib/fixed-assets-service";
 
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const fixedAssets = await listFixedAssets(session.businessId);
@@ -13,7 +14,7 @@ export const GET = withTenantScope(async () => {
 
 /** Registers a fixed asset — no posting yet; depreciation is posted separately, per period, via .../[id]/depreciate. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
   if (error) return error;
 
   let body: {

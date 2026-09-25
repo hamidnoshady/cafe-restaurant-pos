@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { updateWebsitePost, websiteStatusFor } from "@/lib/website/content-service";
 
 /** `PATCH /api/cms/website/drafts/[id]` — `website.post.update`: content only, never the publish state. */
 export const PATCH = withTenantScope(async (request: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.cmsContentManage);
   if (error) return error;
 
   const { id } = await ctx.params;

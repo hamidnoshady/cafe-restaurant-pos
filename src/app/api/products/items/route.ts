@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { BarcodeConflictError } from "@/lib/item-barcodes-service";
 import { requireProductWorkspaceForApi } from "@/lib/industry-guard";
 import { createProductRecord } from "@/lib/product-creation-service";
@@ -14,7 +15,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
  * values in one transaction, so a conflict cannot leave a partial product.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
   const industryError = await requireProductWorkspaceForApi(session);
   if (industryError) return industryError;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { resolveSectionId } from "@/lib/floor";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -13,7 +14,7 @@ import { broadcast } from "@/lib/realtime";
  * cashiers/waiters may drive those without full edit rights.
  */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
   const { id } = await context.params;
 
@@ -55,8 +56,9 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     body.width !== undefined ||
     body.height !== undefined ||
     body.shape !== undefined;
-  if (isEdit && session.role !== "owner" && session.role !== "manager") {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (isEdit) {
+    const editGuard = await requirePermission(PERMISSIONS.tablesEdit);
+    if (editGuard.error) return editGuard.error;
   }
 
   const fields: string[] = [];
@@ -130,7 +132,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
 /** Delete (deactivate) a table. Blocked while it holds an active session. */
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
   const { id } = await context.params;
 

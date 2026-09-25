@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requireMember, withTenantScope } from "@/lib/auth";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { applySyncEvent, type SyncEventInput } from "@/lib/sync-events";
 import { isOfflineQueueEligible } from "@/lib/sync-event-registry";
@@ -21,7 +21,7 @@ import { isOfflineQueueEligible } from "@/lib/sync-event-registry";
  * wiring) may.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
+  const { session, error } = await requireMember();
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

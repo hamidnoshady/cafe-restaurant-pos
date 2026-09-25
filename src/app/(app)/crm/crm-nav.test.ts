@@ -1,5 +1,7 @@
+import { effectivePermissions } from "@/lib/permissions";
+import type { Role } from "@/lib/auth-edge";
 import { describe, expect, it } from "vitest";
-import { CRM_NAV_ITEMS, crmNavItemsForRole } from "./crm-nav";
+import { CRM_NAV_ITEMS, crmNavItemsForPermissions } from "./crm-nav";
 import {
   canOpenCrm,
   canViewCrmSection,
@@ -9,6 +11,8 @@ import {
   crmSectionHref,
   isCrmSectionPathname,
 } from "./crm-routes";
+
+const permissionsFor = (role: string) => role ? effectivePermissions(role as Role, null) : new Set<import("@/lib/permissions").Permission>();
 
 describe("CRM_NAV_ITEMS", () => {
   it("lists every navigation destination once and keeps detail pages out of the rail", () => {
@@ -42,11 +46,11 @@ describe("CRM_NAV_ITEMS", () => {
   });
 });
 
-describe("crmNavItemsForRole", () => {
+describe("crmNavItemsForPermissions", () => {
   it("shows owner and manager every permanent CRM destination", () => {
     const permanentKeys = CRM_SECTION_KEYS.filter((key) => key !== "persons");
     for (const role of ["owner", "manager"]) {
-      expect(crmNavItemsForRole(role).map((item) => item.key)).toEqual(permanentKeys);
+      expect(crmNavItemsForPermissions(permissionsFor(role)).map((item) => item.key)).toEqual(permanentKeys);
     }
   });
 
@@ -54,7 +58,7 @@ describe("crmNavItemsForRole", () => {
     // The floor keeps exactly what the old flat «مشتریان» page gave it, plus the
     // service desk — the counter is where a complaint is actually heard. It does
     // not get segments, the pipeline, merge or the consent register.
-    expect(crmNavItemsForRole("cashier").map((item) => item.key)).toEqual([
+    expect(crmNavItemsForPermissions(effectivePermissions("cashier" as Role, null)).map((item) => item.key)).toEqual([
       "directory",
       "activities",
       "cases",
@@ -67,16 +71,16 @@ describe("crmNavItemsForRole", () => {
     // steps. Accountants are on this list on purpose: the CRM posts no journal
     // entries, so there is no accounting reason to read customers' personal data.
     for (const role of ["accountant", "waiter", "kitchen", ""]) {
-      expect(crmNavItemsForRole(role)).toEqual([]);
-      expect(canOpenCrm(role)).toBe(false);
+      expect(crmNavItemsForPermissions(permissionsFor(role))).toEqual([]);
+      expect(canOpenCrm(permissionsFor(role))).toBe(false);
     }
   });
 
   it("is permission-honest while treating person files as a Contacts detail", () => {
     for (const role of ["owner", "manager", "cashier", "accountant"]) {
-      const shown = new Set(crmNavItemsForRole(role).map((item) => item.key));
+      const shown = new Set(crmNavItemsForPermissions(permissionsFor(role)).map((item) => item.key));
       for (const key of CRM_SECTION_KEYS.filter((key) => key !== "persons")) {
-        expect(shown.has(key)).toBe(canViewCrmSection(role, key));
+        expect(shown.has(key)).toBe(canViewCrmSection(permissionsFor(role), key));
       }
       expect(shown.has("persons")).toBe(false);
     }
@@ -87,11 +91,11 @@ describe("crmFallbackHref", () => {
   it("keeps a cashier inside the app when they land on a management page", () => {
     // Being thrown to `/dashboard` from a link someone sent you reads as a bug
     // rather than as a permission boundary.
-    expect(crmFallbackHref("cashier")).toBe("/crm/directory");
+    expect(crmFallbackHref(effectivePermissions("cashier" as Role, null))).toBe("/crm/directory");
   });
 
   it("sends a role with no business here back to the dashboard", () => {
-    expect(crmFallbackHref("accountant")).toBe("/dashboard");
+    expect(crmFallbackHref(effectivePermissions("accountant" as Role, null))).toBe("/dashboard");
   });
 });
 

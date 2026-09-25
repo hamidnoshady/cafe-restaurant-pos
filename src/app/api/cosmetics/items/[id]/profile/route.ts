@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
+import { type SessionPayload, withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItem } from "@/lib/items-service";
@@ -16,7 +17,7 @@ async function ownedItem(session: SessionPayload, id: string) {
 
 /** Sets an item's brand, regulatory fields (IRC/پروانه بهداشت/ثبت اصالت) and skin/hair-type tags. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "cosmetics");
   if (industryError) return industryError;

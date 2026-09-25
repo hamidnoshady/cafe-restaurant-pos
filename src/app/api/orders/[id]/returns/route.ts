@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { positiveQuantityText, rialText } from "@/lib/inventory-exact";
 import { createCustomerReturn } from "@/lib/customer-return-service";
@@ -9,7 +10,7 @@ import { notificationDedupeKey } from "@/lib/notifications";
 import { tomanText } from "@/lib/ai-labels";
 
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.paymentsRefund);
   if (error) return error;
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ error: "no_location" }, { status: 409 });

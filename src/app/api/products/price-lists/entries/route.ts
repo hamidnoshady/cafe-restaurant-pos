@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireProductWorkspaceForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { savePriceEntries, type EntryUpdate } from "@/lib/price-lists-service";
 
 /** One «ذخیره قیمت‌ها» press: upserts filled cells, clears emptied ones. */
 export const PUT = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.menuEdit);
   if (error) return error;
   const industryError = await requireProductWorkspaceForApi(session);
   if (industryError) return industryError;

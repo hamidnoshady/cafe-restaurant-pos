@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { getConsignorStatement, listConsignors } from "@/lib/consignment-service";
 
 /** صورت‌حساب امانی — one consignor's full statement, or every consignor's balance when none is named. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsView);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "jewelry");
   if (industryError) return industryError;

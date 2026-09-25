@@ -8,7 +8,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
-    requireRole: vi.fn(),
+    requirePermission: vi.fn(),
     withTenantScope: (handler: (...args: unknown[]) => Promise<NextResponse>) => handler,
   };
 });
@@ -23,7 +23,7 @@ const params = { params: Promise.resolve({ id: "conn-1" }) };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(auth.requireRole).mockResolvedValue({ session, error: null } as never);
+  vi.mocked(auth.requirePermission).mockResolvedValue({ session, error: null } as never);
   vi.mocked(service.updateConnection).mockResolvedValue({ ok: true, connection: { id: "conn-1" } } as never);
 });
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { positiveQuantityText } from "@/lib/inventory-exact";
 import { deleteFormulaInput, ProductionError, setFormulaInput } from "@/lib/production-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -7,7 +8,7 @@ import { resolveActiveLocation } from "@/lib/setup-state";
 /** Upsert one input line: how much of an inventory item ONE batch of the formula consumes. */
 export const POST = withTenantScope(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
     if (error) return error;
     const { id } = await context.params;
 
@@ -50,7 +51,7 @@ export const POST = withTenantScope(
 
 export const DELETE = withTenantScope(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
     if (error) return error;
     const { id } = await context.params;
 

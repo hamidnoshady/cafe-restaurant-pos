@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { promotionEffectivenessReport } from "@/lib/promotions-service";
 
 /** گزارش اثربخشی کمپین‌ها — how often each promotion fired and how much discount it cost. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyView);
   if (error) return error;
 
   const params = request.nextUrl.searchParams;

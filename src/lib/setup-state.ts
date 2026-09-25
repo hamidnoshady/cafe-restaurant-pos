@@ -2,8 +2,8 @@
  * Server-side helpers for the setup wizard: session/role guard for the
  * /api/setup/* routes and the aggregated wizard state used by the UI.
  */
-import { NextResponse } from "next/server";
-import { getSession, type Role, type SessionPayload } from "./auth";
+import { requirePermission, type Role, type SessionPayload } from "./auth";
+import { PERMISSIONS } from "./permissions";
 import { query, withTenant, withoutTenantScope } from "./db";
 import {
   accessibleLocationIds,
@@ -53,25 +53,9 @@ export interface TaxSetting {
   defaultRate: number;
 }
 
-/** Owner/Manager guard for setup API routes. Returns a response to short-circuit with, or the session. */
-export async function requireManager(): Promise<
-  | { session: SessionPayload; error: null }
-  | { session: null; error: NextResponse }
-> {
-  const session = await getSession();
-  if (!session) {
-    return {
-      session: null,
-      error: NextResponse.json({ error: "unauthorized" }, { status: 401 }),
-    };
-  }
-  if (session.role !== "owner" && session.role !== "manager") {
-    return {
-      session: null,
-      error: NextResponse.json({ error: "forbidden" }, { status: 403 }),
-    };
-  }
-  return { session, error: null };
+/** Compatibility name for setup callers; authorization is capability-based. */
+export async function requireManager() {
+  return requirePermission(PERMISSIONS.settingsManage);
 }
 
 async function count(sql: string, params: unknown[]): Promise<number> {
@@ -199,8 +183,8 @@ async function locationAccessContext(
   userId: string,
 ): Promise<LocationAccessContext> {
   const [{ rows: userRows }, { rows: assignmentRows }] = await Promise.all([
-    query<{ role: Role; location_id: string | null }>(
-      "SELECT role, location_id FROM users WHERE id = $1",
+    query<{ role: Role; location_id: string | null; location_scope: LocationAccessContext["locationScope"] }>(
+      "SELECT role, location_id, location_scope FROM users WHERE id = $1",
       [userId],
     ),
     query<{ location_id: string }>(
@@ -210,6 +194,7 @@ async function locationAccessContext(
   ]);
   return {
     role: userRows[0]?.role ?? "cashier",
+    locationScope: userRows[0]?.location_scope ?? "none",
     defaultLocationId: userRows[0]?.location_id ?? null,
     assignedLocationIds: assignmentRows.map((r) => r.location_id),
   };

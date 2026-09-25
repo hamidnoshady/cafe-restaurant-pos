@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { revokeMcpConnection, updateMcpConnectionAccess } from "@/lib/mcp/connections-service";
 
 /**
@@ -13,7 +14,7 @@ import { revokeMcpConnection, updateMcpConnectionAccess } from "@/lib/mcp/connec
  */
 export const PATCH = withTenantScope(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner");
+    const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
     if (error) return error;
     const { id } = await context.params;
 
@@ -49,7 +50,7 @@ export const PATCH = withTenantScope(
  */
 export const DELETE = withTenantScope(
   async (_request: Request, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner");
+    const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
     if (error) return error;
     const { id } = await context.params;
 

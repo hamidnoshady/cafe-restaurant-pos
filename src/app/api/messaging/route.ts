@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { listSegments } from "@/lib/crm-segments-service";
 import { getProject, listProjects } from "@/lib/ai-projects";
 import { listPromotionCatalogue } from "@/lib/promotions-service";
@@ -29,7 +30,7 @@ const channel = (value: unknown): "sms" | "email" | null =>
  * the authenticated tenant's templates, campaign records and credit purchase.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.growthView);
   if (error) return error;
 
   const [config, billing, packages, ledger, templates, campaigns, segments, projects, promotions] = await Promise.all([
@@ -47,7 +48,7 @@ export const GET = withTenantScope(async () => {
 });
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.campaignsManage);
   if (error) return error;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ error: "bad_request" }, { status: 400 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { previewSegment } from "@/lib/crm-segments-service";
 import {
   isSegmentPurpose,
@@ -20,7 +21,7 @@ import {
  * number and leaving the owner to wonder why the segment shrank.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.crmConfigure);
   if (error) return error;
 
   let body: { definition?: unknown; purpose?: string; sampleSize?: number };

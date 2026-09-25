@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { isHoloo } from "@/lib/integrations/provider-registry";
 import { armDirectSqlFor } from "@/lib/integrations/holoo/push-service";
@@ -7,7 +8,7 @@ import { HOLOO_DIRECT_SQL_CONFIRMATION_PHRASE } from "@/lib/integrations/holoo/d
 
 /** Arm guarded direct-SQL writes for one Holoo connection. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   const { id } = await context.params;
   const connection = await getConnection(session.businessId, id);

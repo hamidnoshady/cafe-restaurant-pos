@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, getSession, sessionCookieOptions, signSession, withTenantScope } from "@/lib/auth";
+import { SESSION_COOKIE, requireMember, sessionCookieOptions, signSession, withTenantScope } from "@/lib/auth";
 import { businessLocations } from "@/lib/setup-state";
 import { canAccessLocation } from "@/lib/location-access";
 import { query } from "@/lib/db";
@@ -20,8 +20,9 @@ import type { Role } from "@/lib/auth";
  * unassigned from.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const guard = await requireMember();
+  if (guard.error) return guard.error;
+  const { session } = guard;
 
   let body: { locationId?: string };
   try {
@@ -31,8 +32,13 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   }
   if (!body.locationId) return NextResponse.json({ error: "missing_location" }, { status: 400 });
 
-  const { rows } = await query<{ role: Role; location_id: string | null; is_active: boolean }>(
-    "SELECT role, location_id, is_active FROM users WHERE id = $1",
+  const { rows } = await query<{
+    role: Role;
+    location_id: string | null;
+    location_scope: "all" | "selected" | "home" | "none";
+    is_active: boolean;
+  }>(
+    "SELECT role, location_id, location_scope, is_active FROM users WHERE id = $1",
     [session.sub],
   );
   const { rows: assignmentRows } = await query<{ location_id: string }>(
@@ -49,6 +55,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const locations = await businessLocations(session.businessId);
   const ctx = {
     role: membership.role,
+    locationScope: membership.location_scope,
     defaultLocationId: membership.location_id,
     assignedLocationIds: assignmentRows.map((r) => r.location_id),
   };

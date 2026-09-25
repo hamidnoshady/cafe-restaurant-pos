@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { catalogueFor } from "@/lib/integrations/sync-service";
 import { classifyWooProductType } from "@/lib/integrations/woo-catalogue";
@@ -15,7 +16,7 @@ import { classifyWooProductType } from "@/lib/integrations/woo-catalogue";
  * would be two screens.
  */
 export const GET = withTenantScope(async (request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
   const { id } = await context.params;
 

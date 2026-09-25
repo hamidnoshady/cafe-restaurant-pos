@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
+import { type SessionPayload, withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireCapabilityForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import {
@@ -19,7 +20,7 @@ async function ownedTicket(session: SessionPayload, id: string) {
 }
 
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
   const capabilityError = await requireCapabilityForApi(session, "repairs");
   if (capabilityError) return capabilityError;
@@ -34,7 +35,7 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
 
 /** Moves the ticket along the workflow and/or edits the charges agreed with the customer. Closing is its own route — it posts to the ledger. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const capabilityError = await requireCapabilityForApi(session, "repairs");
   if (capabilityError) return capabilityError;

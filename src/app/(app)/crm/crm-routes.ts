@@ -52,6 +52,8 @@ export const CRM_SECTION_KEYS = [
 
 export type CrmSectionKey = (typeof CRM_SECTION_KEYS)[number];
 
+import type { Permission } from "@/lib/permissions";
+
 /** The route for a section. The overview is the app root; the rest nest under it. */
 export function crmSectionHref(key: CrmSectionKey): string {
   return key === "overview" ? "/crm/overview" : `/crm/${key}`;
@@ -76,32 +78,24 @@ export function crmDealOrderHref(orderId: string): string {
   return `/accounting/orders?order=${orderId}`;
 }
 
-/**
- * The sections a cashier may open — the floor's share of the app. Kept as one
- * named list rather than inline in the predicate so the reason above and the
- * rule below cannot drift.
- */
-const CASHIER_SECTIONS: readonly CrmSectionKey[] = ["directory", "persons", "activities", "cases"];
+/** Canonical capability required to open each CRM section. */
+const CRM_SECTION_PERMISSIONS: Record<CrmSectionKey, readonly Permission[]> = {
+  overview: ["crm.export", "crm.configure"], directory: ["crm.view", "crm.manage"], persons: ["crm.view", "crm.manage"],
+  leads: ["crm.export", "crm.configure"], segments: ["crm.export", "crm.configure"], deals: ["crm.export", "crm.configure"], activities: ["crm.manage"],
+  cases: ["crm.manage"], duplicates: ["crm.merge"], reconciliation: ["crm.merge"],
+  consent: ["crm.consent_manage"], settings: ["crm.configure"],
+};
 
-/** Whether a given role may open a section. */
-export function canViewCrmSection(role: string, key: CrmSectionKey): boolean {
-  if (role === "cashier") return CASHIER_SECTIONS.includes(key);
-  return ["owner", "manager"].includes(role);
+export function canViewCrmSection(permissions: ReadonlySet<Permission>, key: CrmSectionKey): boolean {
+  return CRM_SECTION_PERMISSIONS[key].some((permission) => permissions.has(permission));
 }
 
-/** The roles allowed into the app at all — the layout's gate. */
-export function canOpenCrm(role: string): boolean {
-  return CRM_SECTION_KEYS.some((key) => canViewCrmSection(role, key));
+export function canOpenCrm(permissions: ReadonlySet<Permission>): boolean {
+  return CRM_SECTION_KEYS.some((key) => canViewCrmSection(permissions, key));
 }
 
-/**
- * Where to send someone who lands on a section they may not open. A cashier
- * following a bookmark to the pipeline gets the directory rather than being
- * thrown out of the app entirely — being bounced to `/dashboard` from a page
- * you were linked to reads as a bug, not as a permission.
- */
-export function crmFallbackHref(role: string): string {
-  return canViewCrmSection(role, "directory") ? crmSectionHref("directory") : "/dashboard";
+export function crmFallbackHref(permissions: ReadonlySet<Permission>): string {
+  return canViewCrmSection(permissions, "directory") ? crmSectionHref("directory") : "/dashboard";
 }
 
 /**

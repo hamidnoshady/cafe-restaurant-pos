@@ -63,7 +63,7 @@ interface ServiceCase {
   resolvedAt: string | null;
 }
 
-export function CasesSection({ role }: { role?: string }) {
+export function CasesSection({ canDelete = false }: { canDelete?: boolean }) {
   const [cases, setCases] = useState<ServiceCase[] | null>(null);
   const [openOnly, setOpenOnly] = useState(true);
   const [error, setError] = useState("");
@@ -72,10 +72,8 @@ export function CasesSection({ role }: { role?: string }) {
   const deepLinkId = searchParams.get("case");
   const [deepLinkHandled, setDeepLinkHandled] = useState(false);
 
-  // Deleting a case is the one action here that is not floor work — the API
-  // itself gates it to owner/manager (see /api/crm/cases/[id]), so the button
-  // only exists for them.
-  const canDelete = role === "owner" || role === "manager";
+  // The server page derives this from the same effective crm.manage capability
+  // enforced by the mutation API; role names are irrelevant here.
 
   // Returns a cleanup so a toggle of «فقط بازها» cancels the superseded fetch
   // instead of letting two in-flight responses race each other into the list.

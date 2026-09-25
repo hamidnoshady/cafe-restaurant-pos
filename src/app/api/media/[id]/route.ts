@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { parseCategory, parseTags } from "@/lib/media";
 import { deleteMediaAsset, getMediaAsset, getMediaConfig } from "@/lib/media-service";
@@ -14,7 +15,7 @@ import { deleteMediaAsset, getMediaAsset, getMediaConfig } from "@/lib/media-ser
  * `"reject"` clears the proposal. Auto-tags never apply themselves.
  */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.mediaManage);
   if (error) return error;
   const { id } = await context.params;
 
@@ -107,7 +108,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 });
 
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.mediaManage);
   if (error) return error;
   const { id } = await context.params;
 

@@ -244,6 +244,18 @@ function navItemsFor(industry: Industry, ctx: NavContext): NavItem[] {
   ];
 }
 
+function modulePermissions(module: NavItem["module"]): Permission[] {
+  const map: Partial<Record<NavItem["module"], Permission[]>> = {
+    orders: ["orders.create"], pos: ["orders.create"], customers: ["crm.view", "crm.manage"],
+    loyalty: ["growth.view", "loyalty.view"], website: ["website.view"], stock: ["inventory.view"],
+    tables: ["tables.manage"], kitchen: ["kitchen.view"], reservations: ["reservations.manage"],
+    delivery: ["delivery.manage"], inventory: ["inventory.view"], jewelry: ["inventory.view"],
+    watch: ["inventory.view"], cosmetics: ["inventory.view"], ledger: ["ledger.view"],
+    media: ["media.view"], reports: ["reports.view"],
+  };
+  return map[module] ?? [];
+}
+
 function canSee(
   item: NavItem,
   role: Role,
@@ -259,8 +271,16 @@ function canSee(
   // LOCKABLE_FEATURES in features.ts). Its page renders a read-only preview
   // rather than redirecting, so the link goes somewhere real either way.
   if (item.flag && !features[item.flag] && !isLockableFeature(item.flag)) return false;
-  if (item.roles && !item.roles.includes(role)) return false;
-  return !item.requiredAnyPermission || item.requiredAnyPermission.some((permission) => permissions.has(permission));
+  // `waiter` is intentionally identity-shaped: this is the shared-terminal,
+  // assigned-table board, not a general business capability. Every ordinary
+  // application door is permission-derived, regardless of the preset's name.
+  if (item.module === "waiter" && item.roles && !item.roles.includes(role)) return false;
+  const required = item.requiredAnyPermission ?? modulePermissions(item.module);
+  if (required.length > 0) return required.some((permission) => permissions.has(permission));
+  // Industry-specific catalogue modules historically carried owner/manager
+  // role lists; their canonical capability is inventory viewing.
+  if (item.roles) return permissions.has("inventory.view");
+  return true;
 }
 
 /**
@@ -382,6 +402,7 @@ export async function WorkspaceShell({
         <DashboardSidebar
           navItems={navItems}
           role={member.role}
+          permissions={[...permissions]}
           fullName={session.fullName}
           brandTitle={profile.brandTitle}
           brandSubtitle={profile.brandSubtitle}

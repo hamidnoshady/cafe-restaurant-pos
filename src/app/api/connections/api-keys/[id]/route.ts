@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { revokeApiKey } from "@/lib/api-keys-service";
 
 /**
@@ -8,7 +9,7 @@ import { revokeApiKey } from "@/lib/api-keys-service";
  * this date" is the answer an audit needs.
  */
 export const DELETE = withTenantScope(async (_request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
   const { id } = await context.params;
 

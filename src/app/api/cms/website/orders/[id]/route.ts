@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { updateCmsOrderStatus } from "@/lib/cms/website-service";
 
 /**
@@ -8,7 +9,7 @@ import { updateCmsOrderStatus } from "@/lib/cms/website-service";
  * works in. The CMS's own hooks settle stock and snapshot the change.
  */
 export const PATCH = withTenantScope(async (request: NextRequest, ctx: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.cmsContentManage);
   if (error) return error;
 
   const { id } = await ctx.params;

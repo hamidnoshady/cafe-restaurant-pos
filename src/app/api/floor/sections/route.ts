@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { validWaiterId } from "@/lib/floor";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Create a floor section (a zone on the map, optionally owned by a waiter). */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
 
   let body: { name?: string; color?: string | null; assignedWaiterId?: string | null };

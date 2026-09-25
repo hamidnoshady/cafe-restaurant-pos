@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { createVariantMatrix } from "@/lib/cosmetics-service";
@@ -7,7 +8,7 @@ import type { MatrixAxis } from "@/lib/variant-matrix";
 
 /** Bulk-creates a variant_parent and its N×M children over two axes (شید × حجم). */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "cosmetics");
   if (industryError) return industryError;

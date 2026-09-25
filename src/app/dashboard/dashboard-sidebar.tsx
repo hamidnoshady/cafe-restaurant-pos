@@ -211,6 +211,7 @@ export interface NavItem {
 interface SidebarProps {
   navItems: NavItem[];
   role: string;
+  permissions: readonly string[];
   fullName: string;
   /** From the business's industry profile — a jewellery shop is not «کافه و رستوران». */
   brandTitle: string;
@@ -649,12 +650,14 @@ function AppShellNavigation({
   nav: Nav,
   shell,
   role,
+  permissions,
   pathname,
   navItems,
 }: {
   nav: (props: AppShellNavProps) => React.ReactElement;
   shell: AppShellDef;
   role: string;
+  permissions: readonly string[];
   pathname: string;
   /** The business nav, for an app menu that arranges business pages (Accounting). */
   navItems: NavItem[];
@@ -665,6 +668,7 @@ function AppShellNavigation({
     <Nav
       shell={shell}
       role={role}
+      permissions={permissions}
       pathname={pathname}
       search={search.toString()}
       // Flattened, so a child page (لیست قیمت under محصولات) can be adopted by
@@ -957,6 +961,7 @@ function SidebarResizeHandle({
 export function DashboardSidebar({
   navItems,
   role,
+  permissions,
   fullName,
   brandTitle,
   brandSubtitle,
@@ -1089,6 +1094,7 @@ export function DashboardSidebar({
             nav={appShell.nav}
             shell={appShell.shell}
             role={role}
+            permissions={permissions}
             pathname={pathname}
             navItems={navItems}
           />

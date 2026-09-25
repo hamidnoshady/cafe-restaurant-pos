@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool, query } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getBusinessDayStatus } from "@/lib/business-day-service";
@@ -96,7 +97,7 @@ interface PayBody {
  * deduction's total cost (Debit COGS / Credit Inventory Asset).
  */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.paymentsTake);
   if (error) return error;
   const { id } = await context.params;
 

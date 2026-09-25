@@ -51,6 +51,8 @@ export interface TeamMember {
   fullName: string;
   email: string | null;
   isActive: boolean;
+  status: "invited" | "active" | "suspended" | "locked" | "inactive" | "offboarded";
+  locationScope: "all" | "selected" | "home" | "none";
   hasPin: boolean;
   /** Whether this membership can sign in with a password (has a global identity). */
   hasLogin: boolean;
@@ -75,6 +77,8 @@ interface MemberRow extends Record<string, unknown> {
   full_name: string;
   email: string | null;
   is_active: boolean;
+  membership_status: TeamMember["status"];
+  location_scope: TeamMember["locationScope"];
   has_pin: boolean;
   has_login: boolean;
   phone_e164: string | null;
@@ -93,6 +97,8 @@ function toMember(row: MemberRow): TeamMember {
     fullName: row.full_name,
     email: row.email,
     isActive: row.is_active,
+    status: row.membership_status,
+    locationScope: row.location_scope,
     hasPin: row.has_pin,
     hasLogin: row.has_login,
     phone: row.phone_e164,
@@ -109,6 +115,7 @@ function toMember(row: MemberRow): TeamMember {
 export async function listMembers(businessId: string): Promise<TeamMember[]> {
   const { rows } = await query<MemberRow>(
     `SELECT u.id, u.role, u.full_name, u.email, u.is_active,
+            u.membership_status, u.location_scope,
             (u.pin_hash IS NOT NULL) AS has_pin,
             (u.platform_user_id IS NOT NULL) AS has_login,
             u.phone_e164, u.phone_verified_at,
@@ -291,8 +298,12 @@ export async function createMembership(
     const { rows: created } = await client.query<{ id: string }>(
       `INSERT INTO users
          (business_id, platform_user_id, role, full_name, email, pin_hash,
-          phone_e164, location_id, permissions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+          phone_e164, location_id, permissions, location_scope)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+               CASE WHEN $3::user_role = 'owner'::user_role THEN 'all'::location_scope
+                    WHEN cardinality($10::uuid[]) > 0 THEN 'selected'::location_scope
+                    WHEN $8::uuid IS NOT NULL THEN 'home'::location_scope
+                    ELSE 'all'::location_scope END) RETURNING id`,
       [
         input.businessId,
         platformUserId,
@@ -303,6 +314,7 @@ export async function createMembership(
         input.phoneE164 ?? null,
         locations.defaultLocationId,
         JSON.stringify(input.overrides ?? {}),
+        locations.locationIds,
       ],
     );
     const userId = created[0].id;
@@ -390,6 +402,7 @@ export interface UpdateMembershipInput {
   overrides?: PermissionOverrides;
   locationIds?: string[];
   defaultLocationId?: string | null;
+  locationScope?: "all" | "selected" | "home" | "none";
 }
 
 /**
@@ -490,8 +503,20 @@ export async function updateMembership(
           SET role        = coalesce($3, role),
               full_name   = coalesce($4, full_name),
               is_active   = coalesce($5, is_active),
+              membership_status = CASE WHEN $5::boolean IS TRUE THEN 'active'::membership_status
+                                       WHEN $5::boolean IS FALSE THEN 'suspended'::membership_status
+                                       ELSE membership_status END,
               permissions = coalesce($6, permissions),
               location_id = CASE WHEN $7::boolean THEN $8::uuid ELSE location_id END,
+              location_scope = CASE
+                WHEN coalesce($3::user_role, role) = 'owner'::user_role THEN 'all'::location_scope
+                WHEN $11::text IS NOT NULL THEN $11::location_scope
+                WHEN $9::boolean THEN CASE WHEN cardinality($10::uuid[]) > 0
+                                           THEN 'selected'::location_scope
+                                           WHEN coalesce($8::uuid, location_id) IS NOT NULL
+                                           THEN 'home'::location_scope
+                                           ELSE 'all'::location_scope END
+                ELSE location_scope END,
               updated_at  = now()
         WHERE id = $1 AND business_id = $2`,
       [
@@ -503,6 +528,9 @@ export async function updateMembership(
         input.overrides ? JSON.stringify(input.overrides) : null,
         defaultLocationId !== undefined,
         defaultLocationId ?? null,
+        locationIds !== null,
+        locationIds ?? [],
+        input.locationScope ?? null,
       ],
     );
 
@@ -586,7 +614,8 @@ export async function removeMembership(
 
     await client.query(
       `UPDATE users
-          SET is_active = false, pin_hash = NULL, password_hash = NULL,
+          SET is_active = false, membership_status = 'offboarded',
+              location_scope = 'none', pin_hash = NULL, password_hash = NULL,
               platform_user_id = NULL, updated_at = now()
         WHERE id = $1 AND business_id = $2`,
       [userId, businessId],
@@ -1116,8 +1145,12 @@ export async function acceptInvitation(
     const defaultLocationId = invitation.location_ids[0] ?? null;
     const { rows: member } = await client.query<{ id: string }>(
       `INSERT INTO users
-         (business_id, platform_user_id, role, full_name, email, location_id, permissions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+         (business_id, platform_user_id, role, full_name, email, location_id, permissions, location_scope)
+       VALUES ($1, $2, $3, $4, $5, $6, $7,
+               CASE WHEN $3::user_role = 'owner'::user_role THEN 'all'::location_scope
+                    WHEN cardinality($8::uuid[]) > 0 THEN 'selected'::location_scope
+                    WHEN $6::uuid IS NOT NULL THEN 'home'::location_scope
+                    ELSE 'all'::location_scope END) RETURNING id`,
       [
         invitation.business_id,
         platformUserId,
@@ -1126,6 +1159,7 @@ export async function acceptInvitation(
         invitation.email,
         defaultLocationId,
         JSON.stringify(invitation.permissions ?? {}),
+        invitation.location_ids ?? [],
       ],
     );
     const userId = member[0].id;

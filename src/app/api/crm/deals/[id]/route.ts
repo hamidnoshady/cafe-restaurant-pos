@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { deleteDeal, getDeal, moveDealStage } from "@/lib/crm-service";
 import { defaultPipeline, dealStageHistory, moveDealToStage } from "@/lib/crm-pipeline-service";
 import { isDealStage, type DealStage } from "@/lib/crm-shared";
@@ -33,7 +34,7 @@ import { isUuid } from "@/lib/uuid";
  */
 export const PATCH = withTenantScope(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.crmManage);
     if (error) return error;
 
     let body: { stageId?: string; stage?: string; lostReason?: string; note?: string };
@@ -99,7 +100,7 @@ export const PATCH = withTenantScope(
 
 export const DELETE = withTenantScope(
   async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.crmManage);
     if (error) return error;
 
     const { id } = await params;

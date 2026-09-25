@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { listRollupLocations, registerRollupLocation } from "@/lib/rollup-service";
 
 /** Central side: registered remote locations, with last-sync/staleness. Owner only (Phase 9 decision). */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.rollupManage);
   if (error) return error;
 
   const locations = await listRollupLocations(session.businessId);
@@ -17,7 +18,7 @@ export const GET = withTenantScope(async () => {
  * sync settings.
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.rollupManage);
   if (error) return error;
 
   let body: { name?: string };

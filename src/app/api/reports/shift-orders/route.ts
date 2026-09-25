@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { parseReportOrderFilters } from "@/lib/report-order-filters";
 import { getShiftOrdersReport } from "@/lib/shift-orders-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 
 /** Branch-scoped, paginated order report. All filtering happens in PostgreSQL. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsView);
   if (error) return error;
   const location = await resolveActiveLocation(session);
   if (!location) return NextResponse.json({ report: null });

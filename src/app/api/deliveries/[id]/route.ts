@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { assignCourier, transitionDelivery } from "@/lib/delivery-service";
 import { isDeliveryStatus } from "@/lib/delivery";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -15,7 +16,7 @@ interface PatchBody {
 
 /** Drive a delivery through its lifecycle: assign/clear a courier, or advance its status. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.deliveryManage);
   if (error) return error;
   const { id } = await context.params;
 

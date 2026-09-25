@@ -25,20 +25,20 @@
 
 import type { AppShellNavProps } from "@/app/dashboard/app-shell-nav";
 import { AppSectionNav } from "@/app/dashboard/app-section-nav";
-import { growthNavItemsForRole } from "./growth-nav";
+import { growthNavItemsForPermissions } from "./growth-nav";
 import {
   growthSectionHref,
   isGrowthSectionPathname,
   type GrowthSectionKey,
 } from "./growth-routes";
 
-export function GrowthAppNav({ shell, role, pathname, onNavigate }: AppShellNavProps) {
+export function GrowthAppNav({ shell, permissions, pathname, onNavigate }: AppShellNavProps) {
   return (
     <AppSectionNav<GrowthSectionKey>
       ariaLabel="بخش‌های رشد و بازاریابی"
       title={shell.label}
       description={shell.description}
-      items={growthNavItemsForRole(role)}
+      items={growthNavItemsForPermissions(new Set(permissions as import("@/lib/permissions").Permission[]))}
       hrefFor={growthSectionHref}
       isActive={(key) => isGrowthSectionPathname(pathname, key)}
       onNavigate={onNavigate}

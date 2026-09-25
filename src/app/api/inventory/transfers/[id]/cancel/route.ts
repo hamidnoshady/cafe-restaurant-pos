@@ -1,9 +1,10 @@
 import { NextRequest,NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { cancelInventoryTransfer } from "@/lib/transfer-service";
 export const POST = withTenantScope(async (_request:NextRequest,context:{params:Promise<{id:string}>}) => {
- const {session,error}=await requireRole("owner","manager");if(error)return error;
+ const {session,error}=await requirePermission(PERMISSIONS.inventoryAdjust);if(error)return error;
  const client=await getPool().connect();try{await client.query("BEGIN");const {id}=await context.params;
  const result=await cancelInventoryTransfer(client,{businessId:session.businessId,transferId:id,actorId:session.sub});
  await client.query("COMMIT");return NextResponse.json({ok:true,...result});

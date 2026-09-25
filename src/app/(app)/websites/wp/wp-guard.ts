@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { canViewWpSection, type WpSectionKey } from "./wp-routes";
 
 /**
@@ -27,6 +28,7 @@ import { canViewWpSection, type WpSectionKey } from "./wp-routes";
 export async function requireWpSection(key: WpSectionKey) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewWpSection(session.role, key)) redirect("/dashboard");
+  const access = await memberAccessFor(session);
+  if (!canViewWpSection(access?.permissions ?? new Set(), key)) redirect("/dashboard");
   return session;
 }

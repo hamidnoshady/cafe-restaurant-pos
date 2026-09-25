@@ -26,13 +26,12 @@ import { InventoryManager } from "@/app/dashboard/inventory/inventory-manager";
 export default async function InventoryPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager")
-    redirect("/dashboard");
 
   const [industry, member] = await Promise.all([
     getBusinessIndustry(session.businessId),
     memberAccessFor(session),
   ]);
+  if (!member?.isActive || !member.permissions.has("inventory.view")) redirect("/dashboard");
   const model = inventoryWorkspaceModel(
     Boolean(industry && hasModule(industry, "inventory")),
   );

@@ -19,7 +19,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
-    requireRole: vi.fn(),
+    requirePermission: vi.fn(),
     // The scope wrapper is identity here — tenancy is not what this file tests.
     withTenantScope: (handler: (...args: unknown[]) => Promise<NextResponse>) => handler,
   };
@@ -51,7 +51,7 @@ let client: ReturnType<typeof mockClient>;
 beforeEach(() => {
   vi.clearAllMocks();
   client = mockClient();
-  vi.mocked(auth.requireRole).mockResolvedValue({ session: SESSION, error: null } as never);
+  vi.mocked(auth.requirePermission).mockResolvedValue({ session: SESSION, error: null } as never);
   vi.mocked(db.getPool).mockReturnValue({ connect: vi.fn().mockResolvedValue(client) } as never);
   vi.mocked(setupState.resolveActiveLocation).mockResolvedValue({ id: "loc-1" } as never);
 });
@@ -79,7 +79,7 @@ describe("GET /api/inventory/periodic-closings", () => {
 
   it("returns the role gate's error untouched", async () => {
     const denied = NextResponse.json({ error: "forbidden" }, { status: 403 });
-    vi.mocked(auth.requireRole).mockResolvedValue({ session: null, error: denied } as never);
+    vi.mocked(auth.requirePermission).mockResolvedValue({ session: null, error: denied } as never);
     expect(await GET()).toBe(denied);
     expect(db.getPool).not.toHaveBeenCalled();
   });

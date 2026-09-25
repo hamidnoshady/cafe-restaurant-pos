@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { deleteCase, getCase } from "@/lib/crm-service";
 import { setCaseStatus } from "@/lib/crm-case-service";
@@ -26,7 +26,7 @@ export const GET = withTenantScope(
  */
 export const DELETE = withTenantScope(
   async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.crmManage);
     if (error) return error;
 
     const { id } = await params;

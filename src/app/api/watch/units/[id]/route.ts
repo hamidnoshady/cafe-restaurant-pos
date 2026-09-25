@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, type SessionPayload, withTenantScope } from "@/lib/auth";
+import { type SessionPayload, withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItem, getSerial, updateSerial } from "@/lib/items-service";
@@ -19,7 +20,7 @@ async function ownedSerial(session: SessionPayload, id: string) {
 }
 
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "watch");
   if (industryError) return industryError;
@@ -34,7 +35,7 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
 
 /** Edits the cost basis / standard warranty term — e.g. recording the cost once it's known, mid-intake. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "watch");
   if (industryError) return industryError;

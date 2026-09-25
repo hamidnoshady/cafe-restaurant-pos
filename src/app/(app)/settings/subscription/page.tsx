@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { PageHeader, PageShell } from "@/app/dashboard/page-chrome";
 import { SubscriptionManager } from "./subscription-manager";
 
@@ -14,7 +15,8 @@ export const metadata = { title: "اشتراک پلتفرم" };
 export default async function PlatformSubscriptionPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "owner" && session.role !== "manager") redirect("/dashboard");
+  const member = await memberAccessFor(session);
+  if (!member?.isActive || !member.permissions.has("billing.view")) redirect("/dashboard");
 
   return (
     <PageShell className="max-w-[1500px]">

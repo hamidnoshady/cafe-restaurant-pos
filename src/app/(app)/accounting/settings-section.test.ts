@@ -133,7 +133,7 @@ describe("the settings page is written for RTL and for a phone", () => {
 
 describe("the settings route", () => {
   it("draws the app's own door — owner, manager, accountant", () => {
-    expect(ROUTE_SOURCE).toMatch(/requireRole\("owner", "manager", "accountant"\)/);
+    expect(ROUTE_SOURCE).toContain("requirePermission(PERMISSIONS.ledgerView)");
   });
 
   it("runs inside the tenant scope", () => {

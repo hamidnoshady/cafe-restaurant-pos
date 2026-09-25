@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { getStockLevels } from "@/lib/inventory-service";
 
@@ -16,7 +17,7 @@ import { getStockLevels } from "@/lib/inventory-service";
  * business simply returns nothing.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { error } = await requireRole("owner", "manager");
+  const { error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const locationId = new URL(request.url).searchParams.get("locationId")?.trim();

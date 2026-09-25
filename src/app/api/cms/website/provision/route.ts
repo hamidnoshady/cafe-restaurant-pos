@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { provisionCmsWebsite, type WebsiteProvisionInput } from "@/lib/cms/website-service";
 
 /**
@@ -10,7 +11,7 @@ import { provisionCmsWebsite, type WebsiteProvisionInput } from "@/lib/cms/websi
  * platform key configured (`ESHOBE_CMS_URL` + `ESHOBE_CMS_PLATFORM_API_KEY`).
  */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.cmsConfigure);
   if (error) return error;
 
   let body: Partial<WebsiteProvisionInput>;

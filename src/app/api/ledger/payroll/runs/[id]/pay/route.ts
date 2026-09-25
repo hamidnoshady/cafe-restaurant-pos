@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { MissingLedgerAccountError, PayrollError, payPayroll } from "@/lib/payroll-service";
 import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
@@ -12,7 +13,7 @@ const METHODS = ["cash", "bank"] as const;
 
 /** Pays out an accrued payroll run: Debit salariesPayable / Credit the chosen Cash or Bank-Clearing account. */
 export const POST = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
   if (error) return error;
 
   const { id } = await ctx.params;

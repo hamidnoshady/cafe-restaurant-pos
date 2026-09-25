@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { accruePayroll, listPayrollRuns, MissingLedgerAccountError, PayrollError } from "@/lib/payroll-service";
 import { fiscalPeriodLockErrorCode } from "@/lib/fiscal-periods";
 
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const runs = await listPayrollRuns(session.businessId);
@@ -14,7 +15,7 @@ export const GET = withTenantScope(async () => {
 
 /** Accrues a new payroll run against every active staff member's current monthly wage. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
   if (error) return error;
 
   let body: { periodLabel?: unknown; accrualDate?: unknown };

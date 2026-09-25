@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { transitionCheque } from "@/lib/cheques-service";
 import { CHEQUE_ACTIONS, type ChequeAction } from "@/lib/cheques";
@@ -23,7 +24,7 @@ function isActionBody(value: unknown): value is ActionBody {
  */
 export const POST = withTenantScope(
   async (request: NextRequest, context: { params: Promise<{ id: string; action: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager", "accountant");
+    const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
     if (error) return error;
 
     const { id, action } = await context.params;

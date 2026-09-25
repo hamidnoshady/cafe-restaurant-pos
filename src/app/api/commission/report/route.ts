@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { staffCommissionReport } from "@/lib/commission-service";
 
 /** A UI date-picker value is always YYYY-MM-DD; anything else is a malformed query string, not a filter. */
@@ -7,7 +8,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The per-staff commission leaderboard — Σ signed accruals per employee. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.growthView);
   if (error) return error;
 
   const from = request.nextUrl.searchParams.get("from");

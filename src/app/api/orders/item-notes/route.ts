@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 
 /**
@@ -14,7 +15,7 @@ import { query } from "@/lib/db";
  * GET /api/orders/item-notes?itemId=<uuid>
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter");
+  const { session, error } = await requirePermission(PERMISSIONS.ordersView);
   if (error) return error;
 
   const itemId = new URL(request.url).searchParams.get("itemId") ?? "";

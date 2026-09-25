@@ -22,11 +22,15 @@
  */
 import type { Role } from "./auth-edge";
 
+export type LocationScope = "all" | "selected" | "home" | "none";
+
 export interface LocationAccessContext {
   role: Role;
+  /** Explicit policy persisted on users.location_scope. */
+  locationScope?: LocationScope;
   /** users.location_id — the member's default/home branch, if any. */
   defaultLocationId: string | null;
-  /** user_locations rows for this member. Empty = no explicit restriction. */
+  /** user_locations rows for this member. */
   assignedLocationIds: string[];
 }
 
@@ -40,16 +44,24 @@ export function accessibleLocationIds(
 ): string[] {
   if (ctx.role === "owner") return businessLocationIds;
 
-  if (ctx.assignedLocationIds.length > 0) {
+  // Compatibility inference is only for callers/fixtures predating migration
+  // 0170. Persisted production memberships always carry an explicit policy.
+  const scope: LocationScope = ctx.locationScope ?? (
+    ctx.assignedLocationIds.length > 0
+      ? "selected"
+      : ctx.defaultLocationId
+        ? "home"
+        : "all"
+  );
+  if (scope === "all") return businessLocationIds;
+  if (scope === "none") return [];
+  if (scope === "selected") {
     const assigned = new Set(ctx.assignedLocationIds);
     return businessLocationIds.filter((id) => assigned.has(id));
   }
-
-  if (ctx.defaultLocationId) {
-    return businessLocationIds.includes(ctx.defaultLocationId) ? [ctx.defaultLocationId] : [];
-  }
-
-  return businessLocationIds;
+  return ctx.defaultLocationId && businessLocationIds.includes(ctx.defaultLocationId)
+    ? [ctx.defaultLocationId]
+    : [];
 }
 
 export function canAccessLocation(

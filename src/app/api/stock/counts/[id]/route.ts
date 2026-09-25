@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItemStockCountDetail } from "@/lib/item-stock-count-service";
@@ -7,7 +8,7 @@ import { getItemStockCountDetail } from "@/lib/item-stock-count-service";
 /** One count's lines, for the detail view. */
 export const GET = withTenantScope(
   async (_request: Request, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager");
+    const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
     if (error) return error;
 
     const location = await resolveActiveLocation(session);

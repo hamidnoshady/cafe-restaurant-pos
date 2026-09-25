@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { sellThroughByCollection } from "@/lib/merchandising-service";
@@ -14,7 +15,7 @@ const EVENT_PREFIX: Record<string, string> = {
 
 /** Sell-through by collection/season, off the same sale events the sales report reads. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
 
   const industry = await getBusinessIndustry(session.businessId);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool } from "@/lib/db";
 import { getCustomer } from "@/lib/parties-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -9,7 +10,7 @@ import type { SettlementMethod } from "@/lib/ledger";
 
 /** Issues credit for a documented correction, or pays an existing credit balance out. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyManage);
   if (error) return error;
   const { id } = await context.params;
 

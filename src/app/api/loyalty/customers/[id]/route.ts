@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getCustomer } from "@/lib/parties-service";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getBusinessDayStatus } from "@/lib/business-day-service";
@@ -7,7 +8,7 @@ import { pointsBalance, storeCreditBalance } from "@/lib/loyalty-service";
 
 /** One customer's points and store-credit balances — both reconstructed, never stored. */
 export const GET = withTenantScope(async (_request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier");
+  const { session, error } = await requirePermission(PERMISSIONS.loyaltyView);
   if (error) return error;
   const { id } = await context.params;
 

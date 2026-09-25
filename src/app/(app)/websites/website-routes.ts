@@ -29,6 +29,7 @@
  * `growth-routes.ts` keep.
  */
 import { WP_SECTION_KEYS, type WpSectionKey } from "./wp/wp-routes";
+import type { Permission } from "@/lib/permissions";
 
 /** The app's public prefix. Every route below lives under it. */
 export const WEBSITE_HOME = "/websites";
@@ -94,8 +95,8 @@ export function isWpSectionPathname(pathname: string, key: WpSectionKey): boolea
  * Manager drew for itself and the connections hub draws for a machine
  * credential. A cashier sees the launcher and lands back on the dashboard.
  */
-export function canOpenWebsiteApp(role: string): boolean {
-  return role === "owner" || role === "manager";
+export function canOpenWebsiteApp(permissions: ReadonlySet<Permission>): boolean {
+  return permissions.has("website.view") || permissions.has("cms.view") || permissions.has("woocommerce.view");
 }
 
 /**

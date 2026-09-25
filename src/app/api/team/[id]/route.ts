@@ -12,7 +12,7 @@ import { canonicalMemberPhone } from "@/lib/phone-otp";
 import { query } from "@/lib/db";
 import type { Role } from "@/lib/auth";
 
-const ASSIGNABLE_ROLES: Role[] = ["owner", "manager", "accountant", "cashier", "waiter", "kitchen"];
+const ASSIGNABLE_ROLES: Role[] = ["owner", "admin", "manager", "accountant", "cashier", "waiter", "kitchen"];
 
 function errorResponse(err: unknown): NextResponse {
   if (err instanceof TeamError) {
@@ -36,6 +36,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
     isActive?: boolean;
     locationIds?: string[];
     defaultLocationId?: string | null;
+    locationScope?: "all" | "selected" | "home" | "none";
     permissions?: unknown;
     /** Phase 42 — set (or, with "", clear) the member's login phone. Stored unverified. */
     phone?: string;
@@ -48,6 +49,15 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
   if (body.role !== undefined && !ASSIGNABLE_ROLES.includes(body.role)) {
     return NextResponse.json({ error: "invalid_role" }, { status: 400 });
+  }
+  if (body.locationScope !== undefined && !["all", "selected", "home", "none"].includes(body.locationScope)) {
+    return NextResponse.json({ error: "invalid_location_scope" }, { status: 400 });
+  }
+  if (body.locationScope === "selected" && (!body.locationIds || body.locationIds.length === 0)) {
+    return NextResponse.json({ error: "selected_locations_required" }, { status: 400 });
+  }
+  if (body.locationScope === "home" && !body.defaultLocationId) {
+    return NextResponse.json({ error: "home_location_required" }, { status: 400 });
   }
 
   // Managing routine team details may be delegated; managing an owner or
@@ -92,6 +102,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
       isActive: body.isActive,
       locationIds: body.locationIds,
       defaultLocationId: body.defaultLocationId,
+      locationScope: body.locationScope,
       overrides: body.permissions === undefined ? undefined : sanitizeOverrides(body.permissions),
     });
     /*

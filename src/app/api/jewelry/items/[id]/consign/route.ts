@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { requireIndustryForApi } from "@/lib/industry-guard";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { getItem } from "@/lib/items-service";
@@ -8,7 +9,7 @@ import { recordItemEvent } from "@/lib/item-audit-service";
 
 /** Marks an already-created `tracking: 'weight'` item as held for a consignor (امانی) rather than owned by the business. One-time, at intake -- see consignment-service.ts. */
 export const POST = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryAdjust);
   if (error) return error;
   const industryError = await requireIndustryForApi(session, "jewelry");
   if (industryError) return industryError;

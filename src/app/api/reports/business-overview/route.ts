@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getBusinessOverview } from "@/lib/reports-service";
 
 /**
@@ -15,7 +16,7 @@ import { getBusinessOverview } from "@/lib/reports-service";
  * one step more restricted than a single branch's own reports.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsView);
   if (error) return error;
 
   const dateFrom = request.nextUrl.searchParams.get("dateFrom") ?? undefined;

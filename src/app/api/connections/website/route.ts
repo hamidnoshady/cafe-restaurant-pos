@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { connectWebsite, disconnectWebsite, getWebsiteConnection } from "@/lib/website/connection-service";
 import { summarizeWebsiteQueue } from "@/lib/website/catalog-service";
 import { WEBSITE_ADAPTER_KEYS } from "@/lib/website/adapter";
@@ -17,7 +18,7 @@ import { WEBSITE_ADAPTER_KEYS } from "@/lib/website/adapter";
  * in any response — `WebsiteConnectionSummary` has no field for it.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsView);
   if (error) return error;
 
   const enabled = true;
@@ -42,7 +43,7 @@ interface ConnectBody {
 
 /** Test-then-save. A failed test stores nothing and returns the adapter's error code. */
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   let body: ConnectBody;
@@ -82,7 +83,7 @@ export const POST = withTenantScope(async (request: NextRequest) => {
 
 /** Remove this app's stored key. The site and its content stay. */
 export const DELETE = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   await disconnectWebsite(session.businessId);

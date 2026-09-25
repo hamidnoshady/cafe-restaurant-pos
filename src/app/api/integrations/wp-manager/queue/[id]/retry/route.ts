@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getConnection } from "@/lib/integrations/connections-service";
 import { retryWpQueueRow } from "@/lib/integrations/wp-manager-service";
 
 /** Put a failed or dead WP queue row (outbox or inbox) back in the queue, due now. */
 export const POST = withTenantScope(async (request: Request, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.integrationsManage);
   if (error) return error;
 
   const { id } = await context.params;

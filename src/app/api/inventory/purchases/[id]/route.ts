@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getPool, query } from "@/lib/db";
 import {
   MissingLedgerAccountError,
@@ -25,7 +26,7 @@ const SETTLEMENT_METHODS = ["cash", "bank", "credit"] as const;
 type SettlementMethod = (typeof SETTLEMENT_METHODS)[number];
 
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.inventoryView);
   if (error) return error;
   const { id } = await context.params;
 
@@ -78,7 +79,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
  * replace can't leave a stale line behind.
  */
 export const PUT = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.purchasesManage);
   if (error) return error;
   const { id } = await context.params;
 
@@ -163,7 +164,7 @@ export const PUT = withTenantScope(async (request: NextRequest, context: { param
 
 /** Status transitions: draft -> ordered (optional formal PO step) -> received, or straight to received/cancelled. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.purchasesManage);
   if (error) return error;
   const { id } = await context.params;
 
@@ -241,7 +242,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
  * through an inventory return rather than deleted.
  */
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.purchasesManage);
   if (error) return error;
   const { id } = await context.params;
 

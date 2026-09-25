@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import {withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { crmOverview } from "@/lib/crm-overview";
 
 /** This dashboard contains tenant-scoped live data; never serve a cached snapshot. */
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic";
  * customer at a time, which the directory and the customer file give them.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.crmView);
   if (error) return error;
 
   const overview = await crmOverview(session.businessId);

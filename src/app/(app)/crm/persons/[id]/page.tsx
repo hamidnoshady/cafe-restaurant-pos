@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { memberAccessFor } from "@/lib/member-access";
 import { CustomerFileSection } from "../../customer-file-section";
 import { canViewCrmSection, crmFallbackHref } from "../../crm-routes";
 
@@ -18,8 +19,10 @@ export default async function CrmCustomerFilePage({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!canViewCrmSection(session.role, "persons")) redirect(crmFallbackHref(session.role));
+  const access = await memberAccessFor(session);
+  const permissions = access?.permissions ?? new Set();
+  if (!canViewCrmSection(permissions, "persons")) redirect(crmFallbackHref(permissions));
 
   const { id } = await params;
-  return <CustomerFileSection customerId={id} role={session.role} />;
+  return <CustomerFileSection customerId={id} permissions={[...permissions]} />;
 }

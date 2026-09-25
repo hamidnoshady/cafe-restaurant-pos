@@ -48,7 +48,7 @@ export function CrmSection({
   if (section === "segments") return <SegmentsSection />;
   if (section === "deals") return <DealsSection />;
   if (section === "activities") return <ActivitiesSection />;
-  if (section === "cases") return <CasesSection role={role} />;
+  if (section === "cases") return <CasesSection canDelete={permissions?.includes("crm.manage") ?? false} />;
   if (section === "duplicates") return <DuplicatesSection />;
   if (section === "reconciliation") return <ReconciliationSection />;
   if (section === "settings") return <CrmSettingsSection />;

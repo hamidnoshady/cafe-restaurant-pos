@@ -18,7 +18,7 @@ describe("authoritative sync event registry", () => {
     for (const entry of SYNC_EVENT_REGISTRY) {
       expect(syncEventDefinition(entry.type, entry.schemaVersion)?.handler).toBe(entry.handler);
       expect(syncEventDefinition(entry.type, entry.schemaVersion + 1000)).toBeNull();
-      expect(entry.roles.length).toBeGreaterThan(0);
+      expect(entry.permission).toMatch(/^[a-z][a-z_.]+$/);
       expect(entry.payloadFields).not.toContain("businessId");
       expect(entry.payloadFields).not.toContain("locationId");
     }

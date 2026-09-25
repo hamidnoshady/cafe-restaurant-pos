@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getBusinessIndustry } from "@/lib/industry-guard";
 import { reportViewsFor } from "@/lib/reports";
 
@@ -15,7 +16,7 @@ import { reportViewsFor } from "@/lib/reports";
  * list already hides.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.reportsView);
   if (error) return error;
 
   const industry = await getBusinessIndustry(session.businessId);

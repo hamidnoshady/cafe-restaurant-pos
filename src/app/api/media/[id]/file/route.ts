@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getMediaConfig, isMediaStorageReady, readMediaObject } from "@/lib/media-service";
 
 /**
@@ -18,7 +19,7 @@ import { getMediaConfig, isMediaStorageReady, readMediaObject } from "@/lib/medi
  * the asset's kind is known.
  */
 export const GET = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager", "cashier", "waiter", "kitchen");
+  const { session, error } = await requirePermission(PERMISSIONS.mediaView);
   if (error) return error;
   const { id } = await context.params;
 
@@ -40,7 +41,7 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
   const inline = asset.kind === "image" || asset.kind === "video";
   if (!inline) {
     // Reading a document is a media-library action, not a selling-screen one.
-    const restricted = await requireRole("owner", "manager");
+    const restricted = await requirePermission(PERMISSIONS.mediaView);
     if (restricted.error) return restricted.error;
   }
   const fileName = encodeURIComponent(asset.fileName);

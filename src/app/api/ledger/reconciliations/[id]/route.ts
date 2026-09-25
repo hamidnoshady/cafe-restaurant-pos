@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import {
   discardReconciliation,
   getReconciliation,
@@ -12,7 +13,7 @@ interface Ctx {
 
 /** One reconciliation's candidate/cleared lines and computed balances. */
 export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const { id } = await ctx.params;
@@ -30,7 +31,7 @@ export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
  * the next period's opening balance.
  */
 export const DELETE = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerPost);
   if (error) return error;
 
   const { id } = await ctx.params;

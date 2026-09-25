@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { withTenantScope, requirePermission } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { validWaiterId } from "@/lib/floor";
 import { resolveActiveLocation } from "@/lib/setup-state";
@@ -11,7 +12,7 @@ async function ownSection(locationId: string, id: string) {
 
 /** Rename / recolor / (re)assign waiter / reorder a section. */
 export const PATCH = withTenantScope(async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
   const { id } = await context.params;
 
@@ -59,7 +60,7 @@ export const PATCH = withTenantScope(async (request: NextRequest, context: { par
 
 /** Delete a section. Tables in it are detached (section_id → NULL), not deleted. */
 export const DELETE = withTenantScope(async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-  const { session, error } = await requireRole("owner", "manager");
+  const { session, error } = await requirePermission(PERMISSIONS.tablesManage);
   if (error) return error;
   const { id } = await context.params;
 

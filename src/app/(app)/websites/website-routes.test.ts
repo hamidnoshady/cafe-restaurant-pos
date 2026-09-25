@@ -1,3 +1,5 @@
+import { effectivePermissions } from "@/lib/permissions";
+import type { Role } from "@/lib/auth-edge";
 import { describe, expect, it } from "vitest";
 import {
   canOpenWebsiteApp,
@@ -73,10 +75,10 @@ describe("routing", () => {
   });
 
   it("is owner/manager work — both managers write to a live public site", () => {
-    expect(canOpenWebsiteApp("owner")).toBe(true);
-    expect(canOpenWebsiteApp("manager")).toBe(true);
-    expect(canOpenWebsiteApp("cashier")).toBe(false);
-    expect(canOpenWebsiteApp("kitchen")).toBe(false);
+    expect(canOpenWebsiteApp(effectivePermissions("owner" as Role, null))).toBe(true);
+    expect(canOpenWebsiteApp(effectivePermissions("manager" as Role, null))).toBe(true);
+    expect(canOpenWebsiteApp(effectivePermissions("cashier" as Role, null))).toBe(false);
+    expect(canOpenWebsiteApp(effectivePermissions("kitchen" as Role, null))).toBe(false);
   });
 });
 

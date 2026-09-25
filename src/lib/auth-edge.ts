@@ -33,7 +33,7 @@ const REALM = "tenant";
  * `accountant` arrived with Phase 12 for the accounting suite in Phase 16: it
  * works the books without touching the till or the floor.
  */
-export type Role = "owner" | "manager" | "accountant" | "cashier" | "waiter" | "kitchen";
+export type Role = "owner" | "admin" | "manager" | "accountant" | "cashier" | "waiter" | "kitchen";
 
 export interface SessionPayload {
   /** users.id — the *membership* acting, not the person. See migration 0020. */
