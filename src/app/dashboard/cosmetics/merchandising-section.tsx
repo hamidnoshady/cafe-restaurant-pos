@@ -6,7 +6,7 @@ import { useMoney } from "@/components/money/money-context";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { printLabel } from "@/lib/printing/client";
 import { labelFieldsForTrade, type LabelData } from "@/lib/label-template";
-import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
+import { useBusinessInfo } from "../use-printers";
 import { api, Field, inputClass } from "../ui";
 import {
   LoadingSkeleton,
@@ -620,7 +620,6 @@ function BarcodesPanel({
   const [manualCode, setManualCode] = useState("");
   const [barcodes, setBarcodes] = useState<BarcodeRow[]>([]);
   const [barcodesLoading, setBarcodesLoading] = useState(false);
-  const printers = usePrinters();
   const businessInfo = useBusinessInfo();
 
   const selected = items.find((i) => i.id === itemId);
@@ -688,11 +687,6 @@ function BarcodesPanel({
   }
 
   function print(code: string) {
-    const printer = firstPrinter(printers, "receipt");
-    if (!printer) {
-      setError("چاپگر رسید در این شعبه ثبت نشده است.");
-      return;
-    }
     if (!selected) return;
     const shade =
       selected.attributes.find((a) => a.name === "سایه" || a.name === "رنگ")
@@ -717,7 +711,7 @@ function BarcodesPanel({
         money.unit,
       ),
     };
-    printLabel(printer.id, label).then((res) => {
+    printLabel(null, label, { requestId: `label:${code}` }).then((res) => {
       if (res.ok) onDone("لیبل چاپ شد.");
       else
         setError(

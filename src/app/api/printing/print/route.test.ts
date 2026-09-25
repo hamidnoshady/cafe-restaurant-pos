@@ -48,6 +48,8 @@ vi.mock("@/lib/printing/render-service", async (importOriginal) => {
     ...actual,
     loadPrinterForJob: vi.fn(),
     buildJobBytes: vi.fn(),
+    preparePrint: vi.fn(),
+    resolvePrinterForLocation: vi.fn(),
   };
 });
 
@@ -73,7 +75,10 @@ beforeEach(() => {
   vi.mocked(auth.requirePermission).mockResolvedValue({ session: SESSION, error: null } as never);
   vi.mocked(setupState.resolveActiveLocation).mockResolvedValue({ id: "loc-1" } as never);
   vi.mocked(renderService.loadPrinterForJob).mockResolvedValue(PRINTERS_ROW as never);
-  vi.mocked(renderService.buildJobBytes).mockResolvedValue(Buffer.from([0x1b, 0x40, 0x1d, 0x56]) as never);
+  vi.mocked(renderService.preparePrint).mockResolvedValue({
+    delivery: "raw",
+    bytes: Buffer.from([0x1b, 0x40, 0x1d, 0x56]),
+  } as never);
 });
 
 describe("guards", () => {
@@ -87,18 +92,20 @@ describe("guards", () => {
     vi.mocked(auth.requirePermission).mockResolvedValue({ session: null, error: denied } as never);
     const response = await POST(request({ printerId: "printer-1", job: { type: "test" } }));
     expect(response.status).toBe(401);
-    expect(renderService.buildJobBytes).not.toHaveBeenCalled();
+    expect(renderService.preparePrint).not.toHaveBeenCalled();
   });
 
-  it("rejects a non-JSON body and a missing printerId with 400", async () => {
+  it("rejects a non-JSON body, and resolves a missing printer id from branch rules", async () => {
     const bad = { json: async () => Promise.reject(new Error("boom")) } as unknown as NextRequest;
     expect((await POST(bad)).status).toBe(400);
 
-    for (const body of [{}, { job: { type: "test" } }, { printerId: "" }]) {
-      const response = await POST(request(body));
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: "printer_not_found" });
-    }
+    vi.mocked(renderService.resolvePrinterForLocation).mockResolvedValue(null as never);
+    const missing = await POST(request({ job: { type: "receipt", receipt: { business: { name: "کافه" } } } }));
+    expect(missing.status).toBe(409);
+    expect(await missing.json()).toMatchObject({ error: "printer_not_configured" });
+
+    const empty = await POST(request({ printerId: "", job: { type: "test" } }));
+    expect(empty.status).toBe(409);
   });
 
   it("rejects an unknown job type with 400", async () => {
@@ -119,7 +126,7 @@ describe("printer resolution — the security model", () => {
     const response = await POST(request({ printerId: "another-branch-printer", job: { type: "test" } }));
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ error: "printer_not_found" });
-    expect(renderService.buildJobBytes).not.toHaveBeenCalled();
+    expect(renderService.preparePrint).not.toHaveBeenCalled();
   });
 
   it("ignores an arbitrary connection object in the body — the saved row decides the target", async () => {
@@ -133,7 +140,7 @@ describe("printer resolution — the security model", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { target: unknown };
     expect(body.target).toEqual({ type: "windows", systemName: "EPSON TM-T20III" });
-    expect(renderService.buildJobBytes).toHaveBeenCalledTimes(1);
+    expect(renderService.preparePrint).toHaveBeenCalledTimes(1);
   });
 
   it("refuses an inactive printer with 409 printer_inactive", async () => {
@@ -141,7 +148,7 @@ describe("printer resolution — the security model", () => {
     const response = await POST(request({ printerId: "printer-1", job: { type: "test" } }));
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: "printer_inactive" });
-    expect(renderService.buildJobBytes).not.toHaveBeenCalled();
+    expect(renderService.preparePrint).not.toHaveBeenCalled();
   });
 
   it("refuses a reconnect-required legacy printer with 409 reconnect_required", async () => {
@@ -151,14 +158,14 @@ describe("printer resolution — the security model", () => {
     const response = await POST(request({ printerId: "printer-1", job: { type: "test" } }));
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: "reconnect_required" });
-    expect(renderService.buildJobBytes).not.toHaveBeenCalled();
+    expect(renderService.preparePrint).not.toHaveBeenCalled();
   });
 });
 
 describe("job dispatch", () => {
   it("returns the rendered bytes and the resolved target for local delivery", async () => {
     const bytes = Buffer.from([0x1b, 0x40, 0x00, 0x01]);
-    vi.mocked(renderService.buildJobBytes).mockResolvedValue(bytes as never);
+    vi.mocked(renderService.preparePrint).mockResolvedValue({ delivery: "raw", bytes } as never);
     const response = await POST(
       request({ printerId: "printer-1", job: { type: "receipt", receipt: { business: { name: "کافه" } } } }),
     );
@@ -167,13 +174,15 @@ describe("job dispatch", () => {
     expect(body.ok).toBe(true);
     expect(body.target).toEqual({ type: "windows", systemName: "EPSON TM-T20III" });
     expect(body.dataBase64).toBe(bytes.toString("base64"));
+    expect(body).toMatchObject({ delivery: "raw" });
   });
 
-  it("rejects a document job without html or with a sheet paper", async () => {
+  it("accepts an A4 document for silent page delivery and still rejects a huge payload", async () => {
     expect((await POST(request({ printerId: "printer-1", job: { type: "document" } }))).status).toBe(400);
-    expect((await POST(request({ printerId: "printer-1", job: { type: "document", html: "<html></html>", paper: "a4" } }))).status).toBe(400);
+    const page = await POST(request({ printerId: "printer-1", job: { type: "document", html: "<html></html>", paper: "a4" } }));
+    expect(page.status).toBe(200);
+    expect(renderService.preparePrint).toHaveBeenCalled();
     expect((await POST(request({ printerId: "printer-1", job: { type: "document", html: "x".repeat(8_000_001), paper: "thermal80" } }))).status).toBe(400);
-    expect(renderService.buildJobBytes).not.toHaveBeenCalled();
   });
 
   it("requires the payload field each data job names", async () => {
@@ -184,7 +193,7 @@ describe("job dispatch", () => {
   });
 
   it("maps a render failure to 502 render_failed and logs it", async () => {
-    vi.mocked(renderService.buildJobBytes).mockRejectedValue(new Error("chromium gone") as never);
+    vi.mocked(renderService.preparePrint).mockRejectedValue(new Error("chromium gone") as never);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const response = await POST(request({ printerId: "printer-1", job: { type: "test" } }));
     errorSpy.mockRestore();

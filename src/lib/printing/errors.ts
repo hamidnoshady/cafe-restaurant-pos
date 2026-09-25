@@ -21,16 +21,21 @@ export type PrinterErrorCode =
   | "render_failed"
   | "reconnect_required"
   | "invalid_printer"
-  | "not_in_browser";
+  | "not_in_browser"
+  | "printer_not_configured"
+  | "incompatible_printer"
+  | "spooler_rejected"
+  | "job_timeout"
+  | "template_invalid";
 
 /** Persian, human, non-technical — what the operator should do next. */
 export const PRINTER_ERROR_MESSAGES: Record<PrinterErrorCode, string> = {
   connector_not_installed:
-    "برای چاپ، رابط چاپ باید یک‌بار روی همین کامپیوتر نصب شود. دکمهٔ «نصب رابط چاپ» را بزنید.",
+    "برای چاپ از مرورگر، سرویس چاپ اشوبه باید یک‌بار روی همین کامپیوتر نصب شود.",
   connector_outdated:
-    "نسخهٔ رابط چاپ قدیمی است؛ آن را دوباره نصب کنید تا به‌روز شود.",
+    "سرویس چاپ اشوبه قدیمی است. آن را یک‌بار به‌روز کنید.",
   connector_unreachable:
-    "رابط چاپ پاسخ نداد. مطمئن شوید Cafe POS Print Connector در حال اجراست و مرورگر اجازهٔ دسترسی محلی را داده است.",
+    "سرویس چاپ اشوبه پاسخ نداد. نصب را بررسی کنید و اجازهٔ دسترسی محلی مرورگر را بدهید.",
   printer_not_found: "این چاپگر پیدا نشد. ممکن است حذف شده باشد؛ فهرست چاپگرها را بازخوانی کنید.",
   printer_inactive: "این چاپگر غیرفعال است. از تنظیمات چاپگر آن را فعال کنید.",
   printer_offline: "چاپگر پاسخ نداد. مطمئن شوید روشن است و کاغذ دارد.",
@@ -40,7 +45,12 @@ export const PRINTER_ERROR_MESSAGES: Record<PrinterErrorCode, string> = {
   render_failed: "ساخت فایل چاپ ناموفق بود. لطفاً دوباره تلاش کنید.",
   reconnect_required: "این چاپگر باید دوباره متصل شود.",
   invalid_printer: "تنظیمات چاپگر کامل نیست؛ چاپگر را دوباره وصل کنید.",
-  not_in_browser: "چاپ فقط از داخل مرورگر ممکن است.",
+  not_in_browser: "چاپ فقط از داخل برنامه ممکن است.",
+  printer_not_configured: "برای این سند چاپگری تنظیم نشده است.",
+  incompatible_printer: "این چاپگر برای این نوع سند مناسب نیست.",
+  spooler_rejected: "ویندوز این کار چاپ را نپذیرفت.",
+  job_timeout: "ارسال به چاپگر بیش از حد طول کشید.",
+  template_invalid: "قالب چاپ قابل استفاده نیست.",
 };
 
 /** The one place a code becomes the sentence a user reads. */

@@ -35,7 +35,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { safeRandomId } from "@/lib/client-id";
-import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
+import { useBusinessInfo } from "../use-printers";
 import { kickDrawer, printReceipt } from "@/lib/printing/client";
 import type { ReceiptData } from "@/lib/receipt-template";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
@@ -183,7 +183,6 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ orderNumber: number; total: number } | null>(null);
-  const printers = usePrinters();
   const business = useBusinessInfo();
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
 
@@ -320,20 +319,15 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
         unit: money.unit,
       };
       setLastReceipt(receipt);
-      const receiptPrinter = firstPrinter(printers, "receipt");
-      if (receiptPrinter) {
-        void printReceipt(receiptPrinter.id, receipt).then((result) => {
-          // Printing is best-effort by contract: a failed receipt print never
-          // invalidates the completed sale. Say so, non-destructively, with a
-          // way to try again — the invoice is safe either way.
-          if (!result.ok && result.error !== "not_in_browser") {
-            toast.warning("چاپ رسید انجام نشد؛ فاکتور با موفقیت ثبت شده است.", {
-              action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, receipt) },
-            });
-          }
-        });
-        if (selectedWay?.opensDrawer) void kickDrawer(receiptPrinter.id);
-      }
+      const receiptRequestId = `invoice:${crypto.randomUUID()}`;
+      void printReceipt(null, receipt, { requestId: receiptRequestId }).then((result) => {
+        if (!result.ok && result.error !== "printer_not_configured") {
+          toast.warning("چاپ رسید انجام نشد؛ فاکتور با موفقیت ثبت شده است.", {
+            action: { label: "چاپ دوباره", onClick: () => void printReceipt(null, receipt, { requestId: `${receiptRequestId}:retry` }) },
+          });
+        }
+        if (selectedWay?.opensDrawer && result.supportsDrawer && result.printerId) void kickDrawer(result.printerId);
+      });
       setLines([]);
       setCustomerId("");
       setPaymentReference("");
@@ -349,17 +343,12 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
 
   function reprintLast() {
     if (!lastReceipt) return;
-    const receiptPrinter = firstPrinter(printers, "receipt");
-    if (!receiptPrinter) {
-      toast.error("چاپگر رسید تنظیم نشده است.");
-      return;
-    }
-    void printReceipt(receiptPrinter.id, lastReceipt).then((result) => {
-      if (result.ok) {
-        toast.success("رسید برای چاپ ارسال شد");
-      } else if (result.error !== "not_in_browser") {
+    const requestId = `reprint:${crypto.randomUUID()}`;
+    void printReceipt(null, lastReceipt, { requestId }).then((result) => {
+      if (result.ok) toast.success("رسید برای چاپ ارسال شد");
+      else if (result.error !== "printer_not_configured") {
         toast.warning("چاپ رسید انجام نشد.", {
-          action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, lastReceipt) },
+          action: { label: "چاپ دوباره", onClick: () => void printReceipt(null, lastReceipt, { requestId: `${requestId}:retry` }) },
         });
       }
     });

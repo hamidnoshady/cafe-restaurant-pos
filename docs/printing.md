@@ -161,12 +161,12 @@ installer never holds any). Port 9123 conflicts are diagnosed by owner
 process: another Cafe POS connector is replaced, a foreign program is named
 in the message.
 
-### Browser printing is an output, not a connection
+### Page printing does not open a dialog
 
-`printViaBrowser` (a hidden iframe, not a popup) opens the browser's own print
-dialog. It is the right output for A4/A5 invoices, label sheets, and tills
-with no configured hardware printer — and it is never saved as a printer
-connection type. Sheets never ride the thermal connector at all.
+A4 and A5 documents are rendered to a page image and handed to the Windows
+printer driver. The browser print dialog is not used. A till with no
+configured printer gets `printer_not_configured` instead of a second print
+window.
 
 ### Legacy printers
 

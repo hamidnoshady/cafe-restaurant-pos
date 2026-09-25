@@ -85,7 +85,7 @@ import {
 } from "../modifier-picker";
 import { apiOrQueue } from "../offline-queue";
 import { api, errorMessage } from "../ui";
-import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
+import { useBusinessInfo } from "../use-printers";
 import { ClosedOrderAmendment } from "./closed-order-amendment";
 import {
   CARD,
@@ -314,7 +314,6 @@ export function OrderDetailModal({
    * need them, without crowding the one that doesn't.
    */
   const [tab, setTab] = useState<"register" | "info" | "ops">("register");
-  const printers = usePrinters();
   const business = useBusinessInfo();
   const money = useMoney();
 
@@ -694,18 +693,15 @@ export function OrderDetailModal({
 
   /** Reprint of an already-issued bill — no payment, no drawer kick. */
   function reprint() {
-    const receiptPrinter = firstPrinter(printers, "receipt");
-    if (!receiptPrinter) {
-      setError("چاپگر رسید تنظیم نشده است.");
-      return;
-    }
     const receipt = buildReceipt(
       Number(order?.tip_amount ?? 0),
       draftReceiptPayments(paymentDraft, paymentMethods, Number(order?.total ?? 0), money.unit),
     );
     if (!receipt) return;
-    void printReceipt(receiptPrinter.id, receipt);
-    toast.success("رسید برای چاپ ارسال شد");
+    void printReceipt(null, receipt, { requestId: `reprint:${orderId}:${crypto.randomUUID()}`, entityId: orderId ?? undefined }).then((result) => {
+      if (!result.ok) setError("ارسال رسید به چاپگر ناموفق بود.");
+      else toast.success("رسید برای چاپ ارسال شد");
+    });
   }
 
   /**
@@ -766,21 +762,19 @@ export function OrderDetailModal({
     await load();
     onChanged?.();
 
-    const receiptPrinter = firstPrinter(printers, "receipt");
-    if (receiptPrinter) {
-      const receipt = buildReceipt(tipAmount, draftReceiptPayments(paymentDraft, paymentMethods, total, money.unit));
-      if (receipt) {
-        void printReceipt(receiptPrinter.id, receipt).then((result) => {
-          // Best-effort by contract: a failed print never undoes the payment.
-          if (!result.ok && result.error !== "not_in_browser") {
-            toast.warning("چاپ رسید انجام نشد؛ پرداخت با موفقیت ثبت شده است.", {
-              action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, receipt) },
-            });
-          }
-        });
-        // Any cash slice opens the drawer, not just an all-cash bill.
-        if (draftOpensDrawer(paymentDraft, paymentMethods)) void kickDrawer(receiptPrinter.id);
-      }
+    const receipt = buildReceipt(tipAmount, draftReceiptPayments(paymentDraft, paymentMethods, total, money.unit));
+    if (receipt) {
+      const receiptRequestId = `receipt:${orderId}`;
+      void printReceipt(null, receipt, { requestId: receiptRequestId, entityId: orderId ?? undefined }).then((result) => {
+        if (!result.ok && result.error !== "printer_not_configured") {
+          toast.warning("چاپ رسید انجام نشد؛ پرداخت با موفقیت ثبت شده است.", {
+            action: { label: "چاپ دوباره", onClick: () => void printReceipt(null, receipt, { requestId: `${receiptRequestId}:retry`, entityId: orderId ?? undefined }) },
+          });
+        }
+        if (draftOpensDrawer(paymentDraft, paymentMethods) && result.supportsDrawer && result.printerId) {
+          void kickDrawer(result.printerId);
+        }
+      });
     }
     setTipInput("");
   }

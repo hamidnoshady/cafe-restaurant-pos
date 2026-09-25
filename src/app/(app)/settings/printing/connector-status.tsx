@@ -44,7 +44,7 @@ export function ConnectorInstallCard({ error, onRecheck, rechecking }: {
   const status = statusLabel(error, installing);
 
   return (
-    <SectionCard title="اتصال این کامپیوتر" description="کافه‌پوز برای دسترسی به چاپگرها به یک رابط چاپ کوچک روی همین کامپیوتر نیاز دارد.">
+    <SectionCard title="سرویس چاپ اشوبه" description="برای دسترسی امن مرورگر به چاپگرهای این کامپیوتر، سرویس چاپ اشوبه را یک‌بار نصب کنید.">
       <div className="space-y-3">
         <p className="flex items-center gap-2 text-sm font-medium text-foreground">
           <span
@@ -64,7 +64,7 @@ export function ConnectorInstallCard({ error, onRecheck, rechecking }: {
           <Button asChild>
             <a href="/api/printing/connector/installer" download onClick={installWatch.begin}>
               <DownloadIcon aria-hidden="true" />
-              {outdated ? "به‌روزرسانی رابط چاپ" : "نصب رابط چاپ"}
+              {outdated ? "به‌روزرسانی سرویس چاپ" : "راه‌اندازی سرویس چاپ"}
             </a>
           </Button>
           <Button type="button" variant="outline" onClick={onRecheck} disabled={rechecking}>
