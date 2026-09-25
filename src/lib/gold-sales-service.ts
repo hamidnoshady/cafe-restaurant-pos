@@ -21,6 +21,7 @@
  */
 import type { PoolClient } from "pg";
 import { computeGoldSalePrice, type GoldSalePriceBreakdown, type MakingCharge } from "./gold-pricing";
+import type { Purity } from "./gold";
 import { getGoldPrice } from "./gold-prices-service";
 import { getItem, getWeightAttributes, setWeightItemStatus } from "./items-service";
 import { getConsignment } from "./consignment-service";
@@ -53,6 +54,17 @@ export interface SellWeightedItemResult {
   consigned: boolean;
   /** The COGS this sale posted (metal + stones), Rial; 0 for a consignment, which has none. */
   cost: RialText;
+  /**
+   * The exact weight/purity/rate this sale priced against — returned so a
+   * caller building a permanent invoice snapshot (retail-invoice-service.ts)
+   * never has to re-read today's item/price rows to reconstruct an old sale.
+   * A reprint next month must show the rate that was charged, not whatever
+   * the item or the gold-price table says now.
+   */
+  netWeight: string;
+  purity: Purity;
+  pricePerGram: number;
+  priceDate: string;
 }
 
 export async function sellWeightedItem(
@@ -157,5 +169,15 @@ export async function sellWeightedItem(
 
   await setWeightItemStatus(input.itemId, "sold", client);
 
-  return { breakdown, revenueEntryId, cogsEntryId, consigned: Boolean(consignment), cost };
+  return {
+    breakdown,
+    revenueEntryId,
+    cogsEntryId,
+    consigned: Boolean(consignment),
+    cost,
+    netWeight: weightAttrs.netWeight,
+    purity: weightAttrs.purity,
+    pricePerGram: price.pricePerGram,
+    priceDate: price.priceDate,
+  };
 }

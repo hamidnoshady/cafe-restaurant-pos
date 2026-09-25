@@ -41,6 +41,7 @@ import { rialBigInt, rialText, type RialText } from "./inventory-exact";
 import type { MakingChargeType } from "./gold-pricing";
 import type { SettlementMethod } from "./ledger";
 import type { Industry } from "./industries";
+import type { RetailInvoiceLineSnapshotStored } from "./retail-invoice/types";
 
 /** One line of a retail invoice, discriminated by how its industry prices things. */
 export type RetailInvoiceLineInput =
@@ -171,6 +172,13 @@ export async function createRetailInvoice(
   if (input.lines.length === 0) {
     throw new RetailInvoiceError("فاکتور بدون کالا قابل ثبت نیست.");
   }
+  // A نسیه (credit) sale creates a receivable someone must owe. Without a
+  // customer there is nobody for that balance to belong to — it would sit on
+  // the books uncollectable and unreportable per-customer. Cash and card
+  // sales settle in full at the register and stay anonymous-customer-safe.
+  if (input.paymentMethod === "credit" && !input.customerId) {
+    throw new RetailInvoiceError("برای فروش نسیه، انتخاب مشتری الزامی است.");
+  }
   const allowed = LINE_KINDS_BY_INDUSTRY[input.industry];
   for (const line of input.lines) {
     if (!allowed.includes(line.kind)) {
@@ -231,24 +239,26 @@ export async function createRetailInvoice(
     const { rows: itemRows } = await client.query<{ id: string }>(
       `INSERT INTO order_items
          (location_id, order_id, item_id, name_snapshot, unit_price, quantity, status,
-          metal_value, making_charge, profit)
-       VALUES ($1, $2, $3, $4, $5, $6, 'served', $7, $8, $9)
+          metal_value, making_charge, profit, retail_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6, 'served', $7, $8, $9, $10)
        RETURNING id`,
       [
         input.locationId,
         orderId,
         settled.itemId,
         settled.name,
-        // `unit_price` is a bigint column and `quantity` an integer one, both
-        // from the F&B model. An accessories line can be a decimal quantity of
-        // a cheap variant, so the line's *net* is the authoritative number and
-        // unit_price carries it at quantity 1 rather than risking a rounding
-        // disagreement between the document and the ledger.
+        // `unit_price`/`quantity` stay the F&B-shaped columns they always
+        // were (bigint line-net at integer quantity 1) — every existing join,
+        // report and posting check that reads them keeps working unchanged.
+        // The real sold quantity, unit price, discount split and industry
+        // breakdown live in `retail_snapshot` (migration 0174); that is what
+        // the retail read model and the print pipeline use, never this pair.
         rialBigInt(settled.net).toString(),
         1,
         settled.metalValue ?? null,
         settled.makingCharge ?? null,
         settled.profit ?? null,
+        JSON.stringify(settled.snapshot),
       ],
     );
 
@@ -367,6 +377,13 @@ interface SettledLine {
   profit?: RialText;
   batchNumbers?: string[];
   expiryDate?: string | null;
+  /**
+   * The full sold-line snapshot for `order_items.retail_snapshot` (migration
+   * 0174) — everything `getRetailInvoiceDetail`/`getRetailInvoicePrintData`
+   * need to reconstruct this exact line months later, without re-reading the
+   * item's *current* price, weight, serial or batch state.
+   */
+  snapshot: RetailInvoiceLineSnapshotStored;
 }
 
 /**
@@ -435,11 +452,11 @@ async function settleLine(
   promotionDiscount: number,
 ): Promise<SettledLine> {
   if (line.kind === "gold") {
-    const item = await getItem(line.itemId);
+    const item = await getItem(line.itemId, client);
     if (!item || item.locationId !== input.locationId) {
       throw new RetailInvoiceError("کالا یافت نشد.");
     }
-    const { breakdown, cost } = await sellWeightedItem(client, {
+    const sale = await sellWeightedItem(client, {
       businessId: input.businessId,
       locationId: input.locationId,
       itemId: line.itemId,
@@ -449,6 +466,7 @@ async function settleLine(
       paymentMethod: input.paymentMethod,
       createdBy: input.createdBy ?? null,
     });
+    const { breakdown, cost } = sale;
     const net = rialText(
       (
         rialBigInt(breakdown.metalValue) +
@@ -470,33 +488,64 @@ async function settleLine(
       metalValue: breakdown.metalValue,
       makingCharge: breakdown.makingCharge,
       profit: breakdown.profit,
+      snapshot: {
+        kind: "gold",
+        quantity: "1",
+        gross: net,
+        manualDiscount: rialText("0"),
+        promotionDiscount: rialText("0"),
+        discount: rialText("0"),
+        vat: breakdown.vat,
+        net,
+        total: breakdown.total,
+        netWeight: sale.netWeight,
+        purity: sale.purity,
+        pricePerGram: sale.pricePerGram,
+        priceDate: sale.priceDate,
+        makingChargeType: line.makingChargeType,
+        makingChargeValue: line.makingChargeValue,
+        profitPercent: line.profitPercent,
+        metalValue: breakdown.metalValue,
+        makingCharge: breakdown.makingCharge,
+        profit: breakdown.profit,
+        consigned: sale.consigned,
+      },
     };
   }
 
   if (line.kind === "watch") {
-    const { rows } = await client.query<{ item_id: string; serial_number: string; name: string; brand_id: string | null }>(
-      `SELECT s.item_id, s.serial_number, i.name, i.brand_id
+    const { rows } = await client.query<{
+      item_id: string;
+      serial_number: string;
+      name: string;
+      brand_id: string | null;
+      condition_grade: string | null;
+      box_and_papers: boolean;
+    }>(
+      `SELECT s.item_id, s.serial_number, i.name, i.brand_id, s.condition_grade, s.box_and_papers
          FROM item_serials s JOIN items i ON i.id = s.item_id
         WHERE s.id = $1 AND i.location_id = $2`,
       [line.serialId, input.locationId],
     );
     if (!rows[0]) throw new RetailInvoiceError("دستگاه یافت نشد.");
+    const serialRow = rows[0];
 
-    const { breakdown, cost } = await sellSerializedUnit(client, {
+    const manualDiscount = line.discount ?? 0;
+    const { breakdown, cost, warranty } = await sellSerializedUnit(client, {
       businessId: input.businessId,
       locationId: input.locationId,
       serialId: line.serialId,
       price: line.price,
-      discount: (line.discount ?? 0) + promotionDiscount,
+      discount: manualDiscount + promotionDiscount,
       vatPercent: line.vatPercent,
       paymentMethod: input.paymentMethod,
       warrantyMonths: line.warrantyMonths,
       createdBy: input.createdBy ?? null,
     });
     return {
-      itemId: rows[0].item_id,
+      itemId: serialRow.item_id,
       // The serial is what identifies the unit sold; a reprint has to show it.
-      name: `${rows[0].name} — ${rows[0].serial_number}`,
+      name: `${serialRow.name} — ${serialRow.serial_number}`,
       quantity: "1",
       gross: breakdown.price,
       discount: breakdown.discount,
@@ -504,14 +553,37 @@ async function settleLine(
       vat: breakdown.vat,
       total: breakdown.total,
       cost,
-      brandId: rows[0].brand_id,
+      brandId: serialRow.brand_id,
+      snapshot: {
+        kind: "watch",
+        quantity: "1",
+        unitPrice: rialText(String(line.price)),
+        gross: breakdown.price,
+        manualDiscount: rialText(String(Math.max(0, Math.round(manualDiscount)))),
+        promotionDiscount: rialText(String(Math.max(0, Math.round(promotionDiscount)))),
+        discount: breakdown.discount,
+        vat: breakdown.vat,
+        net: breakdown.net,
+        total: breakdown.total,
+        serialId: line.serialId,
+        serialNumber: serialRow.serial_number,
+        warrantyMonths: warranty?.months ?? line.warrantyMonths ?? 0,
+        warrantyStartDate: warranty?.startDate ?? null,
+        warrantyEndDate: warranty?.endDate ?? null,
+        provenance:
+          serialRow.condition_grade != null || serialRow.box_and_papers
+            ? { conditionGrade: serialRow.condition_grade, boxAndPapers: serialRow.box_and_papers }
+            : null,
+      },
     };
   }
 
-  const item = await getItem(line.itemId);
+  const item = await getItem(line.itemId, client);
   if (!item || item.locationId !== input.locationId) {
     throw new RetailInvoiceError("کالا یافت نشد.");
   }
+  const manualDiscount = line.discount ?? 0;
+  const combinedDiscount = manualDiscount + promotionDiscount;
 
   // Cosmetics and accessories share the same item_stock model, but each sells
   // through its own service so its own posting rules (and accounts) run.
@@ -523,7 +595,7 @@ async function settleLine(
           itemId: line.itemId,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          discount: (line.discount ?? 0) + promotionDiscount,
+          discount: combinedDiscount,
           vatPercent: line.vatPercent,
           paymentMethod: input.paymentMethod,
           createdBy: input.createdBy ?? null,
@@ -545,7 +617,7 @@ async function settleLine(
       itemId: line.itemId,
       quantity: line.quantity,
       unitPrice: line.unitPrice,
-      discount: (line.discount ?? 0) + promotionDiscount,
+      discount: combinedDiscount,
       vatPercent: line.vatPercent,
       paymentMethod: input.paymentMethod,
       createdBy: input.createdBy ?? null,
@@ -561,10 +633,22 @@ async function settleLine(
       total: tradeSale.breakdown.total,
       cost: tradeSale.cost,
       brandId: item.brandId,
+      snapshot: {
+        kind: "stocked",
+        quantity: line.quantity,
+        unitPrice: line.unitPrice != null ? rialText(String(Math.round(line.unitPrice))) : null,
+        gross: tradeSale.breakdown.gross,
+        manualDiscount: rialText(String(Math.max(0, Math.round(manualDiscount)))),
+        promotionDiscount: rialText(String(Math.max(0, Math.round(promotionDiscount)))),
+        discount: tradeSale.breakdown.discount,
+        vat: tradeSale.breakdown.vat,
+        net: tradeSale.breakdown.net,
+        total: tradeSale.breakdown.total,
+      },
     };
   }
 
-  const { breakdown, cost } = cosmeticSale
+  const sale = cosmeticSale
     ? cosmeticSale
     : await sellAccessoryUnits(client, {
           businessId: input.businessId,
@@ -572,11 +656,23 @@ async function settleLine(
           itemId: line.itemId,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          discount: (line.discount ?? 0) + promotionDiscount,
+          discount: combinedDiscount,
           vatPercent: line.vatPercent,
           paymentMethod: input.paymentMethod,
           createdBy: input.createdBy ?? null,
         });
+  const { breakdown, cost } = sale;
+  const baseSnapshot = {
+    quantity: line.quantity,
+    unitPrice: line.unitPrice != null ? rialText(String(Math.round(line.unitPrice))) : null,
+    gross: breakdown.gross,
+    manualDiscount: rialText(String(Math.max(0, Math.round(manualDiscount)))),
+    promotionDiscount: rialText(String(Math.max(0, Math.round(promotionDiscount)))),
+    discount: breakdown.discount,
+    vat: breakdown.vat,
+    net: breakdown.net,
+    total: breakdown.total,
+  } as const;
   return {
     itemId: line.itemId,
     name: item.name,
@@ -590,5 +686,9 @@ async function settleLine(
     brandId: item.brandId,
     batchNumbers: cosmeticSale?.batchNumbers,
     expiryDate: cosmeticSale?.expiryDate,
+    snapshot:
+      line.kind === "cosmetic"
+        ? { kind: "cosmetic", ...baseSnapshot, batchNumbers: cosmeticSale?.batchNumbers ?? [], expiryDate: cosmeticSale?.expiryDate ?? null }
+        : { kind: "accessory", ...baseSnapshot },
   };
 }

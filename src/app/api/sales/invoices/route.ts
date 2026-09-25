@@ -48,7 +48,12 @@ async function requireRetailIndustry(businessId: string) {
 }
 
 export const POST = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ordersCreate);
+  // Issuing a retail invoice settles it immediately (it IS the till taking
+  // payment) — the same gate the /accounting/pos page itself checks before
+  // it will even render `RetailInvoiceScreen`. `ordersCreate` alone used to
+  // guard this, which let e.g. a waiter's role name the permission without
+  // ever being able to reach the screen that calls it.
+  const { session, error } = await requirePermission(PERMISSIONS.paymentsTake);
   if (error) return error;
   const { industry, error: industryError } = await requireRetailIndustry(session.businessId);
   if (industryError) return industryError;
@@ -188,7 +193,10 @@ export const POST = withTenantScope(async (request: NextRequest) => {
  * must not download every historical invoice just to show page one.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requirePermission(PERMISSIONS.ordersCreate);
+  // Listing/searching past invoices is a read of sales history — every role
+  // that can see the orders list should see this one too, not only the
+  // subset that may also create a new order.
+  const { session, error } = await requirePermission(PERMISSIONS.ordersView);
   if (error) return error;
   const { error: industryError } = await requireRetailIndustry(session.businessId);
   if (industryError) return industryError;

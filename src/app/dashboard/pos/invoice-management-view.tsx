@@ -7,7 +7,7 @@ import { formatJalali } from "@/lib/jalali";
 import { useMoney } from "@/components/money/money-context";
 import { DownloadIcon, EyeIcon, RefreshCwIcon } from "lucide-react";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
-import { OrderDetailModal } from "../orders/order-detail-modal";
+import { RetailInvoiceDetailModal } from "./retail-invoice-detail-modal";
 
 /**
  * «مدیریت فاکتورها» — the sales history as a managed list: search by customer
@@ -323,14 +323,12 @@ export function InvoiceManagementView() {
         </div>
       </div>
 
-      <OrderDetailModal
-        orderId={selectedInvoiceId}
+      <RetailInvoiceDetailModal
+        invoiceId={selectedInvoiceId}
         open={selectedInvoiceId !== null}
         onOpenChange={(open) => {
           if (!open) setSelectedInvoiceId(null);
         }}
-        canEdit={false}
-        canAmendClosed={false}
       />
     </>
   );

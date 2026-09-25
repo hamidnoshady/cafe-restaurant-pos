@@ -27,7 +27,13 @@ import { computeGoldSalePrice, type MakingChargeType } from "@/lib/gold-pricing"
 import { computeAccessorySalePrice } from "@/lib/accessories";
 import { computeCosmeticSalePrice } from "@/lib/cosmetics";
 import { computeWatchSalePrice } from "@/lib/watch-pricing";
-import { hasCapability, labelFor } from "@/lib/industry-profile";
+import {
+  defaultGoldMakingChargePercent,
+  defaultGoldProfitPercent,
+  defaultRetailVatPercent,
+  hasCapability,
+  labelFor,
+} from "@/lib/industry-profile";
 import { isTradeGoodsIndustry } from "@/lib/trade-goods";
 import type { Industry } from "@/lib/industries";
 import { Button } from "@/components/ui/button";
@@ -35,7 +41,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { ledgerSettlementFor } from "@/lib/payment-methods";
 import { safeRandomId } from "@/lib/client-id";
-import { useBusinessInfo } from "../use-printers";
+import { HoldToConfirmButton } from "../hold-to-confirm-button";
 import { kickDrawer, printReceipt } from "@/lib/printing/client";
 import type { ReceiptData } from "@/lib/receipt-template";
 import { api, ErrorBox, errorMessage, Field, inputClass } from "../ui";
@@ -183,7 +189,6 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ orderNumber: number; total: number } | null>(null);
-  const business = useBusinessInfo();
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
 
   const load = useCallback(async () => {
@@ -255,24 +260,19 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
       setError("برای این روش پرداخت، واردکردن شماره پیگیری الزامی است.");
       return;
     }
+    // Server-enforced too (createRetailInvoice) — this just saves the round
+    // trip: a نسیه sale needs someone to owe the receivable to.
+    if (paymentMethod === "credit" && !customerId) {
+      setError("برای فروش نسیه، انتخاب مشتری الزامی است.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const { ok, data } = await api<{
       invoice?: {
+        orderId: string;
         orderNumber: number;
         total: string;
-        lines?: {
-          name: string;
-          quantity: string;
-          total: string;
-          metalValue?: string;
-          makingCharge?: string;
-          profit?: string;
-          batchNumbers?: string[];
-          expiryDate?: string | null;
-        }[];
-        subtotal?: string;
-        tax?: string;
       };
       error?: string;
       message?: string;
@@ -291,48 +291,56 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
     if (ok && data.invoice) {
       const invoice = data.invoice;
       setDone({ orderNumber: invoice.orderNumber, total: Number(invoice.total) });
-      const customerName = customers.find((c) => c.id === customerId)?.name ?? null;
-      const receipt: ReceiptData = {
-        business: { name: business.name, address: business.address, phone: business.phone },
-        orderLabel: `فاکتور ${toPersianDigits(invoice.orderNumber)}`,
-        orderTypeLabel: "فاکتور فروش",
-        customerName,
-        issuedAt: new Date().toISOString(),
-        lines: (invoice.lines ?? []).map((l) => ({
-          name: l.name,
-          quantity: Number(l.quantity),
-          lineTotal: Number(l.total),
-          goldBreakdown:
-            l.metalValue != null && l.makingCharge != null && l.profit != null
-              ? { metalValue: Number(l.metalValue), makingCharge: Number(l.makingCharge), profit: Number(l.profit) }
-              : null,
-          batch: l.batchNumbers?.length
-            ? { batchNumber: l.batchNumbers.join("، "), expiryDate: l.expiryDate ?? null }
-            : null,
-        })),
-        subtotal: Number(invoice.subtotal ?? totals.net),
-        discount: 0,
-        tax: Number(invoice.tax ?? totals.vat),
-        total: Number(invoice.total),
-        paymentMethod: selectedWay?.settlement ?? paymentMethod,
-        payments: selectedWay ? [{ label: selectedWay.name, amount: Number(invoice.total) }] : null,
-        unit: money.unit,
-      };
-      setLastReceipt(receipt);
-      const receiptRequestId = `invoice:${crypto.randomUUID()}`;
-      void printReceipt(null, receipt, { requestId: receiptRequestId }).then((result) => {
-        if (!result.ok && result.error !== "printer_not_configured") {
-          toast.warning("چاپ رسید انجام نشد؛ فاکتور با موفقیت ثبت شده است.", {
-            action: { label: "چاپ دوباره", onClick: () => void printReceipt(null, receipt, { requestId: `${receiptRequestId}:retry` }) },
-          });
-        }
-        if (selectedWay?.opensDrawer && result.supportsDrawer && result.printerId) void kickDrawer(result.printerId);
-      });
       setLines([]);
       setCustomerId("");
       setPaymentReference("");
       setNote("");
       void load();
+
+      // The invoice is already committed at this point — everything below is
+      // best-effort presentation. A failure fetching the print document (or
+      // printing it) must never look like the sale itself failed; it only
+      // ever surfaces as a non-blocking toast, same as "printer not configured".
+      const openedDrawer = selectedWay?.opensDrawer ?? false;
+      void (async () => {
+        // The same builder the reprint endpoint calls (`getRetailInvoicePrintData`)
+        // — so the first print can never drift from a later reprint of the same
+        // sale (see src/lib/retail-invoice/print-data.ts's header comment).
+        const printResult = await api<{ receipt?: ReceiptData; error?: string }>(
+          `/api/sales/invoices/${invoice.orderId}?view=print`,
+        );
+        if (!printResult.ok || !printResult.data.receipt) {
+          toast.warning("دریافت اطلاعات چاپ ناموفق بود؛ فاکتور با موفقیت ثبت شده است.", {
+            action: {
+              label: "چاپ دوباره",
+              onClick: () => {
+                void api<{ receipt?: ReceiptData }>(`/api/sales/invoices/${invoice.orderId}?view=print`).then(
+                  (retry) => {
+                    if (retry.ok && retry.data.receipt) {
+                      setLastReceipt(retry.data.receipt);
+                      void printReceipt(null, retry.data.receipt, { requestId: `invoice:${invoice.orderId}:retry` });
+                    }
+                  },
+                );
+              },
+            },
+          });
+          return;
+        }
+        const receipt = printResult.data.receipt;
+        setLastReceipt(receipt);
+        const receiptRequestId = `invoice:${invoice.orderId}`;
+        const result = await printReceipt(null, receipt, { requestId: receiptRequestId });
+        if (!result.ok && result.error !== "printer_not_configured") {
+          toast.warning("چاپ رسید انجام نشد؛ فاکتور با موفقیت ثبت شده است.", {
+            action: {
+              label: "چاپ دوباره",
+              onClick: () => void printReceipt(null, receipt, { requestId: `${receiptRequestId}:retry` }),
+            },
+          });
+        }
+        if (openedDrawer && result.supportsDrawer && result.printerId) void kickDrawer(result.printerId);
+      })();
     } else {
       // The server sends the sell services' own Persian refusals (no stock, no
       // cost basis, no gold rate recorded for today) as `message`; showing that
@@ -411,12 +419,16 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
             />
           ) : null}
           {industry === "jewelry" ? (
-            <GoldLineForm items={weightItems} prices={prices} onAdd={addLine} />
+            <GoldLineForm industry={industry} items={weightItems} prices={prices} onAdd={addLine} />
           ) : null}
-          {industry === "watch" ? <WatchLineForm units={units} onAdd={addLine} /> : null}
-          {industry === "accessories" ? <AccessoryLineForm variants={variants} onAdd={addLine} kind="accessory" /> : null}
-          {industry === "cosmetics" ? <CosmeticsLineForm variants={variants} onAdd={addLine} /> : null}
-          {isTradeGoodsIndustry(industry) ? <AccessoryLineForm variants={variants} onAdd={addLine} kind="stocked" /> : null}
+          {industry === "watch" ? <WatchLineForm industry={industry} units={units} onAdd={addLine} /> : null}
+          {industry === "accessories" ? (
+            <AccessoryLineForm industry={industry} variants={variants} onAdd={addLine} kind="accessory" />
+          ) : null}
+          {industry === "cosmetics" ? <CosmeticsLineForm industry={industry} variants={variants} onAdd={addLine} /> : null}
+          {isTradeGoodsIndustry(industry) ? (
+            <AccessoryLineForm industry={industry} variants={variants} onAdd={addLine} kind="stocked" />
+          ) : null}
 
         </div>
 
@@ -472,7 +484,14 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
             </dl>
 
             <div className="mt-4">
-              <Field label="مشتری">
+              <Field
+                label="مشتری"
+                hint={
+                  paymentMethod === "credit" && !customerId
+                    ? "برای فروش نسیه، انتخاب مشتری الزامی است."
+                    : undefined
+                }
+              >
                 <SearchableSelect
                   value={customerId}
                   onChange={setCustomerId}
@@ -532,13 +551,16 @@ export function RetailInvoiceScreen({ industry }: { industry: Industry }) {
               </Field>
             </div>
 
-            <Button
-              onClick={() => void submit()}
-              disabled={busy || lines.length === 0 || !paymentMethod}
-              className="min-h-12 w-full"
-            >
-              {busy ? "در حال ثبت…" : "ثبت فاکتور"}
-            </Button>
+            <HoldToConfirmButton
+              durationMs={2000}
+              label="ثبت فاکتور"
+              holdingLabel="نگه دارید…"
+              cancelledMessage="برای ثبت فاکتور، دکمه را ۲ ثانیه نگه دارید."
+              busy={busy}
+              disabled={lines.length === 0 || !paymentMethod}
+              onComplete={() => void submit()}
+              className="min-h-12 w-full rounded-xl bg-amber-500 dark:bg-amber-400 px-4 text-sm font-bold text-amber-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:focus-visible:ring-amber-400/45 disabled:opacity-55"
+            />
           </div>
         </aside>
       </div>
@@ -628,10 +650,11 @@ function BarcodeScanField({
         return;
       }
       try {
+        const vatPercent = defaultRetailVatPercent(industry);
         const breakdown =
           industry === "cosmetics"
-            ? computeCosmeticSalePrice({ unitPrice: variant.unitPrice, quantity: "1", discount: 0, vatPercent: 9 })
-            : computeAccessorySalePrice({ unitPrice: variant.unitPrice, quantity: "1", discount: 0, vatPercent: 9 });
+            ? computeCosmeticSalePrice({ unitPrice: variant.unitPrice, quantity: "1", discount: 0, vatPercent })
+            : computeAccessorySalePrice({ unitPrice: variant.unitPrice, quantity: "1", discount: 0, vatPercent });
         onAdd({
           key: newKey(),
           label: variant.name,
@@ -640,7 +663,7 @@ function BarcodeScanField({
             itemId: variant.id,
             quantity: "1",
             discount: 0,
-            vatPercent: 9,
+            vatPercent,
           },
           net: Number(breakdown.net),
           vat: Number(breakdown.vat),
@@ -663,14 +686,18 @@ function BarcodeScanField({
         return;
       }
       try {
-        // The same defaults the gold form seeds (7% اجرت، 7% سود، 9% مالیات) —
-        // the cashier still sees the breakdown in the cart before settling.
+        // The business's configured defaults (product/category override is not
+        // wired up yet — see industry-profile.ts's retailDefaults) — the
+        // cashier still sees the breakdown in the cart before settling.
+        const makingChargeValue = defaultGoldMakingChargePercent(industry);
+        const profitPercent = defaultGoldProfitPercent(industry);
+        const vatPercent = defaultRetailVatPercent(industry);
         const breakdown = computeGoldSalePrice({
           netWeight: item.netWeight,
           pricePerGram: rate.pricePerGram,
-          makingCharge: { type: "percent", value: 7 },
-          profitPercent: 7,
-          vatPercent: 9,
+          makingCharge: { type: "percent", value: makingChargeValue },
+          profitPercent,
+          vatPercent,
         });
         const metalValue = Number(breakdown.metalValue);
         const makingCharge = Number(breakdown.makingCharge);
@@ -682,9 +709,9 @@ function BarcodeScanField({
             kind: "gold",
             itemId: item.id,
             makingChargeType: "percent",
-            makingChargeValue: 7,
-            profitPercent: 7,
-            vatPercent: 9,
+            makingChargeValue,
+            profitPercent,
+            vatPercent,
           },
           net: metalValue + makingCharge + profit,
           vat: Number(breakdown.vat),
@@ -752,10 +779,12 @@ function BarcodeScanField({
  * the cashier and the customer agree the اجرت before the sale is posted.
  */
 function GoldLineForm({
+  industry,
   items,
   prices,
   onAdd,
 }: {
+  industry: Industry;
   items: WeightItem[];
   prices: GoldPrice[];
   onAdd: (line: CartLine) => void;
@@ -763,9 +792,9 @@ function GoldLineForm({
   const money = useMoney();
   const [itemId, setItemId] = useState("");
   const [makingChargeType, setMakingChargeType] = useState<MakingChargeType>("percent");
-  const [makingChargeValue, setMakingChargeValue] = useState("7");
-  const [profitPercent, setProfitPercent] = useState("7");
-  const [vatPercent, setVatPercent] = useState("9");
+  const [makingChargeValue, setMakingChargeValue] = useState(() => String(defaultGoldMakingChargePercent(industry)));
+  const [profitPercent, setProfitPercent] = useState(() => String(defaultGoldProfitPercent(industry)));
+  const [vatPercent, setVatPercent] = useState(() => String(defaultRetailVatPercent(industry)));
   const [search, setSearch] = useState("");
 
   const inStock = useMemo(() => items.filter((i) => i.status === "in_stock"), [items]);
@@ -940,12 +969,20 @@ function GoldLineForm({
 }
 
 /** A watch line: one serialised unit at an agreed price. Selling it starts its warranty. */
-function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: CartLine) => void }) {
+function WatchLineForm({
+  industry,
+  units,
+  onAdd,
+}: {
+  industry: Industry;
+  units: SerialUnit[];
+  onAdd: (line: CartLine) => void;
+}) {
   const money = useMoney();
   const [serialId, setSerialId] = useState("");
   const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState("");
-  const [vatPercent, setVatPercent] = useState("9");
+  const [vatPercent, setVatPercent] = useState(() => String(defaultRetailVatPercent(industry)));
 
   const inStock = useMemo(() => units.filter((u) => u.status === "in_stock"), [units]);
   const unit = inStock.find((u) => u.id === serialId) ?? null;
@@ -1044,10 +1081,12 @@ function WatchLineForm({ units, onAdd }: { units: SerialUnit[]; onAdd: (line: Ca
  * and the server routes it to the trade's own posting rule.
  */
 function AccessoryLineForm({
+  industry,
   variants,
   onAdd,
   kind = "accessory",
 }: {
+  industry: Industry;
   variants: Variant[];
   onAdd: (line: CartLine) => void;
   kind?: "accessory" | "stocked";
@@ -1057,7 +1096,7 @@ function AccessoryLineForm({
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("");
   const [discount, setDiscount] = useState("");
-  const [vatPercent, setVatPercent] = useState("9");
+  const [vatPercent, setVatPercent] = useState(() => String(defaultRetailVatPercent(industry)));
 
   const sellable = useMemo(
     () => variants.filter((v) => v.kind !== "variant_parent" && Number(v.quantity) > 0),
@@ -1171,13 +1210,21 @@ function AccessoryLineForm({
 }
 
 /** A cosmetics line: a quantity of one variant, at its standard price unless overridden — the same shape as an accessories line, posted through the cosmetics sell path. */
-function CosmeticsLineForm({ variants, onAdd }: { variants: Variant[]; onAdd: (line: CartLine) => void }) {
+function CosmeticsLineForm({
+  industry,
+  variants,
+  onAdd,
+}: {
+  industry: Industry;
+  variants: Variant[];
+  onAdd: (line: CartLine) => void;
+}) {
   const money = useMoney();
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("");
   const [discount, setDiscount] = useState("");
-  const [vatPercent, setVatPercent] = useState("9");
+  const [vatPercent, setVatPercent] = useState(() => String(defaultRetailVatPercent(industry)));
 
   const sellable = useMemo(
     () =>
