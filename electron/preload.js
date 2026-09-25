@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld("businessSuiteDesktop", Object.freeze({
     discoverNetworkPrinters: () => ipcRenderer.invoke("desktop:print-discover-network"),
     probe: (target) => ipcRenderer.invoke("desktop:print-probe", { target }),
     sendRaw: (target, dataBase64) => ipcRenderer.invoke("desktop:print-send-raw", { target, dataBase64 }),
+    sendPage: (printerName, dataBase64) => ipcRenderer.invoke("desktop:print-send-page", { printerName, dataBase64 }),
   }),
 }));
 

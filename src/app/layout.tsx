@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { PrintJobModal } from "@/app/dashboard/print-job-modal";
 import { PwaRegister } from "@/components/pwa-register";
 
 const vazirmatn = localFont({
@@ -64,6 +65,7 @@ export default async function RootLayout({
         <ThemeProvider nonce={nonce}>
           {children}
           <Toaster position="bottom-center" dir="rtl" />
+          <PrintJobModal />
           <PwaRegister />
         </ThemeProvider>
 

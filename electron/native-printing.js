@@ -91,7 +91,7 @@ function listWindowsPrintersScript() {
   return [
     "$ErrorActionPreference = 'Stop'",
     "$items = @(Get-CimInstance -ClassName Win32_Printer -ErrorAction Stop)",
-    "$result = foreach ($p in $items) { [PSCustomObject]@{ name = [string]$p.Name; driver = [string]$p.DriverName; isDefault = [bool]$p.Default } }",
+    "$result = foreach ($p in $items) { [PSCustomObject]@{ name = [string]$p.Name; driver = [string]$p.DriverName; isDefault = [bool]$p.Default; printerStatus = [int]$p.PrinterStatus; workOffline = [bool]$p.WorkOffline } }",
     "ConvertTo-Json -InputObject @($result) -Depth 4 -Compress",
   ].join("; ");
 }
@@ -102,6 +102,16 @@ function listWindowsPrintersScript() {
  * are accepted here so a machine with exactly one printer is not mistaken
  * for a parse failure.
  */
+function windowsQueueStatus(item) {
+  if (item.workOffline === true) return "offline";
+  const code = Number(item.printerStatus);
+  if (code === 7) return "offline";
+  if (code === 6) return "paused";
+  if (code === 3 || code === 4 || code === 5) return "ready";
+  if (item.printerStatus == null && item.workOffline == null) return "unknown";
+  return "available";
+}
+
 function parseWindowsPrinterListJson(raw) {
   const trimmed = String(raw || "").trim();
   if (!trimmed) return [];
@@ -119,6 +129,7 @@ function parseWindowsPrinterListJson(raw) {
       driver: typeof item.driver === "string" && item.driver.trim() !== "" ? item.driver : null,
       isDefault: Boolean(item.isDefault),
       likelyThermal: likelyThermalName(item.name),
+      status: windowsQueueStatus(item),
     }));
 }
 
@@ -392,6 +403,67 @@ async function probeTarget(target, opts = {}) {
   return { ok: false, error: "invalid_printer" };
 }
 
+/**
+ * Silent page print: draw a PNG through the Windows driver with
+ * StandardPrintController so no print dialog appears. Returns when the
+ * spooler accepts the job, not when paper finishes.
+ */
+function sendPageScript(tempFilePath, printerName) {
+  return [
+    "$ProgressPreference = 'SilentlyContinue'",
+    "$ErrorActionPreference = 'Stop'",
+    "Add-Type -AssemblyName System.Drawing",
+    `Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
+using System;
+using System.Drawing;
+using System.Drawing.Printing;
+public static class CafePosPagePrinter {
+  public static void Send(string printerName, string imagePath) {
+    if (String.IsNullOrWhiteSpace(printerName)) throw new ArgumentException("printer_not_found");
+    using (var image = Image.FromFile(imagePath))
+    using (var doc = new PrintDocument()) {
+      doc.PrinterSettings.PrinterName = printerName;
+      if (!doc.PrinterSettings.IsValid) throw new ArgumentException("printer_not_found");
+      doc.PrintController = new StandardPrintController();
+      doc.DocumentName = "Eshobe";
+      int offset = 0;
+      doc.PrintPage += (sender, e) => {
+        var bounds = e.MarginBounds;
+        float scale = bounds.Width / (float)image.Width;
+        int slice = (int)(bounds.Height / scale);
+        if (slice < 1) slice = image.Height;
+        int take = Math.Min(slice, image.Height - offset);
+        int destH = (int)Math.Min(bounds.Height, take * scale);
+        e.Graphics.DrawImage(image, new Rectangle(bounds.X, bounds.Y, bounds.Width, destH), new Rectangle(0, offset, image.Width, take), GraphicsUnit.Pixel);
+        offset += take;
+        e.HasMorePages = offset < image.Height;
+      };
+      doc.Print();
+    }
+  }
+}
+'@`,
+    `[CafePosPagePrinter]::Send(${psQuote(printerName)}, ${psQuote(tempFilePath)})`,
+  ].join("\n");
+}
+
+async function sendPageToWindowsPrinter(printerName, bytes, { run = runPowerShell, tmpdir = os.tmpdir() } = {}) {
+  if (!printerName || !String(printerName).trim()) return { ok: false, error: "invalid_printer", detail: "Printer name is required." };
+  if (!bytes || bytes.length === 0) return { ok: false, error: "invalid_printer", detail: "Print data is empty." };
+  const tempPath = path.join(tmpdir, `cafe-pos-page-${crypto.randomBytes(8).toString("hex")}.png`);
+  await fs.promises.writeFile(tempPath, bytes);
+  try {
+    await run(sendPageScript(tempPath, printerName), { timeoutMs: 45_000 });
+    return { ok: true };
+  } catch (error) {
+    const message = error.message || "";
+    const errorCode = /printer_not_found|Invalid printer/i.test(message) ? "printer_not_found" : "spooler_rejected";
+    return { ok: false, error: errorCode, detail: message };
+  } finally {
+    fs.promises.unlink(tempPath).catch(() => {});
+  }
+}
+
 /** Dispatch raw byte delivery by the same target shape. */
 async function sendRawToTarget(target, bytes, opts = {}) {
   if (!target || typeof target !== "object") return { ok: false, error: "invalid_printer" };
@@ -416,5 +488,7 @@ module.exports = {
   discoverNetworkPrinters,
   probeTarget,
   sendRawToTarget,
+  sendPageScript,
+  sendPageToWindowsPrinter,
   runPowerShell,
 };

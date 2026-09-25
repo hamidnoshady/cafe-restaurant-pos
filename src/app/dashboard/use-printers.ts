@@ -16,6 +16,8 @@ export interface PrinterRow {
   isDefault: boolean;
   /** A legacy pairing the new architecture cannot use; printing through it is refused. */
   needsReconnect: boolean;
+  /** The printer has a cash drawer attached. Opening it is a payment event, not a print. */
+  supportsDrawer?: boolean;
 }
 
 /** Active printers for the location, defaults first — used to pick a target for printing. */

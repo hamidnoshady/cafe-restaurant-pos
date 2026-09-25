@@ -22,11 +22,8 @@
  * against it so callers (the settings UI, the POS, labels) never branch on
  * "am I inside Electron?" themselves.
  *
- * The no-hardware path stays on both: `printViaBrowser` opens the browser's
- * own print dialog on a rendered document — the right output for A4
- * invoices, label sheets, and tills with no configured hardware printer. It
- * is an output action, not a printer connection type, and is never saved as
- * one.
+ * A missing printer is `printer_not_configured`. Operational printing does not
+ * open the browser print dialog.
  */
 import type { KitchenTicketData } from "../kitchen-ticket-template";
 import { renderLabelHtml, type LabelData } from "../label-template";
@@ -275,11 +272,57 @@ export interface PrintResult {
   ok: boolean;
   error?: PrinterErrorCode;
   detail?: string;
+  printerId?: string;
+  supportsDrawer?: boolean;
 }
 
 interface RenderedJob {
   target: PrinterTarget;
   dataBase64: string;
+  delivery: "raw" | "page";
+  printerName?: string;
+  printerId?: string;
+  supportsDrawer?: boolean;
+}
+
+const inflightPrints = new Map<string, Promise<PrintResult>>();
+
+export interface PrintProgress {
+  phase: "preparing" | "routing" | "sending" | "handed_off" | "failed";
+  title: string;
+  printerName?: string;
+  message?: string;
+  error?: PrinterErrorCode;
+}
+
+type ProgressListener = (state: PrintProgress | null) => void;
+const progressListeners = new Set<ProgressListener>();
+
+export function subscribePrintProgress(listener: ProgressListener): () => void {
+  progressListeners.add(listener);
+  return () => progressListeners.delete(listener);
+}
+
+function reportProgress(state: PrintProgress | null): void {
+  for (const listener of progressListeners) listener(state);
+}
+
+/** Deliver a page image through the Windows driver. Network raw ports are not page printers. */
+export async function sendPageToPrinter(target: PrinterTarget, bytes: Uint8Array): Promise<ConnectorResult> {
+  if (target.type !== "windows" || !target.systemName) {
+    return { ok: false, error: "incompatible_printer" };
+  }
+  const bridge = desktopPrintingBridge();
+  if (bridge?.sendPage) {
+    const result = await bridge.sendPage(target.systemName, bytesToBase64(bytes));
+    if (!result.ok) return { ok: false, error: (result.error as PrinterErrorCode) ?? "spooler_rejected", detail: result.detail };
+    return { ok: true };
+  }
+  const result = await callConnector("/print/page", { target, dataBase64: bytesToBase64(bytes) }, { timeoutMs: 45_000 });
+  if (!result.ok && result.error === "print_failed" && result.detail?.includes("not_found")) {
+    return { ok: false, error: "connector_outdated", detail: result.detail };
+  }
+  return result.ok ? result : { ...result, error: result.error ?? "spooler_rejected" };
 }
 
 /**
@@ -290,7 +333,33 @@ interface RenderedJob {
  * print through another branch's printer nor turn the server into an
  * arbitrary TCP client.
  */
-export async function printJob(printerId: string, job: PrintJob): Promise<PrintResult> {
+export async function printJob(
+  printerId: string | null,
+  job: PrintJob,
+  opts: { requestId?: string; title?: string; entityId?: string; documentType?: string } = {},
+): Promise<PrintResult> {
+  const key = opts.requestId;
+  if (key) {
+    const existing = inflightPrints.get(key);
+    if (existing) return existing;
+  }
+  const run = executePrintJob(printerId, job, opts.title ?? "چاپ", opts);
+  if (!key) return run;
+  inflightPrints.set(key, run);
+  try {
+    return await run;
+  } finally {
+    inflightPrints.delete(key);
+  }
+}
+
+async function executePrintJob(
+  printerId: string | null,
+  job: PrintJob,
+  title: string,
+  opts: { requestId?: string; entityId?: string; documentType?: string },
+): Promise<PrintResult> {
+  reportProgress({ phase: "preparing", title });
   let rendered: RenderedJob;
   try {
     const controller = new AbortController();
@@ -298,20 +367,61 @@ export async function printJob(printerId: string, job: PrintJob): Promise<PrintR
     const res = await fetch("/api/printing/print", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printerId, job }),
+      body: JSON.stringify({
+        printerId: printerId || undefined,
+        job,
+        printRequestId: opts.requestId,
+        documentType: opts.documentType ?? (job.type === "kitchen-ticket" ? "kitchen" : job.type === "document" ? "invoice" : job.type),
+        entityId: opts.entityId,
+      }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    const data = (await res.json()) as { ok?: boolean; error?: string; target?: PrinterTarget; dataBase64?: string };
+    const data = (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      target?: PrinterTarget;
+      dataBase64?: string;
+      delivery?: "raw" | "page";
+      printerName?: string;
+      printerId?: string;
+      supportsDrawer?: boolean;
+    };
     if (!res.ok || !data.ok || !data.target || !data.dataBase64) {
-      return { ok: false, error: (data.error as PrinterErrorCode) ?? "render_failed" };
+      const error = (data.error as PrinterErrorCode) ?? "render_failed";
+      reportProgress({ phase: "failed", title, error });
+      return { ok: false, error, printerId: data.printerId, supportsDrawer: data.supportsDrawer };
     }
-    rendered = { target: data.target, dataBase64: data.dataBase64 };
+    rendered = {
+      target: data.target,
+      dataBase64: data.dataBase64,
+      delivery: data.delivery === "page" ? "page" : "raw",
+      printerName: data.printerName,
+      printerId: data.printerId,
+      supportsDrawer: data.supportsDrawer,
+    };
   } catch {
+    reportProgress({ phase: "failed", title, error: "render_failed" });
     return { ok: false, error: "render_failed" };
   }
-  const delivered = await sendRawToPrinter(rendered.target, base64ToBytes(rendered.dataBase64));
-  return delivered.ok ? { ok: true } : { ok: false, error: delivered.error, detail: delivered.detail };
+  reportProgress({ phase: "sending", title, printerName: rendered.printerName });
+  const bytes = base64ToBytes(rendered.dataBase64);
+  const delivered = rendered.delivery === "page"
+    ? await sendPageToPrinter(rendered.target, bytes)
+    : await sendRawToPrinter(rendered.target, bytes);
+  if (!delivered.ok) {
+    reportProgress({ phase: "failed", title, printerName: rendered.printerName, error: delivered.error });
+    return { ok: false, error: delivered.error, detail: delivered.detail };
+  }
+  reportProgress({ phase: "handed_off", title, printerName: rendered.printerName });
+  if (opts.requestId) {
+    void fetch("/api/printing/jobs", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ printRequestId: opts.requestId, status: "handed_off" }),
+    }).catch(() => undefined);
+  }
+  return { ok: true, printerId: rendered.printerId, supportsDrawer: rendered.supportsDrawer };
 }
 
 /**
@@ -345,12 +455,20 @@ export async function testPrintDraft(
 
 /* ────────────────────────── ready-made jobs ────────────────────────── */
 
-export function printReceipt(printerId: string, receipt: ReceiptData): Promise<PrintResult> {
-  return printJob(printerId, { type: "receipt", receipt });
+export function printReceipt(
+  printerId: string | null,
+  receipt: ReceiptData,
+  opts: { requestId?: string; title?: string; entityId?: string; documentType?: "receipt" | "invoice" } = {},
+): Promise<PrintResult> {
+  return printJob(printerId, { type: "receipt", receipt }, { ...opts, title: opts.title ?? "چاپ رسید", documentType: opts.documentType ?? "receipt" });
 }
 
-export function printKitchenTicket(printerId: string, ticket: KitchenTicketData): Promise<PrintResult> {
-  return printJob(printerId, { type: "kitchen-ticket", ticket });
+export function printKitchenTicket(
+  printerId: string | null,
+  ticket: KitchenTicketData,
+  opts: { requestId?: string; title?: string; entityId?: string } = {},
+): Promise<PrintResult> {
+  return printJob(printerId, { type: "kitchen-ticket", ticket }, { ...opts, title: opts.title ?? "چاپ آشپزخانه", documentType: "kitchen" });
 }
 
 export function testPrint(printerId: string, kind: "receipt" | "kitchen"): Promise<PrintResult> {
@@ -361,81 +479,15 @@ export function kickDrawer(printerId: string): Promise<PrintResult> {
   return printJob(printerId, { type: "drawer-kick" });
 }
 
-/**
- * Print one shelf label. `null` (no configured printer) is not a dead end:
- * the label opens in the browser's own print dialog, the same no-hardware
- * path documents take.
- */
-export async function printLabel(printerId: string | null, label: LabelData): Promise<PrintResult> {
-  if (!printerId) return printViaBrowser(renderLabelHtml(label));
-  return printJob(printerId, { type: "label", label });
+/** Print one shelf label. With no printer id, the server resolves the label rule. */
+export async function printLabel(printerId: string | null, label: LabelData, opts: { requestId?: string; entityId?: string } = {}): Promise<PrintResult> {
+  if (!printerId) return printJob(null, { type: "label", label }, { ...opts, documentType: "label", title: "چاپ برچسب" });
+  return printJob(printerId, { type: "label", label }, { ...opts, documentType: "label", title: "چاپ برچسب" });
 }
 
-/**
- * A rendered template document (the gallery/designer preview print). Thermal
- * papers go through the saved printer; sheet papers (A4/A5 invoices) are a
- * browser-dialog job by design — they never ride the thermal connector.
- */
+/** A rendered template document. Sheets go to a Windows queue; there is no browser dialog. */
 export async function printDocument(printerId: string | null, html: string, paper: PaperKey): Promise<PrintResult> {
-  if (!printerId) return printViaBrowser(html);
-  return printJob(printerId, { type: "document", html, paper });
+  if (!printerId) return { ok: false, error: "printer_not_configured" };
+  return printJob(printerId, { type: "document", html, paper }, { title: "چاپ سند", documentType: paper === "a4" || paper === "a5" ? "invoice" : "receipt" });
 }
 
-/* ────────────────────────── the browser dialog ────────────────────────── */
-
-/**
- * Open the browser's print dialog on `html`, using a hidden same-document
- * iframe rather than `window.open`: a popup is blocked by default on most
- * setups and steals focus from the POS, while an iframe prints and
- * disappears. This is the fallback/output action for A4 invoices, PDF-style
- * documents and systems with no configured hardware printer — never a saved
- * printer connection type.
- */
-export function printViaBrowser(html: string): Promise<PrintResult> {
-  return new Promise((resolve) => {
-    if (typeof document === "undefined") {
-      resolve({ ok: false, error: "not_in_browser" });
-      return;
-    }
-    const frame = document.createElement("iframe");
-    frame.setAttribute("aria-hidden", "true");
-    frame.style.position = "fixed";
-    frame.style.inset = "auto auto 0 0";
-    frame.style.width = "0";
-    frame.style.height = "0";
-    frame.style.border = "0";
-    frame.style.opacity = "0";
-
-    let done = false;
-    const cleanup = () => {
-      if (done) return;
-      done = true;
-      // Give the print dialog a moment to take its snapshot before the
-      // document backing it goes away.
-      setTimeout(() => frame.remove(), 1000);
-      resolve({ ok: true });
-    };
-
-    frame.onload = () => {
-      try {
-        const win = frame.contentWindow;
-        if (!win) {
-          frame.remove();
-          resolve({ ok: false, error: "print_failed" });
-          return;
-        }
-        win.focus();
-        win.onafterprint = cleanup;
-        win.print();
-        // Safari/iOS never fire onafterprint; fall back to a timer.
-        setTimeout(cleanup, 4000);
-      } catch {
-        frame.remove();
-        resolve({ ok: false, error: "print_failed" });
-      }
-    };
-
-    document.body.appendChild(frame);
-    frame.srcdoc = html;
-  });
-}

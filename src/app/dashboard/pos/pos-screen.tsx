@@ -110,7 +110,7 @@ import { FilterChip } from "../filters";
 import { KnowledgeHelpButton } from "../knowledge-help";
 import { apiOrQueue, useOfflineQueue } from "../offline-queue";
 import { api, ErrorBox, errorMessage, inputClass } from "../ui";
-import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
+import { useBusinessInfo } from "../use-printers";
 import { cardClass } from "../page-chrome";
 import { safeRandomId } from "@/lib/client-id";
 
@@ -246,7 +246,6 @@ export function PosScreen({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CheckoutResult | null>(null);
-  const printers = usePrinters();
   const business = useBusinessInfo();
   const money = useMoney();
   const { isOnline, pendingCount } = useOfflineQueue();
@@ -904,8 +903,8 @@ export function PosScreen({
       }
     }
 
-    const kitchenPrinter = firstPrinter(printers, "kitchen");
-    if (!creation.queued && kitchenPrinter) {
+    const kitchenRequestId = `kitchen:${creation.data.id ?? crypto.randomUUID()}`;
+    {
       // The big line on a kitchen ticket is the table when there is one — that
       // is what the runner carries the tray to.
       const label = tableName ?? typeLabel;
@@ -920,12 +919,17 @@ export function PosScreen({
           note: line.note || null,
         })),
       };
-      void printKitchenTicket(kitchenPrinter.id, ticket);
+      void printKitchenTicket(null, ticket, { requestId: kitchenRequestId, entityId: creation.data.id }).then((result) => {
+        if (!result.ok && result.error !== "printer_not_configured") {
+          toast.warning("سفارش ثبت شد اما ارسال به چاپگر آشپزخانه ناموفق بود.", {
+            duration: Infinity,
+            action: { label: "تلاش دوباره", onClick: () => void printKitchenTicket(null, ticket, { requestId: `${kitchenRequestId}:retry`, entityId: creation.data.id }) },
+          });
+        }
+      });
     }
 
     if (paid) {
-      const receiptPrinter = firstPrinter(printers, "receipt");
-      if (receiptPrinter) {
         const receipt: ReceiptData = {
           business: {
             name: business.name,
@@ -962,21 +966,17 @@ export function PosScreen({
             money.unit,
           ),
         };
-        void printReceipt(receiptPrinter.id, receipt).then((result) => {
-          // Printing is best-effort by contract: a failed receipt print never
-          // invalidates the completed sale. Say so, non-destructively, with a
-          // way to try again — the order is safe either way.
-          if (!result.ok && result.error !== "not_in_browser") {
+        const receiptRequestId = `receipt:${creation.data.id ?? crypto.randomUUID()}`;
+        void printReceipt(null, receipt, { requestId: receiptRequestId, entityId: creation.data.id }).then((result) => {
+          if (!result.ok && result.error !== "printer_not_configured") {
             toast.warning("چاپ رسید انجام نشد؛ سفارش با موفقیت ثبت شده است.", {
-              action: { label: "چاپ دوباره", onClick: () => void printReceipt(receiptPrinter.id, receipt) },
+              action: { label: "چاپ دوباره", onClick: () => void printReceipt(null, receipt, { requestId: `${receiptRequestId}:retry`, entityId: creation.data.id }) },
             });
           }
+          if (draftOpensDrawer(paymentDraft, paymentMethods) && result.supportsDrawer && result.printerId) {
+            void kickDrawer(result.printerId);
+          }
         });
-        // Any cash in the split opens the drawer — a bill half paid in notes
-        // still needs somewhere to put them.
-        if (draftOpensDrawer(paymentDraft, paymentMethods))
-          void kickDrawer(receiptPrinter.id);
-      }
     }
 
     setResult({

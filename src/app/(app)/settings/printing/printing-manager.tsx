@@ -14,9 +14,9 @@
  * open Advanced settings inside the add-printer dialog.
  */
 import { useCallback, useMemo, useState } from "react";
-import { FileTextIcon, ImageIcon, PrinterIcon } from "lucide-react";
+import { FileTextIcon, PrinterIcon, RouteIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { printDocument, printViaBrowser } from "@/lib/printing/client";
+import { printDocument } from "@/lib/printing/client";
 import {
   PAPERS,
   builtInTemplate,
@@ -29,16 +29,17 @@ import { LoadingSkeleton, TabBar, cardClass } from "@/app/dashboard/page-chrome"
 import { ErrorBox, InfoBox, api, errorMessage } from "@/app/dashboard/ui";
 import { LogoPanel } from "./logo-panel";
 import { PrintersPanel } from "./printers-panel";
+import { RulesPanel } from "./rules-panel";
 import { TemplateDesigner } from "./template-designer";
 import { TemplateGallery } from "./template-gallery";
 import { usePrintIdentity, useSavedTemplates, type SavedTemplateRow } from "./use-printing";
 
-type Tab = "templates" | "printers" | "logo";
+type Tab = "printers" | "templates" | "rules";
 
 const TABS = [
-  { key: "templates" as const, label: "قالب‌ها" },
   { key: "printers" as const, label: "چاپگرها" },
-  { key: "logo" as const, label: "لوگو" },
+  { key: "templates" as const, label: "قالب‌ها" },
+  { key: "rules" as const, label: "قوانین چاپ" },
 ];
 
 interface Editing {
@@ -48,7 +49,7 @@ interface Editing {
 }
 
 export function PrintingManager() {
-  const [tab, setTab] = useState<Tab>("templates");
+  const [tab, setTab] = useState<Tab>("printers");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -75,9 +76,16 @@ export function PrintingManager() {
       // branch's default printer for the document's kind; with no printer
       // paired, the browser dialog is the no-hardware path.
       if (paper.kind === "sheet") {
-        const result = await printViaBrowser(html);
-        if (!result.ok) setError("باز کردن پنجرهٔ چاپ ممکن نشد.");
-        else setNotice(`سند روی ${paper.label} در پنجرهٔ چاپ مرورگر باز شد.`);
+        const { ok, data } = await api<{ printers?: { id: string; name: string; kind: string; isDefault: boolean; needsReconnect: boolean }[] }>("/api/printers");
+        const printers = data.printers ?? [];
+        const match = printers.find((p) => !p.needsReconnect && (p.kind === "receipt" || p.kind === "document"));
+        if (!ok || !match) {
+          setError("برای چاپ برگه، یک چاپگر ویندوز تنظیم کنید.");
+          return;
+        }
+        const result = await printDocument(match.id, html, template.paper);
+        if (!result.ok) setError("ارسال به چاپگر انجام نشد.");
+        else setNotice(`سند به «${match.name}» ارسال شد.`);
         return;
       }
       const kind = template.docType === "kitchen" ? "kitchen" : "receipt";
@@ -87,16 +95,14 @@ export function PrintingManager() {
         printers.find((p) => p.kind === kind && p.isDefault && !p.needsReconnect) ??
         printers.find((p) => p.kind === kind && !p.needsReconnect);
       if (!ok || !match) {
-        const result = await printViaBrowser(html);
-        if (!result.ok) setError("باز کردن پنجرهٔ چاپ ممکن نشد.");
-        else setNotice(`سند روی ${paper.label} در پنجرهٔ چاپ مرورگر باز شد.`);
+        setError("چاپگری برای این سند تنظیم نشده است.");
         return;
       }
       const result = await printDocument(match.id, html, template.paper);
       if (!result.ok) {
         setError(
           result.error === "connector_not_installed" || result.error === "connector_outdated"
-            ? "چاپ سخت‌افزاری نیاز به رابط چاپ دارد؛ از تب «چاپگرها» آن را نصب کنید."
+            ? "چاپ از مرورگر به سرویس چاپ اشوبه نیاز دارد؛ از تب «چاپگرها» آن را نصب کنید."
             : "چاپ نمونه انجام نشد.",
         );
         return;
@@ -177,6 +183,10 @@ export function PrintingManager() {
         saved.loading ? (
           <LoadingSkeleton rows={4} />
         ) : (
+          <>
+          <div className="mb-4">
+            <LogoPanel logo={identity.logo} onChanged={identity.reload} />
+          </div>
           <TemplateGallery
             saved={saved.templates}
             data={sample}
@@ -197,12 +207,13 @@ export function PrintingManager() {
             onDelete={(template) => void deleteTemplate(template)}
             onPrint={(template) => void printSample(template)}
           />
+          </>
         )
       ) : null}
 
       {tab === "printers" ? <PrintersPanel templates={saved.templates} /> : null}
 
-      {tab === "logo" ? <LogoPanel logo={identity.logo} onChanged={identity.reload} /> : null}
+      {tab === "rules" ? <RulesPanel /> : null}
     </div>
   );
 }
@@ -212,4 +223,4 @@ function TabBarMemo({ active, onChange }: { active: Tab; onChange: (tab: Tab) =>
 }
 
 /** Icons the settings nav uses for this section's tabs. Exported for the nav. */
-export const PRINTING_TAB_ICONS = { templates: FileTextIcon, printers: PrinterIcon, logo: ImageIcon };
+export const PRINTING_TAB_ICONS = { templates: FileTextIcon, printers: PrinterIcon, rules: RouteIcon };

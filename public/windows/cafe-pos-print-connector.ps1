@@ -28,6 +28,7 @@ param(
 #   POST /printers/network/discover     → sweep local /24s for port 9100
 #   POST /printers/probe                { target } → is it answering?
 #   POST /print/raw                     { target, dataBase64 } → deliver bytes
+#   POST /print/page                    { target, dataBase64 } → silent Windows page (PNG)
 # `target` is { type: "windows", systemName } or { type: "network", ip, port }.
 
 Set-StrictMode -Version 2.0
@@ -544,7 +545,7 @@ function Handle-Request {
             ok = $true
             service = "cafe-pos-print-connector"
             version = 3
-            release = "3.1.0"
+            release = "3.2.0"
             platform = "windows"
             allowedOrigin = $AllowedOrigin
             allowedOrigins = $AllowedOriginList
@@ -647,6 +648,48 @@ function Handle-Request {
         return
     }
 
+    if ($Request.Path -eq "/print/page" -and $Request.Method -eq "POST") {
+        try {
+            $payload = ConvertFrom-Json -InputObject $Request.Body
+            $target = Get-PrintTarget -Payload $payload
+            if ($target.Type -ne "windows") { throw "incompatible_printer" }
+            [byte[]]$bytes = ConvertFrom-Base64PrintData -Payload $payload
+            $temp = Join-Path $env:TEMP ("eshobe-page-" + [guid]::NewGuid().ToString("n") + ".png")
+            [IO.File]::WriteAllBytes($temp, $bytes)
+            Add-Type -AssemblyName System.Drawing
+            $image = [System.Drawing.Image]::FromFile($temp)
+            $doc = New-Object System.Drawing.Printing.PrintDocument
+            $doc.PrinterSettings.PrinterName = $target.SystemName
+            if (-not $doc.PrinterSettings.IsValid) { throw "printer_not_found" }
+            $doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController
+            $doc.DocumentName = "Eshobe"
+            $script:pageImage = $image
+            $script:pageOffset = 0
+            $doc.add_PrintPage({
+                param($sender, $e)
+                $bounds = $e.MarginBounds
+                $scale = $bounds.Width / $script:pageImage.Width
+                $slice = [Math]::Max(1, [int]($bounds.Height / $scale))
+                $take = [Math]::Min($slice, $script:pageImage.Height - $script:pageOffset)
+                $destH = [Math]::Min($bounds.Height, [int]($take * $scale))
+                $e.Graphics.DrawImage($script:pageImage, (New-Object System.Drawing.Rectangle($bounds.X, $bounds.Y, $bounds.Width, $destH)), (New-Object System.Drawing.Rectangle(0, $script:pageOffset, $script:pageImage.Width, $take)), [System.Drawing.GraphicsUnit]::Pixel)
+                $script:pageOffset += $take
+                $e.HasMorePages = $script:pageOffset -lt $script:pageImage.Height
+            })
+            $doc.Print()
+            $image.Dispose()
+            $doc.Dispose()
+            Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue
+            Write-ConnectorLog ("Page handed off to " + $target.SystemName)
+            Write-JsonResponse -Stream $Stream -Status 200 -Value @{ ok = $true } -RequestOrigin $origin
+        } catch {
+            Write-ConnectorLog ("Page print failed: " + $_.Exception.Message)
+            $code = if ($_.Exception.Message -match "printer_not_found|incompatible") { "printer_not_found" } else { "spooler_rejected" }
+            Write-JsonResponse -Stream $Stream -Status 502 -Value @{ ok = $false; error = $code; detail = $_.Exception.Message } -RequestOrigin $origin
+        }
+        return
+    }
+
     Write-JsonResponse -Stream $Stream -Status 404 -Value @{ ok = $false; error = "not_found" } -RequestOrigin $origin
 }
 
@@ -656,7 +699,7 @@ try {
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
     $listener.Start()
     $originCountNote = if ($AllowedOriginList.Count -gt 1) { " (+" + ($AllowedOriginList.Count - 1) + " more origin(s))" } else { "" }
-    Write-ConnectorLog ("Connector v3 (release 3.1.0) started on 127.0.0.1:" + $Port + " for " + $AllowedOrigin + $originCountNote + ".")
+    Write-ConnectorLog ("Connector v3 (release 3.2.0) started on 127.0.0.1:" + $Port + " for " + $AllowedOrigin + $originCountNote + ".")
 
     while ($true) {
         $client = $listener.AcceptTcpClient()

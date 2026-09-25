@@ -158,7 +158,7 @@ describe("printer UI contract — the product rule", () => {
   it("the connector install card offers the authenticated installer download", () => {
     const connectorCard = source("src/app/(app)/settings/printing/connector-status.tsx");
     expect(connectorCard).toContain('href="/api/printing/connector/installer"');
-    expect(connectorCard).toContain("نصب رابط چاپ");
+    expect(connectorCard).toContain("راه‌اندازی سرویس چاپ");
     // The operator is never asked to understand an "agent".
     expect(connectorCard).not.toContain("عامل چاپ");
   });

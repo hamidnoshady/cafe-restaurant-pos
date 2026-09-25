@@ -117,15 +117,15 @@ describe("parseWindowsPrinterListJson", () => {
     ]);
     const result = native.parseWindowsPrinterListJson(json);
     expect(result).toEqual([
-      { name: "EPSON TM-T20III", driver: "ESC/POS", isDefault: true, likelyThermal: true },
-      { name: "HP LaserJet", driver: "HP Universal", isDefault: false, likelyThermal: false },
+      { name: "EPSON TM-T20III", driver: "ESC/POS", isDefault: true, likelyThermal: true, status: "unknown" },
+      { name: "HP LaserJet", driver: "HP Universal", isDefault: false, likelyThermal: false, status: "unknown" },
     ]);
   });
 
   it("accepts PowerShell's single-item bare-object quirk instead of erroring", () => {
     const json = JSON.stringify({ name: "EPSON TM-T20III", driver: "ESC/POS", isDefault: true });
     expect(native.parseWindowsPrinterListJson(json)).toEqual([
-      { name: "EPSON TM-T20III", driver: "ESC/POS", isDefault: true, likelyThermal: true },
+      { name: "EPSON TM-T20III", driver: "ESC/POS", isDefault: true, likelyThermal: true, status: "unknown" },
     ]);
   });
 
@@ -137,7 +137,7 @@ describe("parseWindowsPrinterListJson", () => {
   it("drops entries with no usable name and tolerates a missing driver", () => {
     const json = JSON.stringify([{ name: "  ", driver: null }, { name: "Fax", driver: null, isDefault: false }]);
     expect(native.parseWindowsPrinterListJson(json)).toEqual([
-      { name: "Fax", driver: null, isDefault: false, likelyThermal: false },
+      { name: "Fax", driver: null, isDefault: false, likelyThermal: false, status: "unknown" },
     ]);
   });
 
@@ -152,7 +152,7 @@ describe("listWindowsPrinters / probeWindowsPrinter (native.js, injected PowerSh
     const result = await native.listWindowsPrinters({ run });
     expect(result).toEqual({
       ok: true,
-      printers: [{ name: "EPSON TM-T20III", driver: "ESC/POS", isDefault: true, likelyThermal: true }],
+      printers: [{ name: "EPSON TM-T20III", driver: "ESC/POS", isDefault: true, likelyThermal: true, status: "unknown" }],
     });
     expect(run).toHaveBeenCalledWith(native.listWindowsPrintersScript());
   });

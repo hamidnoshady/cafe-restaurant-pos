@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { CameraScanTrigger } from "@/components/scanner/camera-barcode-scanner";
 import { toPersianDigits } from "@/lib/digits";
 import { barcodeEntryError, normalizeBarcode } from "@/lib/barcode";
-import { printLabel, printViaBrowser } from "@/lib/printing/client";
-import { renderLabelSheetHtml, type LabelData } from "@/lib/label-template";
-import { firstPrinter, useBusinessInfo, usePrinters } from "../use-printers";
+import { printLabel } from "@/lib/printing/client";
+import { type LabelData } from "@/lib/label-template";
+import { useBusinessInfo } from "../use-printers";
 import { SectionCard, StatusBadge } from "../page-chrome";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { api, Field, inputClass } from "../ui";
@@ -96,7 +96,6 @@ export function BarcodesSection({
   const [prepError, setPrepError] = useState("");
   const [manageNotice, setManageNotice] = useState("");
   const [manageError, setManageError] = useState("");
-  const printers = usePrinters();
   const businessInfo = useBusinessInfo();
 
   const selected = items.find((i) => i.id === itemId);
@@ -198,7 +197,6 @@ export function BarcodesSection({
 
   /** Print one label; resolves to null on success or a Persian error message. */
   async function printOne(code: string, item: { name: string; unit: string }): Promise<string | null> {
-    const printer = firstPrinter(printers, "receipt");
     const label: LabelData = {
       businessName: businessInfo.name || "انبار",
       itemName: item.name,
@@ -207,7 +205,7 @@ export function BarcodesSection({
     };
     // No registered printer is not a dead end: printLabel falls back to the
     // browser's own print dialog, the same no-hardware path documents use.
-    const res = await printLabel(printer?.id ?? null, label);
+    const res = await printLabel(null, label, { requestId: `label:${code}` });
     if (res.ok) return null;
     return res.error === "connector_not_installed" || res.error === "connector_outdated" ? "رابط چاپ روی این کامپیوتر در دسترس نیست؛ از تنظیمات چاپگرها نصب کنید." : "چاپ لیبل ناموفق بود.";
   }
@@ -236,25 +234,9 @@ export function BarcodesSection({
     setPrepNotice("");
     setPrintingAll(true);
 
-    const printer = firstPrinter(printers, "receipt");
-    if (!printer) {
-      // No hardware path: one sheet, one browser dialog — not one dialog per
-      // label. Each label is its own page, so a roll/sticker printer driven
-      // through the OS dialog still cuts per label.
-      const res = await printViaBrowser(renderLabelSheetHtml(minted.map(mintedLabel)));
-      setPrintingAll(false);
-      if (!res.ok) {
-        setPrepError("چاپ لیبل ناموفق بود.");
-        return;
-      }
-      setPrepNotice(`${toPersianDigits(minted.length)} لیبل برای چاپ آماده شد.`);
-      setMinted([]);
-      return;
-    }
-
     let printed = 0;
     for (const row of minted) {
-      const res = await printLabel(printer.id, mintedLabel(row));
+      const res = await printLabel(null, mintedLabel(row), { requestId: `label:${row.code}` });
       if (!res.ok) {
         const reason =
           res.error === "connector_not_installed" || res.error === "connector_outdated" ? "رابط چاپ روی این کامپیوتر در دسترس نیست؛ از تنظیمات چاپگرها نصب کنید." : "چاپ لیبل ناموفق بود.";
