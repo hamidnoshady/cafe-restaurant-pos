@@ -11,7 +11,7 @@ import { createAccount, listAccounts, AccountsError } from "@/lib/accounts-servi
  * management UI needs to decide what's safe to archive or delete.
  */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const all = new URL(request.url).searchParams.get("all");

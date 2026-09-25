@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requireRole, requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { ArError, MissingLedgerAccountError, receivePayment } from "@/lib/ar-service";
 import { listReceipts } from "@/lib/installments-service";
@@ -8,7 +9,7 @@ import { isValidIsoDate } from "@/lib/iso-date";
 
 /** The «دریافت‌ها» ledger slice — every receipt voucher, newest first. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
   const q = request.nextUrl.searchParams.get("q") ?? undefined;
   const receipts = await listReceipts(session.businessId, q);

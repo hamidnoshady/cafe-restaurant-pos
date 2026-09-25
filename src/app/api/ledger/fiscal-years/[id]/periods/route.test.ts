@@ -9,7 +9,7 @@ vi.mock("@/lib/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/auth")>();
   return {
     ...actual,
-    requireRole: vi.fn(),
+    requirePermission: vi.fn(),
     // Tenant scope itself is covered by the integration suite. The route test
     // focuses on its HTTP contract.
     withTenantScope: (handler: (...args: unknown[]) => Promise<NextResponse>) => handler,
@@ -27,7 +27,7 @@ const CONTEXT = { params: Promise.resolve({ id: YEAR_ID }) };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(auth.requireRole).mockResolvedValue({ session: SESSION, error: null } as never);
+  vi.mocked(auth.requirePermission).mockResolvedValue({ session: SESSION, error: null } as never);
 });
 
 describe("GET /api/ledger/fiscal-years/[id]/periods", () => {
@@ -55,7 +55,7 @@ describe("GET /api/ledger/fiscal-years/[id]/periods", () => {
 
   it("keeps the read role gate ahead of all service work", async () => {
     const denied = NextResponse.json({ error: "forbidden" }, { status: 403 });
-    vi.mocked(auth.requireRole).mockResolvedValue({ session: null, error: denied } as never);
+    vi.mocked(auth.requirePermission).mockResolvedValue({ session: null, error: denied } as never);
 
     expect(await GET({} as NextRequest, CONTEXT)).toBe(denied);
     expect(fiscalService.listPeriods).not.toHaveBeenCalled();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { branchShiftSales } from "@/lib/shift-service";
 
@@ -15,7 +16,7 @@ import { branchShiftSales } from "@/lib/shift-service";
  * the Accounting app's line — and the `ledger` feature flag applies.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const location = await resolveActiveLocation(session);

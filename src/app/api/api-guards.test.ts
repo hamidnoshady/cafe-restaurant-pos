@@ -11,6 +11,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, dirname, sep } from "node:path";
 import { describe, expect, it } from "vitest";
+import { PERMISSIONS, roleBasePermissions } from "@/lib/permissions";
 
 const API_ROOT = join(process.cwd(), "src", "app", "api");
 
@@ -372,6 +373,23 @@ function isInternalCallGuarded(src: string): boolean {
 }
 
 /** All requireRole(...) argument lists found in a file, as role-name arrays. */
+/**
+ * The permission keys a route guards on, read out of its source. Paired with
+ * `requireRoleCalls` this lets a sweep ask the same question of a role-guarded
+ * route and a permission-guarded one, instead of keeping an allowlist of
+ * routes that have already been migrated.
+ */
+function requirePermissionKeys(src: string): string[] {
+  const keys: string[] = [];
+  for (const m of src.matchAll(/require(?:Permission|AnyPermission)\(([^)]*)\)/g)) {
+    for (const ref of m[1].matchAll(/PERMISSIONS\.(\w+)/g)) {
+      const value = (PERMISSIONS as Record<string, string>)[ref[1]];
+      if (value) keys.push(value);
+    }
+  }
+  return keys;
+}
+
 function requireRoleCalls(src: string): string[][] {
   const calls: string[][] = [];
   for (const m of src.matchAll(/requireRole\(([^)]*)\)/g)) {
@@ -491,44 +509,43 @@ describe("back-office/financial surfaces exclude floor roles", () => {
   // Everything under these prefixes is Owner/Manager-only, per the decisions
   // in Phases 6-8 (inventory admin, ledger, reports) and 9 (rollup).
   const BACK_OFFICE_PREFIXES = ["ledger/", "reports/", "staff", "setup/", "rollup/", "backup/"];
-  // team/* and branches/* guard with requirePermission rather than a role
-  // list — asserted separately below, so excluded from the role-list sweep.
-  // ledger/fiscal-periods/[id] and ledger/fiscal-years/[id]/close (Phase 16) are the same:
-  // requirePermission(PERMISSIONS.ledgerClosePeriod), which is owner+accountant by role
-  // preset (see permissions.ts) — no floor role ever holds it. ledger/entries/drafts/[id]/approve
-  // and ledger/entries/[id]/reverse use requirePermission(PERMISSIONS.ledgerApprove), same shape.
-  // ledger/accounts/[id] (rename/reparent/archive/delete) uses requirePermission(PERMISSIONS.accountsEdit) —
-  // ledger/accounts itself isn't listed here since its GET still guards with requireRole and that's
-  // what this sweep checks; only its POST is permission-only. ledger/accounts/[id]/history (Phase 22
-  // Wave 11, issue #160 §7.5) reads that same account's change history behind the same
-  // PERMISSIONS.accountsEdit gate — same shape, same reasoning.
-  const PERMISSION_GUARDED = [
-    "team",
-    "branches",
-    "ledger/fiscal-periods/[id]",
-    "ledger/fiscal-years/[id]/close",
-    "ledger/entries/drafts/[id]/approve",
-    "ledger/entries/[id]/reverse",
-    "ledger/accounts/[id]",
-    "ledger/accounts/[id]/history",
-  ];
+  // Both role-guarded and permission-guarded routes are swept here: the
+  // permission arm below resolves each key against the role presets, so a
+  // migrated route is still checked rather than excused. That is why there is
+  // no allowlist of "already moved to requirePermission" routes to maintain.
   const FLOOR_ROLES = ["cashier", "waiter", "kitchen"];
 
   for (const [key, src] of sources) {
     if (!BACK_OFFICE_PREFIXES.some((p) => key === p.replace(/\/$/, "") || key.startsWith(p))) continue;
     if (PUBLIC_ROUTES[key] || SELF_GUARDING_ROUTES[key]) continue; // justified above
-    if (PERMISSION_GUARDED.includes(key)) continue; // requirePermission grants are checked via permissions.ts's role presets, not a role list here
 
     it(`${key} never grants cashier/waiter/kitchen access`, () => {
       const calls = requireRoleCalls(src);
+      const permissions = requirePermissionKeys(src);
+
       // setup/* routes guard via requireManager() (owner/manager) instead.
-      if (calls.length === 0) {
+      if (calls.length === 0 && permissions.length === 0) {
         expect(src, `src/app/api/${key}/route.ts`).toMatch(/requireManager\(/);
         return;
       }
+
       for (const roles of calls) {
         for (const role of FLOOR_ROLES) {
           expect(roles, `src/app/api/${key}/route.ts grants '${role}'`).not.toContain(role);
+        }
+      }
+
+      // The same question, asked of a permission-guarded route: a floor role
+      // must not *hold* the key the route demands. Deriving this from the role
+      // presets rather than from an allowlist of already-migrated routes means
+      // the sweep keeps its teeth as guards move off role lists, and that
+      // adding a floor role to one of these presets fails here.
+      for (const permission of permissions) {
+        for (const role of FLOOR_ROLES) {
+          expect(
+            roleBasePermissions(role as never),
+            `src/app/api/${key}/route.ts guards on '${permission}', which the '${role}' preset holds`,
+          ).not.toContain(permission);
         }
       }
     });

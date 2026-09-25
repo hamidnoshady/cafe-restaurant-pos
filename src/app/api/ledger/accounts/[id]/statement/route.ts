@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getAccountStatement } from "@/lib/reports-service";
 
 interface Ctx {
@@ -13,7 +14,7 @@ interface Ctx {
  * chart-of-accounts tab rather than only via a report-line drill-down.
  */
 export const GET = withTenantScope(async (request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const { id } = await ctx.params;

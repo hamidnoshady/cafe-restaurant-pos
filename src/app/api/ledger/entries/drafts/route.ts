@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, requireRole, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import {
   createDraft,
@@ -9,11 +10,7 @@ import {
 
 /** The review queue: every pending draft, newest first. */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole(
-    "owner",
-    "manager",
-    "accountant",
-  );
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   return NextResponse.json({ drafts: await listDrafts(session.businessId) });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { query } from "@/lib/db";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
 import { postingRulesFor } from "@/lib/accounting-posting-rules";
@@ -27,7 +28,7 @@ import type { CostingSetting } from "@/lib/setup-state";
  * whole prefix by `withTenantScope`.
  */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const businessId = session.businessId;

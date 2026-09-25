@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getChequeHistory } from "@/lib/cheques-service";
 import { chequeErrorResponse } from "../../errors";
 
@@ -9,7 +10,7 @@ import { chequeErrorResponse } from "../../errors";
  */
 export const GET = withTenantScope(
   async (_request: NextRequest, context: { params: Promise<{ id: string }> }) => {
-    const { session, error } = await requireRole("owner", "manager", "accountant");
+    const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
     if (error) return error;
     const { id } = await context.params;
     try {

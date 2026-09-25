@@ -132,8 +132,14 @@ describe("the settings page is written for RTL and for a phone", () => {
 });
 
 describe("the settings route", () => {
-  it("draws the app's own door — owner, manager, accountant", () => {
-    expect(ROUTE_SOURCE).toMatch(/requireRole\("owner", "manager", "accountant"\)/);
+  it("draws the app's own door on the ledger read capability", () => {
+    // Was a requireRole("owner", "manager", "accountant") list. The audience is
+    // unchanged in practice — ledger.view is exactly the presets that carry a
+    // back-office role — but the route now asks the same question the
+    // accounting nav asks (ACCOUNTING_DOOR_PERMISSION), so the menu and the API
+    // cannot drift apart again.
+    expect(ROUTE_SOURCE).toMatch(/requirePermission\(PERMISSIONS\.ledgerView\)/);
+    expect(ROUTE_SOURCE).not.toMatch(/requireRole\(/);
   });
 
   it("runs inside the tenant scope", () => {

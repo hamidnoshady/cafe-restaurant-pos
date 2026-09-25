@@ -6,7 +6,7 @@ import { isSupportedFiscalYear } from "@/lib/fiscal-periods";
 
 /** Every fiscal year defined for this business. Owner/manager/accountant may read; only owner/accountant may define one (see POST). */
 export const GET = withTenantScope(async () => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
   return NextResponse.json({ fiscalYears: await listFiscalYears(session.businessId) });
 });

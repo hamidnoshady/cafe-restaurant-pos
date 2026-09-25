@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requireRole, requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { FixedAssetError, deleteFixedAsset, getFixedAssetWithDepreciation } from "@/lib/fixed-assets-service";
 
 interface Ctx {
@@ -8,7 +9,7 @@ interface Ctx {
 
 /** Returns the asset and its full depreciation entry history. */
 export const GET = withTenantScope(async (_request: NextRequest, ctx: Ctx) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const { id } = await ctx.params;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requireRole, requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import {
   createReconciliation,
   ReconciliationError,
@@ -17,7 +18,7 @@ const ACCOUNT_CODES: readonly ReconcilableAccount[] = RECONCILABLE_ACCOUNTS;
 
 /** A reconciliation history, or the current one, for ?accountCode=cash|bank|bankClearing. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const accountCode = request.nextUrl.searchParams.get("accountCode") as ReconcilableAccount | null;

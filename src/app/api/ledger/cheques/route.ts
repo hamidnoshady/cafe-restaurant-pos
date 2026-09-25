@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, withTenantScope } from "@/lib/auth";
+import { requireRole, requirePermission, withTenantScope } from "@/lib/auth";
+import { PERMISSIONS } from "@/lib/permissions";
 import { resolveActiveLocation } from "@/lib/setup-state";
 import { listCheques, recordCheque } from "@/lib/cheques-service";
 import { CHEQUE_DIRECTIONS, type ChequeDirection } from "@/lib/cheques";
@@ -7,7 +8,7 @@ import { chequeErrorResponse } from "./errors";
 
 /** The cheque register. Same access as the rest of the ledger's subledgers. */
 export const GET = withTenantScope(async (request: NextRequest) => {
-  const { session, error } = await requireRole("owner", "manager", "accountant");
+  const { session, error } = await requirePermission(PERMISSIONS.ledgerView);
   if (error) return error;
 
   const raw = new URL(request.url).searchParams.get("direction");
