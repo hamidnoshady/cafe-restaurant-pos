@@ -66,6 +66,9 @@ class POS_Connector_Updater {
 	/** A failed check is retried sooner — the update server being unreachable for a moment must not cost six hours of silence. */
 	const CHECK_FAILURE_TTL = 15 * MINUTE_IN_SECONDS;
 
+	/** Repeated manifest/network failures log at most once per day. */
+	const CHECK_FAILURE_LOG_INTERVAL = DAY_IN_SECONDS;
+
 	/** The zip asset the release runbook attaches; extracting to the right folder, it needs no fix_source_dir() help. */
 	const ASSET_NAME = 'pos-accounting-connector.zip';
 
@@ -322,7 +325,7 @@ class POS_Connector_Updater {
 		$cached = self::read_cache();
 
 		if ( '' !== $result['error'] ) {
-			POS_Connector_Log::error( 'update', $result['error'] );
+			self::maybe_log_update_failure( $result['error'], $cached['error'] );
 			$cached['checked_at'] = time();
 			$cached['ok']         = false;
 			$cached['error']      = $result['error'];
@@ -343,7 +346,40 @@ class POS_Connector_Updater {
 			'source'       => $result['source'],
 		);
 		update_option( self::CACHE_OPTION, $fresh, false );
+		delete_option( 'pos_connector_update_last_log' );
 		return $fresh;
+	}
+
+	/**
+	 * Log update-check failures without filling «گزارش رویدادها» on every retry.
+	 *
+	 * The Updates screen still reads the cached `error`; operators only need a
+	 * log line when the failure is new or has been quiet for a day.
+	 */
+	private static function maybe_log_update_failure( $error, $previous_error ) {
+		$error = (string) $error;
+		if ( '' === $error ) {
+			return;
+		}
+		$last = get_option( 'pos_connector_update_last_log', array() );
+		if ( ! is_array( $last ) ) {
+			$last = array();
+		}
+		$now      = time();
+		$same     = isset( $last['error'] ) && $last['error'] === $error;
+		$recent   = ! empty( $last['logged_at'] ) && ( $now - (int) $last['logged_at'] ) < self::CHECK_FAILURE_LOG_INTERVAL;
+		$changed  = $previous_error !== $error;
+		if ( $changed || ! $same || ! $recent ) {
+			POS_Connector_Log::error( 'update', $error );
+			update_option(
+				'pos_connector_update_last_log',
+				array(
+					'error'     => $error,
+					'logged_at' => $now,
+				),
+				false
+			);
+		}
 	}
 
 	/**
