@@ -12,6 +12,7 @@ import {
   parseTags,
   safeFileName,
   validateMediaConfigInput,
+  validateMediaTariffInput,
   type MediaStorageConfig,
 } from "./media";
 
@@ -131,11 +132,28 @@ describe("validateMediaConfigInput", () => {
     expect(good.ok && good.config.endpoint).toBe("https://s3.parspack.com");
   });
 
-  it("refuses negative or non-numeric prices", () => {
-    expect(validateMediaConfigInput({ dailyFlatRial: -5 }, stored).ok).toBe(false);
-    expect(validateMediaConfigInput({ dailyPerGbRial: "x" }, stored).ok).toBe(false);
-    const ok = validateMediaConfigInput({ dailyFlatRial: 5000, dailyPerGbRial: 20000, freeQuotaMb: 100 }, stored);
-    expect(ok.ok && ok.config.dailyFlatRial).toBe(5000);
+  it("keeps the tariff untouched on a technical save (Billing owns prices now)", () => {
+    // Migration 0176: /platform/media's save validates the TECHNICAL
+    // connection only. Tariff fields sent here are ignored — the stored
+    // values survive — even nonsense ones.
+    const ignored = validateMediaConfigInput(
+      { dailyFlatRial: -5, dailyPerGbRial: "x", freeQuotaMb: -1 },
+      stored,
+    );
+    expect(ignored.ok && ignored.config.dailyFlatRial).toBe(stored.dailyFlatRial);
+    expect(ignored.ok && ignored.config.dailyPerGbRial).toBe(stored.dailyPerGbRial);
+    expect(ignored.ok && ignored.config.freeQuotaMb).toBe(stored.freeQuotaMb);
+  });
+
+  it("the Billing tariff validator refuses negative or non-numeric prices", () => {
+    expect(validateMediaTariffInput({ dailyFlatRial: -5 }, stored).ok).toBe(false);
+    expect(validateMediaTariffInput({ dailyPerGbRial: "x" }, stored).ok).toBe(false);
+    expect(validateMediaTariffInput({ freeQuotaMb: 1.5 }, stored).ok).toBe(false);
+    const ok = validateMediaTariffInput(
+      { dailyFlatRial: 5000, dailyPerGbRial: 20000, freeQuotaMb: 100 },
+      stored,
+    );
+    expect(ok.ok && ok.tariff.dailyFlatRial).toBe(5000);
   });
 
   it("masks the secret on read", () => {

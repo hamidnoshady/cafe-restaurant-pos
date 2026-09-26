@@ -305,10 +305,10 @@ function BusinessesInner() {
                 <Link href={`/platform/businesses/${b.id}`}>باز کردن میز کار</Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={`/platform/businesses/${b.id}/plan`}>پلن و مصرف</Link>
+                <Link href={`/platform/businesses/${b.id}/billing?tab=subscription`}>صورت‌حساب و اشتراک</Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href={`/platform/businesses/${b.id}/billing`}>کیف پول و پرداخت</Link>
+                <Link href={`/platform/businesses/${b.id}/billing?tab=wallet`}>کیف پول و پرداخت</Link>
               </DropdownMenuItem>
               {rootDomain ? (
                 <DropdownMenuItem asChild>

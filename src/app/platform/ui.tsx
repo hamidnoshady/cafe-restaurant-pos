@@ -141,9 +141,11 @@ export function Card({ children, title }: { children: React.ReactNode; title?: s
 }
 
 /**
- * Plan keys come from the `plans` catalogue (migration 0034) and are English;
- * the console always shows the Persian name. Unknown keys — a plan retired
- * from the catalogue — fall back to the raw key rather than rendering blank.
+ * Fallback labels for the catalogue's seeded keys — the live catalogue
+ * (billing_plans, since 0176 consolidated the old `plans` table into it)
+ * carries each plan's own Persian name; these cover custom/legacy keys the
+ * caller has no names map for. Unknown keys — e.g. a plan retired from the
+ * catalogue — fall back to the raw key rather than rendering blank.
  */
 export const PLAN_LABELS: Record<string, string> = {
   free: "رایگان",

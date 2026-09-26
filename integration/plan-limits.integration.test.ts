@@ -93,12 +93,14 @@ async function createBusiness(plan: string): Promise<{ id: string; locationId: s
 
 describe("plans catalogue", () => {
   it("seeds free/pro/business with the expected ceilings", async () => {
+    // 0176 consolidated the catalogue into billing_plans (copying the legacy
+    // `plans` ceilings over, then dropping the table) — same values, new home.
     const { rows } = await db.query<{
       key: string;
       branch_limit: number | null;
       member_limit: number | null;
       monthly_order_limit: number | null;
-    }>("SELECT key, branch_limit, member_limit, monthly_order_limit FROM plans ORDER BY key");
+    }>("SELECT key, branch_limit, member_limit, monthly_order_limit FROM billing_plans ORDER BY key");
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
     expect(byKey.free).toMatchObject({ branch_limit: 1, member_limit: 5, monthly_order_limit: 500 });
     expect(byKey.pro).toMatchObject({ branch_limit: 5, member_limit: 20, monthly_order_limit: 5000 });

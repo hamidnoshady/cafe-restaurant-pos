@@ -53,6 +53,18 @@ export type PlatformCapability =
   // Platform billing: credit packages, plan builder, wallet
   // grants and payment approval.
   | "billing.manage"
+  // Billing (migration 0176) — the fine-grained split of `billing.manage`
+  // demanded by the Billing Control Center. Granted today to exactly the
+  // roles that hold `billing.manage` (engineer + owner), so splitting the
+  // vocabulary changes no one's access — it only lets a future grant hand a
+  // desk one slice of the console (e.g. payments review without price
+  // policy). `billing.view` is the read half: every admin role holds it,
+  // matching the reads that previously required only a login.
+  | "billing.view"
+  | "plans.manage"
+  | "payments.review"
+  | "gateways.manage"
+  | "adjustments.manage"
   // Messaging (migration 0137+): SMS/Email provider credentials, rates, credit
   // packages and top-up approval. Its own capability rather than riding
   // `billing.manage` so the messaging desk is not coupled to the payments
@@ -99,7 +111,26 @@ export type PlatformCapability =
   | "updates.manage"
   | "ai.config.manage";
 
-const READ: PlatformCapability[] = ["businesses.read", "audit.read", "system.read", "usage.read", "ai.read"];
+const READ: PlatformCapability[] = [
+  "businesses.read",
+  "audit.read",
+  "system.read",
+  "usage.read",
+  "ai.read",
+  // Billing reads (rates, invoices, subscription state) ride along for every
+  // role — exactly what the billing GET routes allowed when they only checked
+  // a login.
+  "billing.view",
+];
+
+/** The billing-write split — held by every role that holds `billing.manage`. */
+const BILLING_WRITE: PlatformCapability[] = [
+  "billing.manage",
+  "plans.manage",
+  "payments.review",
+  "gateways.manage",
+  "adjustments.manage",
+];
 
 /**
  * The capabilities each role holds. Higher roles are supersets of lower ones,
@@ -115,7 +146,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "impersonate.controlled",
     "features.write",
     "business.suspend",
-    "billing.manage",
+    ...BILLING_WRITE,
     "impersonate.revoke",
     "impersonate.extend",
     "knowledge.manage",
@@ -133,7 +164,7 @@ const CAPABILITIES: Record<PlatformAdminRole, PlatformCapability[]> = {
     "impersonate.controlled",
     "features.write",
     "business.suspend",
-    "billing.manage",
+    ...BILLING_WRITE,
     "impersonate.revoke",
     "impersonate.extend",
     "knowledge.manage",

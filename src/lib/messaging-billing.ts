@@ -364,6 +364,43 @@ export async function savePlatformMessageConfig(
   return getPublicMessageConfig();
 }
 
+/**
+ * Save ONLY the metered rates (Rial per SMS segment / per email) — the
+ * Billing rates console's write path (migration 0176 moved commercial rate
+ * ownership from /platform/messaging to /platform/billing). Providers,
+ * credentials and sending config stay in savePlatformMessageConfig.
+ */
+export async function saveMessageRates(input: {
+  smsRialPerSegment?: number;
+  emailRialPerSend?: number;
+}): Promise<{ smsRialPerSegment: number; emailRialPerSend: number }> {
+  const parse = (value: number | undefined) =>
+    value === undefined ? undefined : Number.isSafeInteger(value) && value >= 0 ? value : NaN;
+  const sms = parse(input.smsRialPerSegment);
+  const email = parse(input.emailRialPerSend);
+  if (Number.isNaN(sms) || Number.isNaN(email)) {
+    throw new MessageConfigError("invalid_rate");
+  }
+  await withoutTenantScope("platform", async () => {
+    const { rows } = await query<{ sms: string; email: string }>(
+      `SELECT sms_rial_per_segment AS sms, email_rial_per_send AS email
+         FROM platform_message_config WHERE id = true`,
+    );
+    const current = rows[0];
+    await query(
+      `INSERT INTO platform_message_config (id, sms_rial_per_segment, email_rial_per_send)
+       VALUES (true, $1, $2)
+       ON CONFLICT (id) DO UPDATE SET
+         sms_rial_per_segment = EXCLUDED.sms_rial_per_segment,
+         email_rial_per_send = EXCLUDED.email_rial_per_send,
+         updated_at = now()`,
+      [sms ?? Number(current?.sms ?? 0), email ?? Number(current?.email ?? 0)],
+    );
+  });
+  const config = await resolveMessageConfig();
+  return config.rate;
+}
+
 // ---------------------------------------------------------------------------
 // Business billing, history and top-ups
 // ---------------------------------------------------------------------------

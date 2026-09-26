@@ -19,7 +19,8 @@ import {
   parseOverrides,
   type PermissionOverrides,
 } from "./permissions";
-import { activeMemberCount, planLimitsFor } from "./plan-limits";
+import { activeMemberCount } from "./plan-limits";
+import { resolveLimitCeiling } from "./entitlement-service";
 import {
   checkLastOwner,
   generateInvitationToken,
@@ -233,10 +234,12 @@ export async function createMembership(
     throw new TeamError("email_required");
   if (isPinRole(input.role) && !input.pin) throw new TeamError("pin_required");
 
-  const limits = await planLimitsFor(input.businessId);
+  // Override-aware member ceiling (entitlement-service): a business
+  // exception (§25) raises or lowers the plan's own limit.
+  const ceiling = await resolveLimitCeiling(input.businessId, "member_limit");
   if (
-    limits.memberLimit !== null &&
-    (await activeMemberCount(input.businessId)) >= limits.memberLimit
+    ceiling.limit !== null &&
+    (await activeMemberCount(input.businessId)) >= ceiling.limit
   ) {
     throw new TeamError("member_limit_exceeded", 403);
   }
@@ -1131,15 +1134,17 @@ export async function acceptInvitation(
     // This route has no session — `client` has app.rls_bypass/app.business_id
     // set by hand above, so the check must run on this same connection (see
     // plan-limits.ts's module comment for why a fresh pool connection would
-    // silently under-count here).
-    const invitationLimits = await planLimitsFor(
+    // silently under-count here). The ceiling read rides the same client so
+    // the override layer is visible under the same GUCs.
+    const invitationCeiling = await resolveLimitCeiling(
       invitation.business_id,
+      "member_limit",
       client,
     );
     if (
-      invitationLimits.memberLimit !== null &&
+      invitationCeiling.limit !== null &&
       (await activeMemberCount(invitation.business_id, client)) >=
-        invitationLimits.memberLimit
+        invitationCeiling.limit
     ) {
       await client.query("ROLLBACK");
       throw new TeamError("member_limit_exceeded", 403);

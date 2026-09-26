@@ -54,8 +54,11 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "درآمد",
     items: [
-      { label: "پلن‌ها", href: "/platform/plans" },
-      { label: "صورت‌حساب و پرداخت‌ها", href: "/platform/billing" },
+      // The ONE commercial surface (migration 0176): plans, rates, credit
+      // products, subscriptions, invoices, payments, gateways and the
+      // commercial audit history — all under /platform/billing. The old
+      // /platform/plans builder redirects into its plans tab.
+      { label: "صورت‌حساب و درآمد", href: "/platform/billing" },
     ],
   },
   {

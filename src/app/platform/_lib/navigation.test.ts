@@ -31,7 +31,6 @@ describe("console navigation IA", () => {
       "/platform/cloud-exceptions",
       "/platform/bug-reports",
       "/platform/billing",
-      "/platform/plans",
       "/platform/messaging",
       "/platform/apps",
       "/platform/ai",
@@ -107,7 +106,9 @@ describe("console navigation IA", () => {
       const crumbs = breadcrumbsForPath("/platform/billing");
       expect(crumbs[0].label).toBe("نمای کلی");
       expect(crumbs.map((c) => c.label)).toContain("درآمد");
-      expect(crumbs[crumbs.length - 1].label).toBe("صورت‌حساب و پرداخت‌ها");
+      // Migration 0176: the single commercial entry (the standalone plans
+      // builder retired into /platform/billing?tab=plans).
+      expect(crumbs[crumbs.length - 1].label).toBe("صورت‌حساب و درآمد");
     });
 
     it("falls back to just the overview on an unknown path", () => {

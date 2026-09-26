@@ -82,9 +82,11 @@ afterAll(async () => {
 
 /** The plan's included monthly AI credit, in Rial, as the Plan Builder saves it. */
 async function setPlanAiCredit(monthlyAiCreditRial: number | null) {
+  // 0176 made is_active a generated column (status = 'active'); plans are
+  // written through the status lifecycle, never the boolean directly.
   await db.query(
-    `INSERT INTO billing_plans (key, name, monthly_ai_credit_rial, is_active, sort_order)
-     VALUES ('pro', 'حرفه‌ای', $1, true, 1)
+    `INSERT INTO billing_plans (key, name, monthly_ai_credit_rial, status, sort_order)
+     VALUES ('pro', 'حرفه‌ای', $1, 'active', 1)
      ON CONFLICT (key) DO UPDATE SET monthly_ai_credit_rial = $1, updated_at = now()`,
     [monthlyAiCreditRial],
   );

@@ -856,7 +856,12 @@ export interface Plan {
   monthlyOrderLimit: number | null;
 }
 
-/** The global plan catalogue (plans is not tenant data, same as feature_flags — see migration 0034). */
+/**
+ * The global plan catalogue (billing_plans is not tenant data, same as
+ * feature_flags — see migration 0176, which folded the old 0034 `plans`
+ * limits catalogue into it). Only active plans are assignable: a retired
+ * plan is a historical record, and a draft is not purchasable yet.
+ */
 export async function listPlans(): Promise<Plan[]> {
   const { rows } = await query<{
     key: string;
@@ -864,7 +869,10 @@ export async function listPlans(): Promise<Plan[]> {
     branch_limit: number | null;
     member_limit: number | null;
     monthly_order_limit: number | null;
-  }>(`SELECT key, name, branch_limit, member_limit, monthly_order_limit FROM plans ORDER BY key`);
+  }>(
+    `SELECT key, name, branch_limit, member_limit, monthly_order_limit
+       FROM billing_plans WHERE status = 'active' ORDER BY sort_order, key`,
+  );
   return rows.map((r) => ({
     key: r.key,
     name: r.name,
@@ -932,11 +940,16 @@ export async function setBusinessFeature(
   });
 }
 
-/** Assign a plan to a business (must be a key from listPlans()). Plans are assigned by hand (no billing). */
+/**
+ * Assign a plan to a business. Kept as a thin compatibility seam for the few
+ * internal callers that only need the column moved; the FULL transition path
+ * — validation, subscription row, add-on preservation, entitlement restamp —
+ * is `changeBusinessPlan` in subscription-service.ts, which every API route
+ * uses. New code must call that instead.
+ */
 export async function setBusinessPlan(businessId: string, plan: string): Promise<void> {
-  await withoutTenantScope("platform", () =>
-    query(`UPDATE businesses SET plan = $2, updated_at = now() WHERE id = $1`, [businessId, plan]),
-  );
+  const { changeBusinessPlan } = await import("./subscription-service");
+  await changeBusinessPlan({ businessId, planKey: plan, source: "admin" });
 }
 
 // ---------------------------------------------------------------------------

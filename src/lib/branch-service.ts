@@ -11,7 +11,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { getPool, query } from "./db";
-import { activeBranchCount, planLimitsFor } from "./plan-limits";
+import { activeBranchCount } from "./plan-limits";
+import { resolveLimitCeiling } from "./entitlement-service";
 import {
   DEFAULT_BRANCH_TIMEZONE,
   branchFieldsError,
@@ -464,7 +465,9 @@ export async function createBranch(
     throw new BranchError("source_branch_not_found", 404);
   }
 
-  const limits = await planLimitsFor(input.businessId);
+  // The ceiling = the plan's branch limit, raised/lowered by any active
+  // business override (the auditable exception path — entitlement-service).
+  const ceiling = await resolveLimitCeiling(input.businessId, "branch_limit");
 
   const client = await getPool().connect();
   try {
@@ -475,8 +478,8 @@ export async function createBranch(
     // count-then-insert, so two simultaneous «ایجاد شعبه» clicks on a
     // one-branch plan would otherwise both read "0 used" and both insert.
     if (
-      limits.branchLimit !== null &&
-      (await activeBranchCount(input.businessId, client)) >= limits.branchLimit
+      ceiling.limit !== null &&
+      (await activeBranchCount(input.businessId, client)) >= ceiling.limit
     ) {
       await client.query("ROLLBACK");
       throw new BranchError("branch_limit_exceeded", 403);
@@ -808,7 +811,8 @@ export async function reactivateBranch(
 ): Promise<void> {
   if (!isUuid(locationId)) throw new BranchError("not_found", 404);
 
-  const limits = await planLimitsFor(businessId);
+  // Override-aware ceiling, exactly as creation enforces it.
+  const ceiling = await resolveLimitCeiling(businessId, "branch_limit");
 
   const client = await getPool().connect();
   try {
@@ -835,8 +839,8 @@ export async function reactivateBranch(
     }
 
     if (
-      limits.branchLimit !== null &&
-      locked.filter((row) => row.is_active).length >= limits.branchLimit
+      ceiling.limit !== null &&
+      locked.filter((row) => row.is_active).length >= ceiling.limit
     ) {
       await client.query("ROLLBACK");
       throw new BranchError("branch_limit_exceeded", 403);

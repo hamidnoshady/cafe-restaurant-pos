@@ -116,6 +116,10 @@ app.prepare().then(async () => {
   const { deploymentRole, describeDeploymentRole } = await import("./src/lib/deployment-role");
   const { runWebsiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS } = await import("./src/lib/website/billing-service");
   const { runMediaBillingTick } = await import("./src/lib/media-service");
+  const {
+    runSubscriptionRenewalTick,
+    SUBSCRIPTION_RENEWAL_TICK_INTERVAL_MS,
+  } = await import("./src/lib/subscription-service");
   const { runAiProactiveTick, AI_PROACTIVE_TICK_INTERVAL_MS } = await import("./src/lib/ai-proactive-service");
   const { runWooCommerceSyncTick, WOO_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/integrations/outbox-service");
   const { runWebsiteSyncTick, WEBSITE_SYNC_TICK_INTERVAL_MS } = await import("./src/lib/website/sync-service");
@@ -308,6 +312,17 @@ app.prepare().then(async () => {
   const websiteBillingTick = () =>
     runWebsiteBillingTick().catch((err) => console.error("website billing tick failed:", err));
   scheduleCentralTick(websiteBillingTick, WEBSITE_BILLING_TICK_INTERVAL_MS, 90_000);
+
+  // Migration 0176 — the platform plan's own renewal. Same shape as the
+  // website tick: the due list is read under the platform bypass, each
+  // business's renewal runs inside withTenant, and idempotency is the
+  // invoice's UNIQUE (business_id, reference) claim — a retried tick can
+  // never bill the same period twice. Only auto-renew subscriptions are
+  // touched; the migration backfilled every existing business with
+  // auto_renew off, so nobody is charged who never opted in.
+  const subscriptionRenewalTick = () =>
+    runSubscriptionRenewalTick().catch((err) => console.error("subscription renewal tick failed:", err));
+  scheduleCentralTick(subscriptionRenewalTick, SUBSCRIPTION_RENEWAL_TICK_INTERVAL_MS, 65_000);
 
   // Migration 0149: the media library's daily storage charge. The tick runs
   // hourly but the charge is claimed once per (business, local Tehran day) —

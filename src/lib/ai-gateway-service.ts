@@ -245,6 +245,82 @@ export async function saveAiGatewayConfig(input: AiGatewayInput): Promise<AiGate
   return getAiGatewayConfig();
 }
 
+/**
+ * The AI commercial costing settings, written ONLY from the Billing rates
+ * console (`/api/platform/billing/rates`). `/platform/ai` keeps the technical
+ * connection (models, keys, base URL) and no longer accepts these fields —
+ * mergeGatewayConfig preserves them untouched — so this is the one writable
+ * path for what an AI turn costs a business.
+ */
+export interface AiCostingConfig {
+  usdRialRate: number | null;
+  gatewayCostingEnabled: boolean;
+  inputCostRialPerMillion: number;
+  outputCostRialPerMillion: number;
+  revenueMarginPercent: number;
+  maxTurnRial: number;
+}
+
+export async function getAiCostingConfig(): Promise<AiCostingConfig> {
+  const config = await getAiGatewayConfig();
+  return {
+    usdRialRate: config.usdRialRate,
+    gatewayCostingEnabled: config.gatewayCostingEnabled,
+    inputCostRialPerMillion: config.inputCostRialPerMillion,
+    outputCostRialPerMillion: config.outputCostRialPerMillion,
+    revenueMarginPercent: config.revenueMarginPercent,
+    maxTurnRial: config.maxTurnRial,
+  };
+}
+
+function nonNegativeInteger(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const n = Math.floor(Number(value));
+  return Number.isSafeInteger(n) && n >= 0 ? n : undefined;
+}
+
+export async function saveAiCostingConfig(
+  input: Partial<AiCostingConfig>,
+): Promise<AiCostingConfig> {
+  const current = await getAiCostingConfig();
+  const next: AiCostingConfig = {
+    usdRialRate:
+      input.usdRialRate === undefined
+        ? current.usdRialRate
+        : input.usdRialRate == null || input.usdRialRate <= 0
+          ? null
+          : Math.floor(input.usdRialRate),
+    gatewayCostingEnabled: input.gatewayCostingEnabled ?? current.gatewayCostingEnabled,
+    inputCostRialPerMillion:
+      nonNegativeInteger(input.inputCostRialPerMillion) ?? current.inputCostRialPerMillion,
+    outputCostRialPerMillion:
+      nonNegativeInteger(input.outputCostRialPerMillion) ?? current.outputCostRialPerMillion,
+    revenueMarginPercent:
+      nonNegativeInteger(input.revenueMarginPercent) ?? current.revenueMarginPercent,
+    maxTurnRial: nonNegativeInteger(input.maxTurnRial) ?? current.maxTurnRial,
+  };
+  await query(
+    `UPDATE platform_ai_gateway
+        SET usd_rial_rate = $1,
+            gateway_costing_enabled = $2,
+            input_cost_rial_per_million = $3,
+            output_cost_rial_per_million = $4,
+            revenue_margin_percent = $5,
+            max_turn_rial = $6,
+            updated_at = now()
+      WHERE id = true`,
+    [
+      next.usdRialRate,
+      next.gatewayCostingEnabled,
+      next.inputCostRialPerMillion,
+      next.outputCostRialPerMillion,
+      next.revenueMarginPercent,
+      next.maxTurnRial,
+    ],
+  );
+  return getAiCostingConfig();
+}
+
 // ---------------------------------------------------------------------------
 // Business & Branch Gateways
 // ---------------------------------------------------------------------------

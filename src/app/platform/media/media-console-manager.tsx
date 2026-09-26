@@ -8,14 +8,18 @@
  *   ۱ وضعیت    — how many businesses store how much, and whether the bucket answers.
  *   ۲ اتصال    — the S3/Parspack connection (endpoint, bucket, prefix, credentials)
  *                with «آزمایش اتصال» that writes and deletes a probe object.
- *   ۳ تعرفه    — the daily price policy: flat base + per-GB above a free quota,
- *                and the price of one AI product-image refine.
+ *   ۳ تعرفه    — the daily price policy, READ-ONLY here. Migration 0176 moved
+ *                tariff ownership to the Billing Control Center
+ *                (`/platform/billing?tab=usage`); this console keeps the
+ *                technical connection (and the AI enhance *model*) only.
  *
  * The secret key never comes back from the server (`secretAccessKeySet` only):
  * an untouched field keeps the stored secret, typing replaces it.
  */
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { toPersianDigits } from "@/lib/digits";
+import { tomanLabel } from "@/lib/platform-money";
 import {
   api,
   Button,
@@ -96,6 +100,8 @@ export function MediaConsoleManager() {
     setBusy(true);
     setError("");
     setNotice("");
+    // Tariff fields are deliberately absent: they are Billing-owned
+    // (migration 0176) and this technical save preserves the stored values.
     const body: Record<string, unknown> = {
       enabled: config.enabled,
       endpoint: config.endpoint,
@@ -103,12 +109,7 @@ export function MediaConsoleManager() {
       bucket: config.bucket,
       keyPrefix: config.keyPrefix,
       accessKeyId: config.accessKeyId,
-      billingEnabled: config.billingEnabled,
-      dailyFlatRial: config.dailyFlatRial,
-      dailyPerGbRial: config.dailyPerGbRial,
-      freeQuotaMb: config.freeQuotaMb,
       enhanceModel: config.enhanceModel,
-      enhancePriceRial: config.enhancePriceRial,
     };
     if (secret) body.secretAccessKey = secret; // omitted = keep stored
     const { ok, data } = await api<{ config?: MaskedConfig; error?: string }>("/api/platform/media", {
@@ -234,6 +235,15 @@ export function MediaConsoleManager() {
               placeholder={config.secretAccessKeySet ? "••••••••" : ""}
             />
           </Field>
+          <Field label="مدل ویرایش تصویر" hint="نام مدلی که درگاه هوش مصنوعی برای ویرایش تصویر می‌شناسد (اتصال فنی — قیمت آن در مرکز صورت‌حساب است)">
+            <input
+              className={inputClass}
+              dir="ltr"
+              value={config.enhanceModel}
+              disabled={!canManage}
+              onChange={(e) => patch({ enhanceModel: e.target.value })}
+            />
+          </Field>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={save} disabled={!canManage || busy}>
@@ -245,76 +255,32 @@ export function MediaConsoleManager() {
         </div>
       </Card>
 
-      {/* ۳ — تعرفه */}
-      <Card title="تعرفهٔ نگهداری روزانه">
+      {/* ۳ — تعرفه (read-only; Billing owns the write path) */}
+      <Card title="تعرفهٔ نگهداری روزانه (فقط نمایش)">
         <p className="mb-4 text-sm text-muted-foreground">
           هزینهٔ نگهداری هر روز یک بار از کیف پول هر کسب‌وکاری که فایلی ذخیره کرده کسر می‌شود: یک مبلغ پایهٔ ثابت
-          به‌علاوهٔ نرخ حجمی به‌ازای هر گیگابایت مازاد بر سهمیهٔ رایگان. مقادیر به ریال است؛ صفر یعنی رایگان.
+          به‌علاوهٔ نرخ حجمی به‌ازای هر گیگابایت مازاد بر سهمیهٔ رایگان.
         </p>
-        <label className="mb-4 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={config.billingEnabled}
-            disabled={!canManage}
-            onChange={(e) => patch({ billingEnabled: e.target.checked })}
-            className="size-4"
-          />
-          کسر هزینهٔ روزانه فعال باشد
-        </label>
-        <div className="grid gap-x-4 sm:grid-cols-2">
-          <Field label="مبلغ پایهٔ روزانه (ریال)">
-            <input
-              className={inputClass}
-              dir="ltr"
-              inputMode="numeric"
-              value={String(config.dailyFlatRial)}
-              disabled={!canManage}
-              onChange={(e) => patch({ dailyFlatRial: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
-            />
-          </Field>
-          <Field label="نرخ روزانهٔ هر گیگابایت (ریال)">
-            <input
-              className={inputClass}
-              dir="ltr"
-              inputMode="numeric"
-              value={String(config.dailyPerGbRial)}
-              disabled={!canManage}
-              onChange={(e) => patch({ dailyPerGbRial: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
-            />
-          </Field>
-          <Field label="سهمیهٔ رایگان (مگابایت)">
-            <input
-              className={inputClass}
-              dir="ltr"
-              inputMode="numeric"
-              value={String(config.freeQuotaMb)}
-              disabled={!canManage}
-              onChange={(e) => patch({ freeQuotaMb: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
-            />
-          </Field>
-          <Field label="قیمت هر بهینه‌سازی تصویر محصول (ریال)" hint="تولید تصویر استاندارد با پس‌زمینهٔ سفید توسط هوش مصنوعی">
-            <input
-              className={inputClass}
-              dir="ltr"
-              inputMode="numeric"
-              value={String(config.enhancePriceRial)}
-              disabled={!canManage}
-              onChange={(e) => patch({ enhancePriceRial: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
-            />
-          </Field>
-          <Field label="مدل ویرایش تصویر" hint="نام مدلی که درگاه هوش مصنوعی برای ویرایش تصویر می‌شناسد">
-            <input
-              className={inputClass}
-              dir="ltr"
-              value={config.enhanceModel}
-              disabled={!canManage}
-              onChange={(e) => patch({ enhanceModel: e.target.value })}
-            />
-          </Field>
+        <div className="grid gap-x-4 text-sm sm:grid-cols-2">
+          <p className="mb-3">
+            وضعیت کسر روزانه: <b>{config.billingEnabled ? "فعال" : "غیرفعال"}</b>
+          </p>
+          <p className="mb-3">
+            مبلغ پایهٔ روزانه: <b className="tabular-nums">{tomanLabel(config.dailyFlatRial)}</b>
+          </p>
+          <p className="mb-3">
+            نرخ روزانهٔ هر گیگابایت: <b className="tabular-nums">{tomanLabel(config.dailyPerGbRial)}</b>
+          </p>
+          <p className="mb-3">
+            سهمیهٔ رایگان: <b className="tabular-nums">{toPersianDigits(config.freeQuotaMb)} مگابایت</b>
+          </p>
+          <p className="mb-3">
+            قیمت هر بهینه‌سازی تصویر محصول: <b className="tabular-nums">{tomanLabel(config.enhancePriceRial)}</b>
+          </p>
         </div>
-        <Button onClick={save} disabled={!canManage || busy}>
-          {busy ? "در حال ذخیره…" : "ذخیرهٔ تعرفه"}
-        </Button>
+        <p className="mt-2 text-xs text-muted-foreground">
+          تعرفه‌ها فقط از <Link href="/platform/billing?tab=usage" className="underline">مرکز صورت‌حساب ← تعرفه مصرف و اعتبار</Link> تغییر می‌کنند.
+        </p>
       </Card>
     </div>
   );

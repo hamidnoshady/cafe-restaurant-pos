@@ -1,7 +1,7 @@
 /**
  * Billing facade — the one function an important platform feature calls to
  * bill a use, and the purchase flow that turns a verified plan/addon payment
- * into an entitlement.
+ * into an entitlement and a subscription.
  *
  * Keeping this seam narrow means feature code never reaches into the wallet
  * or plan catalogue directly: it asks `billFeatureUse(...)` and either
@@ -12,9 +12,11 @@ import { withoutTenantScope } from "./db";
 import { chargeFeatureUse, WalletInsufficientFundsError } from "./wallet-service";
 import {
   grantEntitlement,
+  listPlanFeatures,
   resolveFeatureAccess,
   type FeatureAccess,
 } from "./billing-plans-service";
+import { changeBusinessPlan } from "./subscription-service";
 
 export { WalletInsufficientFundsError };
 
@@ -73,30 +75,10 @@ export async function billFeatureUse(input: {
 /**
  * Record the entitlement a verified purchase grants. Called after a payment
  * settles:
- *  - plan_purchase  → the business's `businesses.plan` is set elsewhere; here
- *                     we stamp the plan's entitled features as owned via plan.
+ *  - plan_purchase  → the subscription service owns the plan switch; here we
+ *                     stamp the plan's entitled features as owned via plan.
  *  - addon_purchase → one feature owned outright with optional expiry.
  */
-/**
- * After a verified plan purchase, switch the business onto that plan so the
- * plan builder's prices become the ones it is billed at. Runs in bypass scope:
- * this is a platform-level change (called from the tenant's own verified
- * payment and from the admin manual-approval route), and the `businesses` row
- * is the same one the existing plan assignment writes.
- */
-export async function activatePurchasedPlan(input: {
-  businessId: string;
-  planKey: string;
-}): Promise<void> {
-  const { query } = await import("./db");
-  await withoutTenantScope("plan_purchase", () =>
-    query(`UPDATE businesses SET plan = $2, updated_at = now() WHERE id = $1`, [
-      input.businessId,
-      input.planKey,
-    ]),
-  );
-}
-
 export async function fulfilPurchasedEntitlement(input: {
   businessId: string;
   featureKey: string;
@@ -113,4 +95,110 @@ export async function fulfilPurchasedEntitlement(input: {
     freeUntil: input.freeUntil ?? null,
     freeLimit: input.freeLimit ?? null,
   });
+}
+
+/**
+ * After a verified plan purchase, move the business onto that plan through
+ * the ONE subscription path: the subscription row is created/extended, the
+ * plan's prices become the ones it is billed at, and auto-renew is enabled so
+ * the renewal tick can attempt the next period from the wallet. Runs in
+ * bypass scope: this is a platform-level change (called from the tenant's own
+ * verified payment and from the admin manual-approval route alike).
+ */
+export async function activatePurchasedPlan(input: {
+  businessId: string;
+  planKey: string;
+  source?: "purchase" | "admin";
+}): Promise<void> {
+  await withoutTenantScope("plan_purchase", () =>
+    changeBusinessPlan({
+      businessId: input.businessId,
+      planKey: input.planKey,
+      source: input.source ?? "purchase",
+    }),
+  );
+}
+
+/**
+ * Fulfil a settled plan/addon purchase — the ONE function the tenant's
+ * gateway return and the super-admin's manual approval both call, so the two
+ * paths can never drift into different activation logic again.
+ *
+ * Idempotent at the payment layer (both callers settle-then-fulfil; a
+ * re-verified payment short-circuits before this), and safe to call twice:
+ * entitlement grants are upserts and changeBusinessPlan is a no-op when the
+ * business is already on the plan.
+ */
+export async function fulfilPurchasedPayment(payment: {
+  businessId: string;
+  purpose: string;
+  planKey: string | null;
+  featureKey: string | null;
+}): Promise<void> {
+  if (payment.purpose === "addon_purchase" && payment.featureKey) {
+    await fulfilPurchasedEntitlement({
+      businessId: payment.businessId,
+      featureKey: payment.featureKey,
+      source: "addon",
+    });
+    return;
+  }
+  if (payment.purpose === "plan_purchase" && payment.planKey) {
+    await activatePurchasedPlan({ businessId: payment.businessId, planKey: payment.planKey });
+    const features = await listPlanFeatures(payment.planKey);
+    for (const f of features) {
+      if (f.pricingModel === "included" || f.pricingModel === "monthly") {
+        await fulfilPurchasedEntitlement({
+          businessId: payment.businessId,
+          featureKey: f.featureKey,
+          source: "plan",
+          freeUntil: f.freeUntil,
+          freeLimit: f.freeLimit,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Super-admin manual review of a billing payment — the one implementation
+ * behind both `/api/platform/billing/payments/[id]/review` and the unified
+ * manual-review queue. Approval settles the payment (posting the wallet
+ * credit exactly once) and fulfils what it purchased through the same path
+ * an automatic gateway success uses; rejection marks it failed and moves no
+ * money. Returns the payment's final status.
+ */
+export async function reviewManualPayment(input: {
+  paymentId: string;
+  action: "approve" | "reject";
+  platformAdminId: string;
+}): Promise<"verified" | "failed" | "cancelled"> {
+  const { getPaymentById, rejectPayment, settlePayment } = await import("./wallet-service");
+  const { GatewayError } = await import("./payment-gateway");
+  const payment = await getPaymentById(input.paymentId);
+  if (!payment) throw new GatewayError("payment_not_found");
+
+  if (input.action === "reject") {
+    await rejectPayment(input.paymentId, { platformAdminId: input.platformAdminId });
+    return "failed";
+  }
+
+  if (payment.status !== "verified") {
+    await settlePayment(input.paymentId, {
+      gatewayRef: payment.gatewayRef ?? null,
+      gatewayStatus: "manual_approved",
+      platformAdminId: input.platformAdminId,
+    });
+    const settled = await getPaymentById(input.paymentId);
+    if (settled) {
+      await fulfilPurchasedPayment({
+        businessId: settled.businessId,
+        purpose: settled.purpose,
+        planKey: settled.planKey,
+        featureKey: settled.featureKey,
+      });
+    }
+  }
+  const updated = await getPaymentById(input.paymentId);
+  return (updated?.status ?? "pending") as "verified" | "failed" | "cancelled";
 }

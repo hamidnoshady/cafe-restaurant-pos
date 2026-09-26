@@ -460,6 +460,78 @@ export async function chargeFeatureUse(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Subscription fee (migration 0176) — the renewal debit, inside the caller's
+// transaction so «invoice claim → wallet debit → period advance» is atomic.
+// ---------------------------------------------------------------------------
+
+/**
+ * Debit one subscription fee from the wallet, INSIDE the caller's already-open
+ * transaction (the renewal holds it: invoice claim, this debit and the period
+ * advance must commit or roll back together). Ledger kind 'subscription'; the
+ * invoice id rides in metadata. Throws WalletInsufficientFundsError without
+ * moving anything when the balance cannot cover the fee.
+ */
+export async function chargeSubscriptionFeeTx(
+  client: PoolClient,
+  input: {
+    businessId: string;
+    amountRial: number;
+    invoiceId?: string | null;
+    note?: string | null;
+  },
+): Promise<{ balanceRial: number }> {
+  const amount = Math.floor(n(input.amountRial));
+  if (amount <= 0) {
+    const { rows } = await client.query<{ balance_rial: string }>(
+      `SELECT balance_rial FROM business_wallets WHERE business_id = $1`,
+      [input.businessId],
+    );
+    return { balanceRial: n(rows[0]?.balance_rial) };
+  }
+  await client.query(
+    `INSERT INTO business_wallets (business_id) VALUES ($1) ON CONFLICT (business_id) DO NOTHING`,
+    [input.businessId],
+  );
+  await client.query(`SELECT business_id FROM business_wallets WHERE business_id = $1 FOR UPDATE`, [
+    input.businessId,
+  ]);
+  const { rows } = await client.query<{ balance_rial: string }>(
+    `SELECT balance_rial FROM business_wallets WHERE business_id = $1`,
+    [input.businessId],
+  );
+  const balance = n(rows[0]?.balance_rial);
+  if (balance < amount) {
+    throw new WalletInsufficientFundsError(amount, balance);
+  }
+  const { balanceAfterRial } = await writeLedger(client, {
+    businessId: input.businessId,
+    kind: "subscription",
+    direction: "debit",
+    amountRial: amount,
+    note: input.note ?? "هزینهٔ اشتراک",
+    metadata: { invoiceId: input.invoiceId ?? null, kind: "subscription_fee" },
+  });
+  return { balanceRial: balanceAfterRial };
+}
+
+/** Standalone subscription debit (opens its own transaction). */
+export async function chargeSubscriptionFee(input: {
+  businessId: string;
+  amountRial: number;
+  invoiceId?: string | null;
+  note?: string | null;
+}): Promise<{ balanceRial: number }> {
+  const client = await getPool().connect();
+  try {
+    return await withWalletTx(client, input.businessId, (c) =>
+      chargeSubscriptionFeeTx(c, input),
+    );
+  } finally {
+    client.release();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // AI wallet billing (Phase B — post-request settlement against the ONE wallet)
 //
 // The AI subsystem used to bill a second balance (`ai_business_billing`) with a
