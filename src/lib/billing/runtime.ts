@@ -3,14 +3,20 @@
  * price versions, CMS ingest, entitlement projection, spend policy and
  * vendor cost. Rating arithmetic stays in `rating/engine.ts`.
  */
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { PoolClient } from "../db";
 import { getPool, query, withTenant, withoutTenantScope } from "../db";
-import { decryptSecret, encryptSecret, resolveEncryptionKey } from "../integrations/secrets";
+import { encryptSecret, resolveEncryptionKey } from "../integrations/secrets";
 import { meterByKey } from "./catalog/meters";
 import { billingLog } from "./observability";
 import { selectPriceVersion, type PriceVersionPoint } from "./rating/engine";
+import { verifyBillingServiceRequest as verifyBillingServiceRequestV1 } from "./auth/verify-service-request";
+import type { BillingServiceScope } from "./auth/sign";
+import { parseUsageBatch, type UsageEventV1 } from "./contract/v1";
 import { validateUsageEvent } from "./usage/validate";
+
+export { verifyBillingServiceRequestV1 as verifyBillingServiceRequest };
+export type { BillingServiceScope };
 
 export interface StoredPriceVersion extends PriceVersionPoint {
   id: string;
@@ -260,18 +266,19 @@ export async function syncAiAllowance(planKey: string, includedRial: number | nu
 // CMS service credential — scope is only billing.usage.write
 // ---------------------------------------------------------------------------
 
-const MAX_SKEW_MS = 5 * 60 * 1000;
-
-export async function createBillingServiceCredential(label: string): Promise<{ keyId: string; secret: string }> {
+export async function createBillingServiceCredential(
+  label: string,
+  scope: BillingServiceScope = "billing.usage.write",
+): Promise<{ keyId: string; secret: string }> {
   const keyId = `cms_${randomBytes(8).toString("hex")}`;
   const secret = randomBytes(32).toString("base64url");
   const secretEnc = encryptSecret(secret, resolveEncryptionKey(process.env));
   await query(
     `INSERT INTO billing_service_credentials (key_id, secret_enc, scope, label)
-     VALUES ($1, $2, 'billing.usage.write', $3)`,
-    [keyId, secretEnc, label.trim() || "eshobe-cms"],
+     VALUES ($1, $2, $3, $4)`,
+    [keyId, secretEnc, scope, label.trim() || "eshobe-cms"],
   );
-  billingLog("billing.credential.created", { keyId });
+  billingLog("billing.credential.created", { keyId, scope });
   return { keyId, secret };
 }
 
@@ -283,90 +290,38 @@ export async function revokeBillingServiceCredential(keyId: string): Promise<voi
   billingLog("billing.credential.revoked", { keyId });
 }
 
-export interface SignedRequest {
-  keyId: string;
-  timestamp: string;
-  nonce: string;
-  signature: string;
-  rawBody: string;
-}
+export type IngestEvent = UsageEventV1;
 
-/** Verify a CMS usage request. The secret never leaves this function. */
-export async function verifyBillingServiceRequest(input: SignedRequest): Promise<{ ok: true } | { ok: false; code: string }> {
-  const timestamp = Number(input.timestamp);
-  if (!Number.isFinite(timestamp) || Math.abs(Date.now() - timestamp) > MAX_SKEW_MS) {
-    return { ok: false, code: "STALE_TIMESTAMP" };
-  }
-  if (!input.nonce || input.nonce.length > 200) return { ok: false, code: "BAD_NONCE" };
-  const { rows } = await query<{ secret_enc: string; scope: string }>(
-    `SELECT secret_enc, scope FROM billing_service_credentials
-      WHERE key_id = $1 AND revoked_at IS NULL`,
-    [input.keyId],
-  );
-  const row = rows[0];
-  if (!row || row.scope !== "billing.usage.write") return { ok: false, code: "UNKNOWN_KEY" };
-  let secret: string;
-  try {
-    secret = decryptSecret(row.secret_enc, resolveEncryptionKey(process.env));
-  } catch {
-    return { ok: false, code: "UNKNOWN_KEY" };
-  }
-  const bodyHash = createHash("sha256").update(input.rawBody).digest("hex");
-  const expected = createHmac("sha256", secret).update(`${input.timestamp}\n${input.nonce}\n${bodyHash}`).digest("hex");
-  const a = Buffer.from(expected);
-  const b = Buffer.from(input.signature);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return { ok: false, code: "BAD_SIGNATURE" };
-  const inserted = await query<{ nonce: string }>(
-    `INSERT INTO billing_service_nonces (key_id, nonce) VALUES ($1, $2)
-     ON CONFLICT DO NOTHING RETURNING nonce`,
-    [input.keyId, input.nonce],
-  );
-  if (!inserted.rows[0]) return { ok: false, code: "REPLAY" };
-  return { ok: true };
-}
-
-export interface IngestEvent {
+export type IngestEventResult = {
   eventId: string;
-  siteId: string;
-  meterKey: string;
-  quantity: number;
-  unit: string;
-  periodStart?: string | null;
-  periodEnd?: string | null;
-  occurredAt?: string;
-  dimensions?: Record<string, unknown>;
-}
+  status: "accepted" | "duplicate" | "rejected";
+  reason?: string;
+};
 
 export interface IngestBatchResult {
+  contractVersion: number;
+  results: IngestEventResult[];
   accepted: number;
   duplicates: number;
-  rejected: { eventId: string; code: string }[];
 }
 
 /**
  * Ingest a CMS batch. `siteId` is resolved to a business here. A business id
  * on the event, if a caller sent one, is ignored.
  */
-export async function ingestCmsUsageBatch(events: IngestEvent[]): Promise<IngestBatchResult> {
-  const result: IngestBatchResult = { accepted: 0, duplicates: 0, rejected: [] };
-  if (events.length > 500) {
-    return { accepted: 0, duplicates: 0, rejected: events.map((event) => ({ eventId: event.eventId || "", code: "BATCH_TOO_LARGE" })) };
-  }
-  for (const event of events) {
-    const eventId = typeof event.eventId === "string" ? event.eventId : "";
-    const meter = meterByKey(event.meterKey);
-    if (!meter || meter.source !== "eshobe-cms") {
-      result.rejected.push({ eventId, code: "UNKNOWN_METER" });
-      continue;
-    }
+export async function ingestCmsUsageBatchFromContract(batch: { events: UsageEventV1[] }): Promise<IngestBatchResult> {
+  const results: IngestEventResult[] = [];
+  let accepted = 0;
+  let duplicates = 0;
+  for (const event of batch.events) {
     const businessId = await resolveCmsSiteBusiness(event.siteId);
     if (!businessId) {
-      result.rejected.push({ eventId, code: "UNKNOWN_SITE" });
+      results.push({ eventId: event.eventId, status: "rejected", reason: "unknown_site" });
       continue;
     }
     const appended = await withTenant(businessId, () =>
       appendUsageEvent({
-        eventId,
+        eventId: event.eventId,
         businessId,
         meterKey: event.meterKey,
         source: "eshobe-cms",
@@ -375,23 +330,38 @@ export async function ingestCmsUsageBatch(events: IngestEvent[]): Promise<Ingest
         occurredAt: event.occurredAt,
         periodStart: event.periodStart,
         periodEnd: event.periodEnd,
-        resource: "site",
-        resourceId: event.siteId,
+        resource: event.resourceType ?? "site",
+        resourceId: event.resourceId ?? event.siteId,
         dimensions: event.dimensions,
         sourceReference: event.siteId,
+        eventKind: event.kind === "correction" ? "correction" : "usage",
       }),
     );
-    if (appended.status === "accepted") result.accepted += 1;
-    else if (appended.status === "duplicate") result.duplicates += 1;
-    else result.rejected.push({ eventId, code: appended.code });
+    if (appended.status === "accepted") {
+      accepted += 1;
+      results.push({ eventId: event.eventId, status: "accepted" });
+    } else if (appended.status === "duplicate") {
+      duplicates += 1;
+      results.push({ eventId: event.eventId, status: "duplicate" });
+    } else {
+      results.push({ eventId: event.eventId, status: "rejected", reason: appended.code.toLowerCase() });
+    }
   }
   billingLog("billing.usage.ingest", {
     source: "eshobe-cms",
-    accepted: result.accepted,
-    duplicates: result.duplicates,
-    rejected: result.rejected.length,
+    accepted,
+    duplicates,
+    rejected: results.filter((row) => row.status === "rejected").length,
   });
-  return result;
+  return { contractVersion: 1, results, accepted, duplicates };
+}
+
+export async function ingestCmsUsageBatchBody(body: unknown): Promise<IngestBatchResult | { error: string }> {
+  const parsed = parseUsageBatch(body);
+  if ("error" in parsed) {
+    return { error: parsed.error.code };
+  }
+  return ingestCmsUsageBatchFromContract(parsed.batch);
 }
 
 async function resolveCmsSiteBusiness(siteId: string): Promise<string | null> {
