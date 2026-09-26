@@ -162,7 +162,7 @@ export const METER_CATALOGUE: readonly MeterDefinition[] = [
     critical: true,
   },
   {
-    key: "cms.build_seconds",
+    key: "cms.build_second",
     name: "زمان ساخت سایت",
     description: "ثانیه‌های یک ساخت تکمیل‌شده.",
     unit: "second",

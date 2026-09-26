@@ -97,7 +97,7 @@ export const BILLING_DECLARATIONS: readonly BillingDeclaration[] = [
       "cms.origin_transfer_bytes",
       "cms.api_request",
       "cms.storage_byte_hour",
-      "cms.build_seconds",
+      "cms.build_second",
       "cms.deployment",
     ],
   },

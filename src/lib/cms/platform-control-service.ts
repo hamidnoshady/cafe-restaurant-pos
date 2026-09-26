@@ -43,6 +43,8 @@ interface ConfigRow extends Record<string, unknown> {
   allow_insecure: boolean;
   api_key_ciphertext: null | string;
   api_key_hint: string;
+  billing_entitlement_key_id: string;
+  billing_entitlement_secret_hint: string;
   base_url: string;
   events_cursor: null | string;
   events_shipped: string;
@@ -60,6 +62,7 @@ interface ConfigRow extends Record<string, unknown> {
 }
 
 const CONFIG_COLUMNS = `base_url, label, allow_insecure, api_key_ciphertext, api_key_hint,
+       billing_entitlement_key_id, billing_entitlement_secret_hint,
        verified_at, verify_error, mirror_enabled, mirror_interval_minutes,
        last_mirror_at, last_mirror_error, log_shipping_enabled, events_cursor,
        last_events_at, last_events_error, events_shipped, updated_at`;
@@ -98,6 +101,8 @@ export async function getCmsControlConfig(): Promise<MaskedCmsControlConfig> {
   const row = await readConfigRow();
   return maskCmsControlConfig(toConfig(row), {
     apiKeyHint: row?.api_key_hint ?? "",
+    billingEntitlementKeyId: row?.billing_entitlement_key_id ?? "",
+    billingEntitlementSecretHint: row?.billing_entitlement_secret_hint ?? "",
     hasApiKey: Boolean(row?.api_key_ciphertext),
   });
 }

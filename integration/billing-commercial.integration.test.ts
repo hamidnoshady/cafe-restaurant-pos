@@ -183,24 +183,38 @@ describe("usage ledger", () => {
     });
   });
 
-  it("rejects a CMS meter the catalogue does not know and a foreign business id", async () => {
-    const result = await runtime.ingestCmsUsageBatch([
-      {
-        eventId: "cms-1",
-        siteId: "missing-site",
-        meterKey: "not.a.meter",
-        quantity: 1,
-        unit: "byte",
-      },
-      {
-        eventId: "cms-2",
-        siteId: "missing-site",
-        meterKey: "ai.credit",
-        quantity: 1,
-        unit: "rial",
-      },
+  it("rejects a CMS meter the catalogue does not know", async () => {
+    const result = await runtime.ingestCmsUsageBatchBody({
+      source: "eshobe-cms",
+      contractVersion: 1,
+      events: [
+        {
+          eventId: "cms-1",
+          siteId: "00000000-0000-4000-8000-000000000099",
+          meterKey: "not.a.meter",
+          quantity: 1,
+          unit: "byte",
+          periodStart: "2026-09-26T13:00:00.000Z",
+          periodEnd: "2026-09-26T14:00:00.000Z",
+          occurredAt: "2026-09-26T13:00:00.000Z",
+        },
+        {
+          eventId: "cms-2",
+          siteId: "00000000-0000-4000-8000-000000000099",
+          meterKey: "ai.credit",
+          quantity: 1,
+          unit: "rial",
+          periodStart: "2026-09-26T13:00:00.000Z",
+          periodEnd: "2026-09-26T14:00:00.000Z",
+          occurredAt: "2026-09-26T13:00:00.000Z",
+        },
+      ],
+    });
+    if ("error" in result) throw new Error(result.error);
+    expect(result.results.filter((row) => row.status === "rejected").map((row) => row.reason)).toEqual([
+      "unknown_meter",
+      "unknown_meter",
     ]);
-    expect(result.rejected.map((row) => row.code)).toEqual(["UNKNOWN_METER", "UNKNOWN_METER"]);
     expect(result.accepted).toBe(0);
   });
 
@@ -216,16 +230,26 @@ describe("usage ledger", () => {
        VALUES ($1, 'site-owned', 'owned.example', 'https://cms.example', 'cipher')`,
       [BID],
     );
-    const event = {
-      eventId: "bw-1",
-      siteId: "site-owned",
-      meterKey: "cms.bandwidth_bytes",
-      quantity: 100,
-      unit: "byte",
-      dimensions: { businessId: other },
+    const batch = {
+      source: "eshobe-cms" as const,
+      contractVersion: 1,
+      events: [
+        {
+          eventId: "bw-1",
+          siteId: "site-owned",
+          meterKey: "cms.bandwidth_bytes",
+          quantity: 100,
+          unit: "byte",
+          periodStart: "2026-09-26T13:00:00.000Z",
+          periodEnd: "2026-09-26T14:00:00.000Z",
+          occurredAt: "2026-09-26T13:00:00.000Z",
+          dimensions: { businessId: String(other) },
+        },
+      ],
     };
-    const first = await runtime.ingestCmsUsageBatch([event]);
-    const second = await runtime.ingestCmsUsageBatch([event]);
+    const first = await runtime.ingestCmsUsageBatchBody(batch);
+    const second = await runtime.ingestCmsUsageBatchBody(batch);
+    if ("error" in first || "error" in second) throw new Error("ingest failed");
     expect(first.accepted).toBe(1);
     expect(second.duplicates).toBe(1);
     const { rows } = await db.query<{ business_id: string; quantity: string }>(
@@ -234,10 +258,24 @@ describe("usage ledger", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.business_id).toBe(BID);
     expect(rows[0]?.quantity).toBe("100");
-    const missing = await runtime.ingestCmsUsageBatch([
-      { eventId: "bw-missing", siteId: "site-nobody", meterKey: "cms.bandwidth_bytes", quantity: 5, unit: "byte" },
-    ]);
-    expect(missing.rejected).toEqual([{ eventId: "bw-missing", code: "UNKNOWN_SITE" }]);
+    const missing = await runtime.ingestCmsUsageBatchBody({
+      source: "eshobe-cms",
+      contractVersion: 1,
+      events: [
+        {
+          eventId: "bw-missing",
+          siteId: "site-nobody",
+          meterKey: "cms.bandwidth_bytes",
+          quantity: 5,
+          unit: "byte",
+          periodStart: "2026-09-26T13:00:00.000Z",
+          periodEnd: "2026-09-26T14:00:00.000Z",
+          occurredAt: "2026-09-26T13:00:00.000Z",
+        },
+      ],
+    });
+    if ("error" in missing) throw new Error(missing.error);
+    expect(missing.results).toEqual([{ eventId: "bw-missing", status: "rejected", reason: "unknown_site" }]);
   });
 
   it("refuses an older entitlement projection", async () => {
