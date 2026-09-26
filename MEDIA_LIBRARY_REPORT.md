@@ -126,6 +126,20 @@ What actually changed, in the order it was built:
     gained the matching `parties.view` usage exception. This closes the "CRM party
     avatars ... still independent" gap this report previously listed under Section V as
     open. See Sections D, N, O.1, O.2, T, U item 20.
+15. **Workspace audited for the first time this session; one real UI bug found and fixed**
+    (Section N, T, U item 21): grepped every Workspace entity (documents, contracts,
+    tasks, comments, approvals, calendar, templates) for a media reference — only
+    `workspace_documents.media_asset_id` has one, and it already pointed at a real Media
+    Library asset from a pre-existing migration (`0149`), so there was no storage
+    duplication left to migrate. What the audit did find: `documents-section.tsx` stored
+    and displayed a document's `mediaAssetId`/file name correctly but never offered a way
+    to actually open the file — the register's whole point (a title, a version, a review
+    state, *and the file itself*) was one click short of usable. Fixed with a direct
+    `mediaFileUrl(id)` link in both the document row and its edit dialog, six new RTL
+    tests pinning the fix (and that the row's link opens the file without also triggering
+    the row's own edit-dialog handler). No schema or permission change: a workspace
+    document's file is `kind='document'` in the ordinary case, and Section O.1's
+    always-require-`media.view`-for-documents rule already covers it by design.
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
 `0174`–`0181`, a full naming-system rebuild, CRM business-card scanning or Workspace
@@ -670,7 +684,7 @@ migrate onto a shared pipeline — new scope, not a gap in what already exists).
 | CRM (party profile image) | **Yes, this session** — `parties.profile_image_asset_id uuid REFERENCES media_assets(id)` (migration 0181) alongside the pre-existing `profile_image` text column, mutually exclusive on one row (`normalizePartyWrite` always nulls the other when one is set); `party-form.tsx`'s avatar control now uses the same `MediaImageField`/`MediaPickerDialog` every catalogue item's photo uses for a *new* upload, with the legacy `data:`/`https://` value (migration 0137) still rendered as-is for a party that already had one and an explicit "replace with a library photo" action rather than a forced migration; the file-download route benefits from the same usage-based permission model B.1/O.1 describe (`parties.view` can render a party's own avatar without `media.view`) |
 | CRM — business-card scanning | **N/A, not a migration** — no such feature/entry point exists anywhere in the app yet (Section M); nothing to migrate onto the canonical library until it is built |
 | Workspace — contract extraction | **N/A, not a migration** — no such feature exists yet either (Section M) |
-| Workspace (files generally) | Not audited this session |
+| Workspace (documents register) | **Already migrated, pre-existing (migration 0149), audited this session** — `workspace_documents.media_asset_id uuid REFERENCES media_assets(id)`; the register never re-implements storage (`workspace_documents` holds only a title, review state and version chain, joined to `media_assets` for `file_name`/`mime_type`/`byte_size` at read time). This is the one Workspace entity with a file reference at all (contracts, tasks, comments, approvals, calendar and templates were grepped for `media_asset_id`/`mediaAssetId`/`attachment` and hold none). A real, disclosed UI bug was found and fixed this session, not a storage gap: `documents-section.tsx` stored and round-tripped `mediaAssetId` correctly but never rendered a way to actually open the file again — the row showed the file name as inert text and the edit dialog's picker only let you change which asset was linked, never view the current one. Fixed with a link to `mediaFileUrl(id)` (`/api/media/{id}/file`) in both the row and the dialog; the row's link stops click propagation so it opens the file directly rather than the row's own edit-dialog handler intercepting it. `GET /api/media/[id]/file` needed no permission-model change: a workspace document's file is `kind='document'` in the overwhelming case (PDFs, DOCX, drawings), and Section O.1's rule already requires `media.view` unconditionally for every document-kind asset regardless of usage — by explicit, conservative design, not an oversight this session introduced or left unaddressed. |
 
 ## O. Permissions & security
 
@@ -1105,10 +1119,23 @@ duplication to consolidate, not dead code to delete.
     asserting the new components are used and the old `FileReader`/`readAsDataURL` path
     is gone, plus that the legacy-value fallback still renders — 40/40 tests in that file
     pass (was 39/40, 1 pinning the now-deliberately-changed code).
+- **Workspace document register — the "cannot actually open the file" bug (Section N,
+  U item 21), this session's first Workspace audit**: `src/app/(app)/workspace/documents-
+  section.test.tsx` **(new file, jsdom + Testing Library, 6 tests)** — a document with a
+  linked asset renders its file name as a real link to `mediaFileUrl(id)` with
+  `target="_blank"`, not inert text; a document with no linked asset still renders plain
+  text, not a broken link; clicking the link opens the file without also triggering the
+  row's own edit-dialog `onClick` (the propagation-stopping fix, proven, not assumed); the
+  row itself still opens the edit dialog when clicked anywhere else; the edit dialog shows
+  a "مشاهدهٔ فایل فعلی" link to the currently-selected asset for a document that already
+  has one; and the create dialog shows no such link before any asset is picked. This is
+  the fourth dedicated component-test file for a client this program's Media-consolidation
+  work touched (after `media-manager.test.tsx`'s two suites and `expense-section.test.tsx`).
 
 No tests were skipped, stubbed, or marked as TODO anywhere in this program. Media now has
-three dedicated component-test files (`media-manager.test.tsx`'s crop/upload-panel
-suites, and `expense-section.test.tsx`, this session's first for that component) plus one
+four dedicated component-test files (`media-manager.test.tsx`'s crop/upload-panel
+suites, `expense-section.test.tsx`, and — new this session — `documents-section.test.tsx`
+for the Workspace document register) plus one
 pure-Node engine suite (`media-uploader.test.ts`) — a first, narrow instance of the
 RTL-component layer of the requested test pyramid for Media, not the full breadth of it.
 No E2E, mobile, or accessibility tests were added for Media; the repo's existing generic
@@ -1420,6 +1447,36 @@ report described earlier is closed, not merely tested-and-left-as-is.
     134/1567 by exactly those 9 new tests. `npm run build` was not re-attempted this step
     (Section U item 10/17's standing sandbox OOM ceiling, re-confirmed rather than
     re-investigated, unchanged).
+21. **This session, immediately after item 20 — Workspace audited for the first time
+    (Sections N, T)**: before touching any code, `git grep` swept every Workspace entity
+    (`media_asset_id`, `mediaAssetId`, `attachment`) to check for undisclosed storage
+    duplication; found none — `workspace_documents.media_asset_id` is the only file
+    reference in Workspace and was already a real Media Library asset from a pre-existing
+    migration (`0149`), so there was no fourth migration to write. Found instead a real,
+    concrete UI bug: `documents-section.tsx` never rendered a way to open the file a
+    document actually points at. Fixed by linking the row's file name and the edit
+    dialog's picker to `mediaFileUrl(id)`, with the row's link stopping click propagation
+    so it does not also trigger the row's own edit-dialog handler. Also hit, and recovered
+    from, the two most severe sandbox faults of this whole program in immediate succession:
+    `node_modules` was found wiped (the same standing hazard as item 19, a fourth
+    occurrence) AND — new this session, not seen before — the local git repository's
+    branch ref had been silently reset all the way back to this branch's own base commit
+    (`81c29c4`), discarding every commit made across this entire program from local
+    history (though the working tree's files were untouched). Recovered without losing
+    any work: `git fetch origin arena/01a0d95b-cafe-restaurant-pos` confirmed every prior
+    commit through `01af26d` still existed on the remote, then `git reset --mixed
+    FETCH_HEAD` realigned the local branch and index to that commit while leaving the
+    working tree exactly as it stood (the initial `--soft` attempt was wrong and produced
+    a confusing double `D`/`??` status for every file — corrected to `--mixed`, which is
+    what actually reconciles the index with an already-correct working tree). `npm ci`
+    reinstalled `node_modules`; `npx tsc --noEmit` and `npx eslint .` (whole repo) both
+    clean afterward. Full unit suite re-run, final state: **441/441 files, 6134/6134 tests
+    passed** (up from 440/6128 by exactly the 6 new `documents-section.test.tsx` tests, 0
+    regressions). The complete DB integration suite was re-run once against a freshly
+    re-migrated database (a clean 222-migration forward-apply from empty, unaffected by
+    the git incident since no schema changed this step) — **134/134 files, 1576/1576
+    tests passed, 1 pre-existing unrelated skip**, unchanged from item 20, as expected for
+    a client-only fix. `npm run build` was not re-attempted this step (unchanged reasoning).
 
 Net effect on the test suite across this whole program: **+35 unit tests from earlier
 sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx`
@@ -1440,9 +1497,10 @@ from this session's OCR/receipt-to-expense work (item 17), plus +17 unit tests f
 session's invoice-OCR test-coverage closure (item 18), plus +9 unit tests and +6
 integration tests from this session's invoice-OCR storage migration (item 19), plus +2
 net unit tests and +9 integration tests from this session's CRM party avatar storage
-migration (item 20 above) —
+migration (item 20), plus +6 unit tests from this session's Workspace document-register
+audit and UI fix (item 21 above) —
 0 net regressions** at every checkpoint where the full suite was re-run (final state:
-**440 unit-suite files / 6128 tests, 134 DB integration files / 1576 tests, both fully
+**441 unit-suite files / 6134 tests, 134 DB integration files / 1576 tests, both fully
 green**).
 
 ## V. Second audit / genuine remaining work
@@ -1532,7 +1590,11 @@ full-suite re-run this session, after every change, was green.
   adapter, a genuinely different target from this app's own S3-compatible storage
   (Section N); its byte-signature check already delegates to the canonical one
   (Section O.2).
-- **Workspace** files were not audited this session at all.
+- ~~**Workspace** files were not audited this session at all~~ — **audited this session
+  (Section N, U item 21)**: the only file reference anywhere in Workspace
+  (`workspace_documents.media_asset_id`) was already on canonical storage from a
+  pre-existing migration; the one genuine bug the audit found (no way to actually open a
+  document's file) was fixed and tested, not merely noted.
 - **E2E, mobile, and accessibility test coverage specific to Media** — never attempted;
   only the repo's pre-existing generic design-lint/RTL/dark-mode suites (which happen to
   cover every dashboard page, including media) were re-run.
