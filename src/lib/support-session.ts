@@ -1,4 +1,5 @@
 import type { SessionPayload } from "./auth-edge";
+import { clientIpFrom } from "./rate-limit";
 
 const CONTROLLED_MUTATION_PATHS: ReadonlyArray<[RegExp, string]> = [
   [/^\/api\/settings\/printers(?:\/|$)/, "printer.test"],
@@ -44,7 +45,7 @@ export function supportSessionReturnPath(businessId: string): string {
 export function supportCloseMeta(headers: Headers, channel: string) {
   return {
     channel,
-    ipAddress: headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+    ipAddress: clientIpFrom(headers, 0),
     userAgent: headers.get("user-agent"),
   };
 }
