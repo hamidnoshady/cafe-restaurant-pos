@@ -85,6 +85,7 @@ export const EXEMPT_TABLES = new Set([
   "billing_commercial_settings",
   "billing_service_credentials",
   "billing_service_nonces",
+  "billing_service_replays",
   // Phase 37 (SMS/email marketing) — the platform's own message config
   // (singleton, credentials encrypted at rest) and its global credit-package
   // catalogue: neither carries a business_id, the same shape as

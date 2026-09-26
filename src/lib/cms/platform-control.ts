@@ -132,6 +132,8 @@ export interface CmsControlConfig {
  */
 export interface MaskedCmsControlConfig extends CmsControlConfig {
   apiKeyHint: string;
+  billingEntitlementKeyId: string;
+  billingEntitlementSecretHint: string;
   /** A key is stored (it may still be wrong — see `verifiedAt`). */
   configured: boolean;
   /** Address *and* key are present, so a call can at least be attempted. */
@@ -140,11 +142,18 @@ export interface MaskedCmsControlConfig extends CmsControlConfig {
 
 export function maskCmsControlConfig(
   config: CmsControlConfig,
-  stored: { apiKeyHint: string; hasApiKey: boolean },
+  stored: {
+    apiKeyHint: string;
+    hasApiKey: boolean;
+    billingEntitlementKeyId?: string;
+    billingEntitlementSecretHint?: string;
+  },
 ): MaskedCmsControlConfig {
   return {
     ...config,
     apiKeyHint: stored.apiKeyHint,
+    billingEntitlementKeyId: stored.billingEntitlementKeyId ?? "",
+    billingEntitlementSecretHint: stored.billingEntitlementSecretHint ?? "",
     configured: stored.hasApiKey,
     usable: Boolean(config.baseUrl) && stored.hasApiKey,
   };
@@ -154,7 +163,10 @@ export type CmsConfigPatch = {
   allowInsecure?: unknown;
   apiKey?: unknown;
   baseUrl?: unknown;
+  billingEntitlementKeyId?: unknown;
+  billingEntitlementSecret?: unknown;
   clearApiKey?: unknown;
+  clearBillingEntitlementSecret?: unknown;
   label?: unknown;
   logShippingEnabled?: unknown;
   mirrorEnabled?: unknown;
@@ -169,8 +181,11 @@ export interface ValidatedCmsPatch {
   allowInsecure?: boolean;
   /** Present only when a new key was submitted. Absent means "leave it alone". */
   apiKey?: string;
+  billingEntitlementKeyId?: string;
+  billingEntitlementSecret?: string;
   baseUrl?: string;
   clearApiKey?: true;
+  clearBillingEntitlementSecret?: true;
   label?: string;
   logShippingEnabled?: boolean;
   mirrorEnabled?: boolean;
@@ -232,6 +247,19 @@ export function parseCmsConfigPatch(
     ) {
       errors.push("invalid_interval");
     } else changes.mirrorIntervalMinutes = minutes;
+  }
+
+  if (body.clearBillingEntitlementSecret === true) {
+    changes.clearBillingEntitlementSecret = true;
+  } else if (typeof body.billingEntitlementSecret === "string" && body.billingEntitlementSecret.trim()) {
+    const key = normalizeCmsPlatformKey(body.billingEntitlementSecret);
+    if (!key.ok) errors.push("invalid_billing_entitlement_secret");
+    else changes.billingEntitlementSecret = key.key;
+  }
+  if (typeof body.billingEntitlementKeyId === "string" && body.billingEntitlementKeyId.trim()) {
+    const keyId = body.billingEntitlementKeyId.trim();
+    if (keyId.length > 120) errors.push("billing_entitlement_key_id_too_long");
+    else changes.billingEntitlementKeyId = keyId;
   }
 
   if (errors.length) return { errors, ok: false };
@@ -321,6 +349,21 @@ export function cmsConfigUpdateAssignments(
       bind("api_key_hint", cmsKeyHint(changes.apiKey)),
       ...invalidated(),
     );
+  }
+
+  if (changes.clearBillingEntitlementSecret) {
+    assignments.push(
+      raw("billing_entitlement_secret_ciphertext", "NULL"),
+      raw("billing_entitlement_secret_hint", "''"),
+    );
+  } else if (changes.billingEntitlementSecret) {
+    assignments.push(
+      bind("billing_entitlement_secret_ciphertext", context.encryptApiKey(changes.billingEntitlementSecret)),
+      bind("billing_entitlement_secret_hint", cmsKeyHint(changes.billingEntitlementSecret)),
+    );
+  }
+  if (changes.billingEntitlementKeyId !== undefined) {
+    assignments.push(bind("billing_entitlement_key_id", changes.billingEntitlementKeyId));
   }
 
   assignments.push(bind("updated_by", context.adminId), raw("updated_at", "now()"));
