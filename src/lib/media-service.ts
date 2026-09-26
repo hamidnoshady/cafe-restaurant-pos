@@ -435,6 +435,85 @@ export async function getMediaAsset(businessId: string, id: string): Promise<Med
   return rows[0] ? rowToAsset(rows[0]) : null;
 }
 
+export interface MediaAssetLineageEntry {
+  id: string;
+  fileName: string;
+  variant: MediaAssetVariant;
+  transformOps: unknown[];
+  /** A trashed ancestor/descendant is still shown — the chain is history, not a live listing. */
+  deletedAt: string | null;
+}
+
+export interface MediaAssetLineage {
+  /**
+   * Root-first: the asset this one (transitively) derives from, down to its
+   * immediate parent. Empty when the asset is itself an `original` with no
+   * `sourceAssetId` — most assets in the library.
+   */
+  ancestors: MediaAssetLineageEntry[];
+  /**
+   * Assets whose own `sourceAssetId` points directly at this one — one level,
+   * not the whole subtree. A crop of an enhance and an upscale of the same
+   * enhance are siblings here, each with its own (possibly longer) chain of
+   * its own descendants that this call does not walk into.
+   */
+  descendants: MediaAssetLineageEntry[];
+}
+
+/** `getMediaAssetLineage` never trusts a chain to terminate on its own. */
+const MAX_LINEAGE_HOPS = 20;
+
+function toLineageEntry(asset: MediaAssetRecord): MediaAssetLineageEntry {
+  return {
+    id: asset.id,
+    fileName: asset.fileName,
+    variant: asset.variant,
+    transformOps: asset.transformOps,
+    deletedAt: asset.deletedAt,
+  };
+}
+
+/**
+ * The version-history walk the asset drawer's "lineage" panel renders: every
+ * deterministic transform (crop/rotate/resize) and every AI edit
+ * (enhance/bg-remove/upscale/variation) creates a new, separate asset with
+ * `source_asset_id` pointing at the one it was made from — never an in-place
+ * mutation, so the original is always still there. Nothing before this
+ * function ever walked that chain more than one hop; a crop of an enhance of
+ * the original upload had no way to show its full history, only its
+ * immediate parent.
+ *
+ * Tenant-scoped at every hop, not only at the start: `getMediaAsset` re-checks
+ * `business_id` on each step, so a `source_asset_id` that somehow pointed
+ * across a tenant boundary (never expected, never trusted) simply ends the
+ * chain there rather than leaking a foreign row.
+ */
+export async function getMediaAssetLineage(businessId: string, id: string): Promise<MediaAssetLineage> {
+  const ancestorsUp: MediaAssetLineageEntry[] = [];
+  const seen = new Set<string>([id]);
+  let cursor = await getMediaAsset(businessId, id);
+  let hops = 0;
+  while (cursor?.sourceAssetId && hops < MAX_LINEAGE_HOPS) {
+    if (seen.has(cursor.sourceAssetId)) break;
+    const parent = await getMediaAsset(businessId, cursor.sourceAssetId);
+    if (!parent) break;
+    ancestorsUp.push(toLineageEntry(parent));
+    seen.add(parent.id);
+    cursor = parent;
+    hops += 1;
+  }
+
+  const { rows } = await query<AssetRow>(
+    `SELECT ${ASSET_COLUMNS} FROM media_assets WHERE business_id = $1 AND source_asset_id = $2 ORDER BY created_at ASC`,
+    [businessId, id],
+  );
+
+  return {
+    ancestors: ancestorsUp.reverse(),
+    descendants: rows.map(rowToAsset).map(toLineageEntry),
+  };
+}
+
 /**
  * Store bytes + row. The key is BUILT here from the caller's businessId —
  * never accepted from a request — which together with `keyBelongsToBusiness`

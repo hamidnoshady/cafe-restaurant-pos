@@ -1154,3 +1154,103 @@ describe("deterministic transforms (migration 0175) — crop/rotate/resize as de
     expect(ids).toContain(transformed.id);
   });
 });
+
+describe("getMediaAssetLineage — the version-history walk the asset drawer's disclosed gap needed", () => {
+  it("returns no ancestors and no descendants for a plain, untouched upload", async () => {
+    const bytes = pngOf(300);
+    const original = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "lonely.png", mimeType: "image/png", bytes, sha256: sha256(bytes),
+      }),
+    );
+    const lineage = await scoped(BID, () => media.getMediaAssetLineage(BID, original.id));
+    expect(lineage.ancestors).toEqual([]);
+    expect(lineage.descendants).toEqual([]);
+  });
+
+  it("walks a multi-hop chain (original → crop → enhance) root-first, further than the immediate parent alone", async () => {
+    const originalBytes = pngOf(310);
+    const original = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "lineage-original.png", mimeType: "image/png", bytes: originalBytes, sha256: sha256(originalBytes),
+      }),
+    );
+    const croppedBytes = pngOf(320);
+    const cropped = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "lineage-crop.png", mimeType: "image/png", bytes: croppedBytes, sha256: sha256(croppedBytes),
+        variant: "transformed", sourceAssetId: original.id, transformOps: [{ operation: "crop", x: 0, y: 0, width: 50, height: 50 }],
+      }),
+    );
+    const enhancedBytes = pngOf(330);
+    const enhanced = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "lineage-enhance.png", mimeType: "image/png", bytes: enhancedBytes, sha256: sha256(enhancedBytes),
+        variant: "enhanced", sourceAssetId: cropped.id,
+      }),
+    );
+
+    // From the leaf (`enhanced`): the whole chain, root-first — not just `cropped`.
+    const lineage = await scoped(BID, () => media.getMediaAssetLineage(BID, enhanced.id));
+    expect(lineage.ancestors.map((a) => a.id)).toEqual([original.id, cropped.id]);
+    expect(lineage.ancestors[0].variant).toBe("original");
+    expect(lineage.ancestors[1].variant).toBe("transformed");
+    expect(lineage.descendants).toEqual([]);
+
+    // From the middle (`cropped`): one ancestor up, one descendant down — it
+    // never walks into the descendant's own further descendants.
+    const midLineage = await scoped(BID, () => media.getMediaAssetLineage(BID, cropped.id));
+    expect(midLineage.ancestors.map((a) => a.id)).toEqual([original.id]);
+    expect(midLineage.descendants.map((d) => d.id)).toEqual([enhanced.id]);
+  });
+
+  it("lists every direct descendant when an asset was edited more than one way (crop and upscale, both from the same original)", async () => {
+    const originalBytes = pngOf(340);
+    const original = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "lineage-fork.png", mimeType: "image/png", bytes: originalBytes, sha256: sha256(originalBytes),
+      }),
+    );
+    const cropBytes = pngOf(350);
+    const crop = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "lineage-fork-crop.png", mimeType: "image/png", bytes: cropBytes, sha256: sha256(cropBytes),
+        variant: "transformed", sourceAssetId: original.id, transformOps: [{ operation: "rotate", degrees: 90 }],
+      }),
+    );
+    const upscaleBytes = pngOf(360);
+    const upscale = await scoped(BID, () =>
+      media.storeMediaAsset({
+        businessId: BID, userId: null, config, kind: "image",
+        fileName: "lineage-fork-upscale.png", mimeType: "image/png", bytes: upscaleBytes, sha256: sha256(upscaleBytes),
+        variant: "upscaled", sourceAssetId: original.id,
+      }),
+    );
+
+    const lineage = await scoped(BID, () => media.getMediaAssetLineage(BID, original.id));
+    expect(lineage.ancestors).toEqual([]);
+    expect(lineage.descendants.map((d) => d.id).sort()).toEqual([crop.id, upscale.id].sort());
+  });
+
+  it("returns an empty lineage, not another tenant's data, for an asset id outside the caller's business", async () => {
+    const otherBytes = pngOf(370);
+    const foreign = await scoped(BID2, () =>
+      media.storeMediaAsset({
+        businessId: BID2, userId: null, config, kind: "image",
+        fileName: "other-tenant.png", mimeType: "image/png", bytes: otherBytes, sha256: sha256(otherBytes),
+      }),
+    );
+    // getMediaAssetLineage is asked about BID2's own asset while scoped to BID —
+    // the same tenant-isolation shape every other media-service read enforces
+    // (getMediaAsset re-checks business_id on every hop, including the first).
+    const lineage = await scoped(BID, () => media.getMediaAssetLineage(BID, foreign.id));
+    expect(lineage.ancestors).toEqual([]);
+    expect(lineage.descendants).toEqual([]);
+  });
+});

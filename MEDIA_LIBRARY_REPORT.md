@@ -140,6 +140,20 @@ What actually changed, in the order it was built:
     the row's own edit-dialog handler). No schema or permission change: a workspace
     document's file is `kind='document'` in the ordinary case, and Section O.1's
     always-require-`media.view`-for-documents rule already covers it by design.
+16. **Version-history (lineage) UI — closed** (this session, no schema/migration
+    change: `source_asset_id` already existed on every derived asset since migration
+    `0174`, this item only reads it): every AI or deterministic edit (`enhance`,
+    `bg_removed`, `upscaled`, `variation`, `transformed`) has recorded its parent since
+    the moment it was created, but nothing surfaced that chain. Added
+    `getMediaAssetLineage` (`src/lib/media-service.ts`, walks `source_asset_id` upward to
+    the root and separately finds every direct child), `GET /api/media/[id]/lineage`
+    (same `withTenantScope`/`media.view`/404-via-`getMediaAsset` shape as the existing
+    `usage` route), and a "سابقهٔ نسخه" panel in the asset drawer — lazily fetched the
+    same way the existing "usage" panel already is, rendering only when an asset actually
+    has ancestors or descendants, linking every ancestor and descendant to its own file.
+    This closes the "no version-history UI" gap Section L (background
+    removal/upscale/variations) and Section L's deterministic-transforms subsection had
+    both explicitly disclosed as not built. See Sections L, T, U.
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
 `0174`–`0181`, a full naming-system rebuild, CRM business-card scanning or Workspace
@@ -537,10 +551,31 @@ flow (`media-manager.test.tsx`, 4 new tests). 30 new tests total, all passing.
     was also added for the pre-existing `transformed` variant, which previously had no
     badge at all — a small pre-existing gap this pass happened to notice and close while
     touching the same badge block.
-  - **Not built**: no version-history UI walking a derived asset back to its full
-    ancestor chain beyond the existing per-asset "usage" panel; no way to pick which of
-    the 3 variation results to keep vs. discard beyond deleting the ones not wanted from
-    the grid like any other asset.
+  - **Version-history UI — closed this session** (previously disclosed as "not built"
+    in an earlier draft of this report): every derived asset — `enhanced`, `bg_removed`,
+    `upscaled`, `variation`, and the deterministic `transformed` kind below — already
+    recorded `source_asset_id` from the moment it was created, but nothing walked or
+    surfaced that chain anywhere in the UI. `getMediaAssetLineage(businessId, assetId)`
+    (`src/lib/media-service.ts`) now walks `source_asset_id` upward to the root original
+    (returning the full ancestor chain, root-first) and separately looks up every asset
+    whose `source_asset_id` is the given id (its direct descendants) — tenant-scoped like
+    every other Media query, so an id from a foreign business resolves to an empty
+    lineage rather than leaking cross-tenant structure. `GET /api/media/[id]/lineage`
+    (mirrors the existing `usage` route exactly: `withTenantScope` → `requirePermission
+    (media.view)` → 404 via `getMediaAsset` → `{ lineage: { ancestors, descendants } }`)
+    exposes it. The asset drawer lazily fetches it the same way it already lazily
+    fetches `usage`, and — only when the asset actually has ancestors or descendants —
+    renders a "سابقهٔ نسخه" (version history) panel: the ancestor chain root-first ending
+    on the currently-open asset (each ancestor a link to its own file, the open asset
+    itself named but not linked since it is already open in the same drawer) and a
+    "نسخه‌های ساخته‌شده از این فایل" (versions made from this file) list of direct
+    descendants, each linked to its own file, each labeled with the same Persian variant
+    words the grid badges already use. A plain, never-derived upload renders no panel at
+    all — nothing to disclose. **Still not built, deliberately**: no UI to pick which of
+    several variation results to "keep" vs. discard beyond deleting unwanted ones from
+    the grid like any other asset — the lineage panel is read-only disclosure of
+    structure that already existed, not a new curation workflow, consistent with the
+    "not Photoshop" constraint.
 - **Deterministic (non-AI) operations** — migration `0175`:
   `POST /api/media/[id]/transform` accepts `{operation: "crop"|"rotate"|"resize", ...}`,
   validated by `parseMediaTransformInput` (crop: integer x/y/width/height, 1..4000px;
@@ -563,9 +598,10 @@ flow (`media-manager.test.tsx`, 4 new tests). 30 new tests total, all passing.
   "انصراف" discards the rectangle without a request. Covered by
   `src/app/dashboard/media/media-manager.test.tsx` (button hidden for non-image assets,
   sub-minimum drag stays disabled, a real drag produces the exact expected natural-pixel
-  request body, cancel never calls the API). There is still no version-history UI showing
-  a transformed asset's lineage back to its source beyond what the asset drawer's
-  existing "usage" panel exposes incidentally.
+  request body, cancel never calls the API). Its lineage (parent it was cropped/rotated/
+  resized from, and any further asset derived from it in turn) is now disclosed by the
+  same version-history panel described above, since `getMediaAssetLineage` walks
+  `source_asset_id` regardless of which operation set it.
 - **AI generation**: unchanged — `ai_generated` provenance already existed before this
   program and is unaffected.
 
@@ -1131,6 +1167,33 @@ duplication to consolidate, not dead code to delete.
   has one; and the create dialog shows no such link before any asset is picked. This is
   the fourth dedicated component-test file for a client this program's Media-consolidation
   work touched (after `media-manager.test.tsx`'s two suites and `expense-section.test.tsx`).
+- **Version-history (lineage) UI — this session's final addition, no schema change**:
+  - `src/app/api/media/[id]/lineage/route.test.ts` **(new file, 4 tests)** — 403 without
+    `media.view`; 404 for a missing asset and (separately) for an asset id that belongs
+    to another business; 200 returning `{ lineage: { ancestors, descendants } }` from a
+    mocked `getMediaAssetLineage`; 200 with both arrays empty for a plain upload.
+  - `integration/media-library.integration.test.ts` **(+4 tests, 43 → 47)** — a real
+    upload with no history returns `{ ancestors: [], descendants: [] }`; a three-hop
+    chain (`original → crop → enhance`) returns the crop's ancestors root-first
+    (`[original]`) and its descendants (`[enhance]`) — proving the walk is exactly
+    one hop in each direction from a mid-chain node, not the whole tree; a fork (two
+    separate children of the same original) lists both children as descendants of the
+    shared parent; an asset id from a different business (`BID2`) queried as `BID`
+    returns an empty lineage rather than throwing or leaking the other tenant's chain.
+    Run against a real Postgres database this session
+    (`npm run test:db` equivalent, see Section U) — 47/47 passed.
+  - `src/app/dashboard/media/media-manager.test.tsx` **(+3 tests, 18 → 21)** — a new
+    `describe("AssetDrawer version history (lineage)")` block: an asset with empty
+    `ancestors`/`descendants` renders neither the "سابقهٔ نسخه" nor the
+    "نسخه‌های ساخته‌شده از این فایل" panel at all; an asset with a two-entry ancestor
+    chain renders each ancestor as a link to `/api/media/<id>/file` and does **not**
+    render the open asset's own name as a link (it is already open in this drawer); an
+    asset with two descendants renders both, each linked to its own file. All 21 pass;
+    the pre-existing 18 tests needed **no changes** — their fetch mocks don't answer the
+    new `/api/media/asset-1/lineage` URL, but `src/app/dashboard/ui.tsx`'s `api()` helper
+    already swallows any fetch rejection into `{ ok: false }` rather than throwing, so
+    `lineage` just stays `null` and the new panel's render-gate correctly shows nothing —
+    verified, not assumed, by running the full pre-existing suite unmodified.
 
 No tests were skipped, stubbed, or marked as TODO anywhere in this program. Media now has
 four dedicated component-test files (`media-manager.test.tsx`'s crop/upload-panel
@@ -1478,6 +1541,33 @@ report described earlier is closed, not merely tested-and-left-as-is.
     tests passed, 1 pre-existing unrelated skip**, unchanged from item 20, as expected for
     a client-only fix. `npm run build` was not re-attempted this step (unchanged reasoning).
 
+22. **Version-history (lineage) UI** (this session, no schema change): `npx tsc --noEmit`
+    clean and `npx eslint` clean on `src/lib/media-service.ts`,
+    `src/app/api/media/[id]/lineage/route.ts`, its new test file, and
+    `integration/media-library.integration.test.ts` after adding
+    `getMediaAssetLineage`/the new route/its unit tests
+    (`src/app/api/media/[id]/lineage/route.test.ts`, 4/4 passed) and after wiring the
+    manager UI (`npx tsc --noEmit` and `npx eslint` both clean on
+    `media-manager.tsx`/`media-manager.test.tsx`). New DB-backed lineage tests appended
+    to `integration/media-library.integration.test.ts` were run against a real,
+    freshly-migrated Postgres database this step: **47/47 passed** (up from 43, the +4
+    lineage tests, 0 regressions). New UI tests appended to `media-manager.test.tsx`
+    (a dedicated `describe("AssetDrawer version history (lineage)")` block, 3 tests) ran
+    alongside the pre-existing 18 unmodified: **21/21 passed**. Full final regression run
+    this step, in order: whole-repo `npx tsc --noEmit` clean; whole-repo `npx eslint .`
+    clean; full unit suite (`npx vitest run`) — **442/442 files, 6142/6142 tests passed**,
+    0 regressions; full DB integration suite against a freshly re-migrated database
+    (`npx vitest run --config vitest.db.config.ts`, `npm run db:migrate` reporting
+    "Nothing to do — schema is up to date" since this step added no migration) —
+    **134/134 files, 1580/1581 tests passed, 1 pre-existing unrelated skip** (up from
+    1576, the +4 lineage integration tests, 0 regressions); `npm run build` (with
+    `NODE_OPTIONS=--max-old-space-size=6144`, the same heap-ceiling workaround an earlier
+    session in this program established as this sandbox's actual constraint, not a code
+    problem — see the retracted "build could not be completed" item this report's
+    Section V once carried) — **succeeded**, only the same two pre-existing
+    Edge-Runtime-API warnings from `jose` (unrelated to Media, present before this
+    program started) and no errors.
+
 Net effect on the test suite across this whole program: **+35 unit tests from earlier
 sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx`
 0→10 counting an earlier step's +4, `media-uploader.test.ts` 0→8) plus +23 unit tests from
@@ -1498,9 +1588,11 @@ session's invoice-OCR test-coverage closure (item 18), plus +9 unit tests and +6
 integration tests from this session's invoice-OCR storage migration (item 19), plus +2
 net unit tests and +9 integration tests from this session's CRM party avatar storage
 migration (item 20), plus +6 unit tests from this session's Workspace document-register
-audit and UI fix (item 21 above) —
+audit and UI fix (item 21), plus +7 unit tests (4 route + 3 manager UI) and +4
+integration tests from this session's version-history/lineage UI (item 22 above) —
 0 net regressions** at every checkpoint where the full suite was re-run (final state:
-**441 unit-suite files / 6134 tests, 134 DB integration files / 1576 tests, both fully
+**442 unit-suite files / 6142 tests, 134 DB integration files / 1580 tests (1 pre-existing
+unrelated skip), both fully
 green**).
 
 ## V. Second audit / genuine remaining work
@@ -1549,14 +1641,22 @@ full-suite re-run this session, after every change, was green.
   `0176`): `POST /api/media/[id]/bg-remove`, `.../upscale`, `.../variations`, all on the
   existing wallet-preflight-before-cost, new-derived-asset, source-untouched shape
   `enhance` already used, wired into the asset drawer with per-variant badges. See
-  Sections D, L, Q, T, U item 16. Genuinely still open within this closed item: no
+  Sections D, L, Q, T, U item 16. ~~Genuinely still open within this closed item: no
   version-history UI walking a derived asset back through its full ancestor chain (crop →
-  enhance → upscale, etc.) beyond the existing per-asset "usage" panel; "upscale" is a
-  generative resharpen through the same image-edit model `enhance` uses, not a dedicated
-  super-resolution model (disclosed in Section L, not a claim this report walks back
-  from); and once an asset has any of the four AI/transform variants, this drawer does
-  not offer a second round of AI edits on it (a deliberate, disclosed scope boundary
-  mirroring `enhance`'s own pre-existing restriction, not an oversight).
+  enhance → upscale, etc.) beyond the existing per-asset "usage" panel~~ — **also closed,
+  this session (item 22, Sections L, T, U)**: `getMediaAssetLineage` walks
+  `source_asset_id` in both directions (root-first ancestor chain, direct-descendant
+  list), `GET /api/media/[id]/lineage` exposes it, and the asset drawer renders a
+  "سابقهٔ نسخه" panel with a link to every ancestor's and descendant's own file, lazily
+  fetched the same way the pre-existing "usage" panel already is. Still genuinely true
+  and unchanged: "upscale" is a generative resharpen through the same image-edit model
+  `enhance` uses, not a dedicated super-resolution model (disclosed in Section L, not a
+  claim this report walks back from); once an asset has any of the four AI/transform
+  variants, this drawer does not offer a second round of AI edits on it (a deliberate,
+  disclosed scope boundary mirroring `enhance`'s own pre-existing restriction, not an
+  oversight); and there is still no UI to pick which of several variation results to
+  "keep" beyond deleting unwanted ones from the grid — read-only lineage disclosure was
+  the requested/missing piece, not a new curation workflow.
 - ~~**Centralized OCR/document intelligence** for Accounting/CRM/Workspace — not built;
   `ai-receipt.ts` remains a deliberately ephemeral, single-purpose helper by its own
   documented design.~~ **Closed for both existing OCR flows this session** (migrations
@@ -1598,9 +1698,23 @@ full-suite re-run this session, after every change, was green.
 - **E2E, mobile, and accessibility test coverage specific to Media** — never attempted;
   only the repo's pre-existing generic design-lint/RTL/dark-mode suites (which happen to
   cover every dashboard page, including media) were re-run.
-- **CI configuration** — untouched; no new CI job or gate was added for any of this
-  program's new tests (they run under the same `npm test`/`npm run test:db` commands CI
-  already invokes, but no new named CI step highlights them specifically).
+- **CI configuration — verified this session, corrected from an earlier draft's
+  overstated gap**: no *new* CI job or named check was added specifically for Media (no
+  workflow file was edited). But `.github/workflows/test.yml`'s `unit-tests` job runs
+  `npm test` (`vitest run`, configured with `include: ["src/**/*.test.ts",
+  "src/**/*.test.tsx"]`) and its `integration-tests` job runs `npm run db:migrate` then
+  `npm run test:db` (`vitest run --config vitest.db.config.ts`, `include:
+  ["integration/**/*.test.ts"]`) — both are wildcard globs, not explicit file lists, so
+  every test this program added (`media.test.ts`, `media-manager.test.tsx`,
+  `route.test.ts` for every new Media route, `parties.integration.test.ts`'s two new
+  blocks, `documents-section.test.tsx`, all of it) already runs in CI on every PR and
+  every push to `main`/`arena/**` with **no workflow edit required**, and
+  `integration-tests` re-applies every migration through `0181` twice in a row (the
+  second run "must be a no-op" step), which is exactly the idempotency proof a new
+  migration needs. What genuinely does not exist is a *named*, Media-specific check the
+  way `api-guard-tests`/`design-checks`/`data-transfer-tests` each get one for
+  legibility — a reporting/legibility choice this session did not make, not a coverage
+  gap in what actually runs.
 - ~~**`npm run build` could not be completed in this sandbox**~~ — **resolved this
   session**, not by a code change but by raising the heap ceiling for the one command
   that needed it: it had been attempted 4+ times across earlier sessions and OOM-killed

@@ -297,6 +297,100 @@ describe("AssetDrawer AI edit operations", () => {
   });
 });
 
+/**
+ * The version-history panel (Section V's disclosed "no version-history UI"
+ * gap, closed this session): `getMediaAssetLineage`'s ancestor chain and
+ * direct-descendant list, rendered lazily the same way the usage panel next
+ * to it already is.
+ */
+describe("AssetDrawer version history (lineage)", () => {
+  function lineageFetch(lineage: { ancestors: unknown[]; descendants: unknown[] }) {
+    return vi.fn(async (url: string) => {
+      if (url === "/api/media/asset-1/usage") {
+        return { ok: true, status: 200, json: async () => ({ usage: { menuItems: [], inventoryItems: [], expenses: [], purchases: [] } }) };
+      }
+      if (url === "/api/media/asset-1/collections") {
+        return { ok: true, status: 200, json: async () => ({ collections: [] }) };
+      }
+      if (url === "/api/media/asset-1/wordpress") {
+        return { ok: true, status: 200, json: async () => ({ connections: [] }) };
+      }
+      if (url === "/api/media/asset-1/lineage") {
+        return { ok: true, status: 200, json: async () => ({ lineage }) };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  }
+
+  it("shows no version-history panel at all for an asset with no ancestors and no descendants", async () => {
+    vi.stubGlobal("fetch", lineageFetch({ ancestors: [], descendants: [] }));
+    render(
+      <AssetDrawer asset={baseAsset()} folders={[]} collections={[]} enhancePriceRial={0} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    await waitFor(() =>
+      expect(vi.mocked(fetch).mock.calls.some(([url]) => url === "/api/media/asset-1/lineage")).toBe(true),
+    );
+    expect(screen.queryByText(/سابقهٔ نسخه/)).toBeNull();
+    expect(screen.queryByText(/نسخه‌های ساخته‌شده از این فایل/)).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the full ancestor chain root-first, ending on the open asset itself, each ancestor linked to its own file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      lineageFetch({
+        ancestors: [
+          { id: "root-1", fileName: "اصلی.png", variant: "original" },
+          { id: "crop-1", fileName: "برش.png", variant: "transformed" },
+        ],
+        descendants: [],
+      }),
+    );
+    render(
+      <AssetDrawer
+        asset={baseAsset({ fileName: "بزرگ‌نمایی.png", variant: "upscaled" })}
+        folders={[]}
+        collections={[]}
+        enhancePriceRial={0}
+        onClose={() => {}}
+        onUpdated={() => {}}
+        onDeleted={() => {}}
+      />,
+    );
+    await screen.findByText(/سابقهٔ نسخه/);
+    const rootLink = screen.getByRole("link", { name: /اصلی\.png/ });
+    expect(rootLink.getAttribute("href")).toBe("/api/media/root-1/file");
+    const cropLink = screen.getByRole("link", { name: /برش\.png/ });
+    expect(cropLink.getAttribute("href")).toBe("/api/media/crop-1/file");
+    // The open asset itself is named in the chain but is not a link — it is
+    // already open, right here, in this same drawer.
+    const lineagePanel = (await screen.findByText(/سابقهٔ نسخه/)).closest("p") as HTMLElement;
+    expect(within(lineagePanel).getByText(/بزرگ‌نمایی\.png/).closest("a")).toBeNull();
+    expect(within(lineagePanel).queryByRole("link", { name: /بزرگ‌نمایی\.png/ })).toBeNull();
+  });
+
+  it("lists every direct descendant, each linked to its own file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      lineageFetch({
+        ancestors: [],
+        descendants: [
+          { id: "child-1", fileName: "برش.png", variant: "transformed" },
+          { id: "child-2", fileName: "بزرگ‌نمایی.png", variant: "upscaled" },
+        ],
+      }),
+    );
+    render(
+      <AssetDrawer asset={baseAsset()} folders={[]} collections={[]} enhancePriceRial={0} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    await screen.findByText(/نسخه‌های ساخته‌شده از این فایل/);
+    const cropLink = screen.getByRole("link", { name: /برش\.png/ });
+    expect(cropLink.getAttribute("href")).toBe("/api/media/child-1/file");
+    const upscaleLink = screen.getByRole("link", { name: /بزرگ‌نمایی\.png/ });
+    expect(upscaleLink.getAttribute("href")).toBe("/api/media/child-2/file");
+  });
+});
+
 describe("AssetDrawer crop tool", () => {
   it("hides the crop button for non-image assets", () => {
     render(

@@ -76,6 +76,19 @@ interface MediaAssetUsage {
   parties: MediaAssetUsageRef[];
 }
 
+/** A version-history entry — an ancestor or a direct descendant of the open asset. */
+interface MediaAssetLineageEntry {
+  id: string;
+  fileName: string;
+  variant: MediaAssetVariant;
+}
+
+/** `getMediaAssetLineage`'s shape — the drawer's "سابقهٔ نسخه‌ها" panel. */
+interface MediaAssetLineage {
+  ancestors: MediaAssetLineageEntry[];
+  descendants: MediaAssetLineageEntry[];
+}
+
 interface CollectionRow {
   id: string;
   name: string;
@@ -119,6 +132,24 @@ const UPLOAD_STATUS_LABELS: Record<UploadProgressEvent["status"], string> = {
   error: "ناموفق",
   canceled: "لغو شد",
 };
+
+/** Persian label for a lineage entry's variant — same wording the grid's own badges use. */
+function lineageVariantLabel(variant: MediaAssetVariant): string {
+  switch (variant) {
+    case "enhanced":
+      return "استاندارد";
+    case "bg_removed":
+      return "بدون پس‌زمینه";
+    case "upscaled":
+      return "بزرگ‌نمایی‌شده";
+    case "variation":
+      return "تنوع";
+    case "transformed":
+      return "ویرایش‌شده";
+    default:
+      return "اصلی";
+  }
+}
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) return `${toPersianDigits((bytes / (1024 * 1024 * 1024)).toFixed(2))} گیگابایت`;
@@ -1478,6 +1509,7 @@ export function AssetDrawer({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [usage, setUsage] = useState<MediaAssetUsage | null>(null);
+  const [lineage, setLineage] = useState<MediaAssetLineage | null>(null);
   const [assetCollections, setAssetCollections] = useState<{ id: string; name: string }[] | null>(null);
   const [wpConnections, setWpConnections] = useState<WpPushConnection[] | null>(null);
   const [wpBusyId, setWpBusyId] = useState<string | null>(null);
@@ -1534,6 +1566,16 @@ export function AssetDrawer({
     setUsage(null);
     api<{ usage: MediaAssetUsage }>(`/api/media/${asset.id}/usage`).then(({ ok, data }) => {
       if (ok) setUsage(data.usage);
+    });
+  }, [asset.id]);
+
+  // Version history ("what was this made from, and what was made from it?"),
+  // lazily loaded the same way — most assets have none of either, so this is
+  // never worth bundling into the grid payload every card would pay for.
+  useEffect(() => {
+    setLineage(null);
+    api<{ lineage: MediaAssetLineage }>(`/api/media/${asset.id}/lineage`).then(({ ok, data }) => {
+      if (ok) setLineage(data.lineage);
     });
   }, [asset.id]);
 
@@ -1897,6 +1939,54 @@ export function AssetDrawer({
               .map((r) => r.name)
               .join("، ")}
           </p>
+        ) : null}
+
+        {lineage && (lineage.ancestors.length > 0 || lineage.descendants.length > 0) ? (
+          <div className="mb-4 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+            {lineage.ancestors.length > 0 ? (
+              <p className="mb-1">
+                سابقهٔ نسخه:{" "}
+                {[...lineage.ancestors, { id: asset.id, fileName: asset.fileName, variant: asset.variant }]
+                  .map((entry, index, all) => (
+                    <span key={entry.id}>
+                      {entry.id === asset.id ? (
+                        <span className="font-medium text-foreground">
+                          {entry.fileName} ({lineageVariantLabel(entry.variant)})
+                        </span>
+                      ) : (
+                        <a
+                          href={`/api/media/${entry.id}/file`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary underline-offset-2 hover:underline"
+                        >
+                          {entry.fileName} ({lineageVariantLabel(entry.variant)})
+                        </a>
+                      )}
+                      {index < all.length - 1 ? " ← " : ""}
+                    </span>
+                  ))}
+              </p>
+            ) : null}
+            {lineage.descendants.length > 0 ? (
+              <p>
+                نسخه‌های ساخته‌شده از این فایل:{" "}
+                {lineage.descendants.map((entry, index) => (
+                  <span key={entry.id}>
+                    <a
+                      href={`/api/media/${entry.id}/file`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary underline-offset-2 hover:underline"
+                    >
+                      {entry.fileName} ({lineageVariantLabel(entry.variant)})
+                    </a>
+                    {index < lineage.descendants.length - 1 ? "، " : ""}
+                  </span>
+                ))}
+              </p>
+            ) : null}
+          </div>
         ) : null}
 
         {/* The AI proposal, awaiting the operator */}
