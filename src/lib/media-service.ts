@@ -347,29 +347,41 @@ export interface MediaAssetUsage {
    * invoice photo (`purchases.invoice_asset_id`). `name` is the purchase's
    * own note when set, else its id, since a purchase has no title either. */
   purchases: MediaAssetUsageRef[];
+  /** Migration 0181 — parties whose avatar this asset is
+   * (`parties.profile_image_asset_id`). `name` is the party's own
+   * display name. */
+  parties: MediaAssetUsageRef[];
 }
 
 /**
  * Every catalogue row pointing at this asset through `image_media_id`, plus
- * every expense recorded from it as a receipt (`receipt_asset_id`) and every
- * draft purchase scanned from it as a supplier invoice (`invoice_asset_id`).
+ * every expense recorded from it as a receipt (`receipt_asset_id`), every
+ * draft purchase scanned from it as a supplier invoice (`invoice_asset_id`),
+ * and every party whose avatar it is (`profile_image_asset_id`).
  * `menu_items`/`inventory_items`/`purchases` carry no `business_id` column of
  * their own (they scope through `location_id` → `locations.business_id`), so
  * this relies on RLS — already true of every other read of these tables
  * (see branch-service.ts, ai-tools.ts) — rather than filtering twice.
- * `expenses` does carry `business_id` directly but is scoped the same way
- * for symmetry with its siblings — the caller already resolved this asset
- * against the tenant before ever calling this function.
+ * `expenses` and `parties` do carry `business_id` directly but are scoped the
+ * same way for symmetry with their siblings — the caller already resolved
+ * this asset against the tenant before ever calling this function.
  *
  * This is also the authorization primitive behind `/api/media/[id]/file`:
  * an operational role that cannot browse the library may still render a
  * photo already referenced by a record their own permission (menu.view,
- * inventory.view, ledger.view) already lets them see. Purchases reuse
- * inventory.view — the same permission that already gates GET
- * /api/inventory/purchases — rather than a fourth permission just for this.
+ * inventory.view, ledger.view, parties.view) already lets them see.
+ * Purchases reuse inventory.view — the same permission that already gates
+ * GET /api/inventory/purchases — rather than a fourth permission just for
+ * this.
  */
 export async function getMediaAssetUsage(assetId: string): Promise<MediaAssetUsage> {
-  const [{ rows: menuItems }, { rows: inventoryItems }, { rows: expenses }, { rows: purchases }] = await Promise.all([
+  const [
+    { rows: menuItems },
+    { rows: inventoryItems },
+    { rows: expenses },
+    { rows: purchases },
+    { rows: parties },
+  ] = await Promise.all([
     query<MediaAssetUsageRef>(`SELECT id, name FROM menu_items WHERE image_media_id = $1 ORDER BY name`, [assetId]),
     query<MediaAssetUsageRef>(`SELECT id, name FROM inventory_items WHERE image_media_id = $1 ORDER BY name`, [
       assetId,
@@ -383,8 +395,11 @@ export async function getMediaAssetUsage(assetId: string): Promise<MediaAssetUsa
         ORDER BY purchase_date DESC`,
       [assetId],
     ),
+    query<MediaAssetUsageRef>(`SELECT id, name FROM parties WHERE profile_image_asset_id = $1 ORDER BY name`, [
+      assetId,
+    ]),
   ]);
-  return { menuItems, inventoryItems, expenses, purchases };
+  return { menuItems, inventoryItems, expenses, purchases, parties };
 }
 
 export function mediaAssetUsageIsEmpty(usage: MediaAssetUsage): boolean {
@@ -392,7 +407,8 @@ export function mediaAssetUsageIsEmpty(usage: MediaAssetUsage): boolean {
     usage.menuItems.length === 0 &&
     usage.inventoryItems.length === 0 &&
     usage.expenses.length === 0 &&
-    usage.purchases.length === 0
+    usage.purchases.length === 0 &&
+    usage.parties.length === 0
   );
 }
 

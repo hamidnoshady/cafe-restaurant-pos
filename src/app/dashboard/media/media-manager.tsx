@@ -72,6 +72,8 @@ interface MediaAssetUsage {
   expenses: MediaAssetUsageRef[];
   /** Migration 0179 — draft purchases scanned from this asset's invoice photo. */
   purchases: MediaAssetUsageRef[];
+  /** Migration 0181 — parties whose avatar this asset is. */
+  parties: MediaAssetUsageRef[];
 }
 
 interface CollectionRow {
@@ -1574,7 +1576,8 @@ export function AssetDrawer({
     ? usage.menuItems.length +
       usage.inventoryItems.length +
       (usage.expenses?.length ?? 0) +
-      (usage.purchases?.length ?? 0)
+      (usage.purchases?.length ?? 0) +
+      (usage.parties?.length ?? 0)
     : 0;
 
   async function save() {
@@ -1821,6 +1824,7 @@ export function AssetDrawer({
           ...data.usage.inventoryItems,
           ...(data.usage.expenses ?? []),
           ...(data.usage.purchases ?? []),
+          ...(data.usage.parties ?? []),
         ]
           .map((r) => r.name)
           .join("، ");
@@ -1883,7 +1887,13 @@ export function AssetDrawer({
 
         {usageCount > 0 ? (
           <p className="mb-4 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-            استفاده در: {[...usage!.menuItems, ...usage!.inventoryItems, ...(usage!.expenses ?? [])]
+            استفاده در: {[
+              ...usage!.menuItems,
+              ...usage!.inventoryItems,
+              ...(usage!.expenses ?? []),
+              ...(usage!.purchases ?? []),
+              ...(usage!.parties ?? []),
+            ]
               .map((r) => r.name)
               .join("، ")}
           </p>

@@ -12,8 +12,9 @@ import { GET } from "./route";
  * permissions. A cashier/waiter/kitchen member holds `menu.view` but never
  * `media.view` — they must still be able to render a menu item's own photo.
  * The same shape now extends to `inventory.view` (an inventory item's photo,
- * and — as of migration 0179 — a draft purchase's own scanned invoice photo)
- * and, as of migration 0177, `ledger.view` (an expense's receipt photo) —
+ * and — as of migration 0179 — a draft purchase's own scanned invoice photo),
+ * `ledger.view` (as of migration 0177, an expense's receipt photo), and
+ * `parties.view` (as of migration 0181, a party's own uploaded avatar) —
  * each gated on `getMediaAssetUsage` actually naming THIS asset for a record
  * that permission covers, never a blanket grant.
  */
@@ -33,7 +34,7 @@ vi.mock("@/lib/media-service", () => ({
 const SESSION = { businessId: "biz-1", sub: "user-1", role: "member" };
 const IMAGE_ASSET = { id: "asset-1", kind: "image" as const, mimeType: "image/png", fileName: "photo.png" };
 const DOC_ASSET = { id: "asset-2", kind: "document" as const, mimeType: "application/pdf", fileName: "doc.pdf" };
-const EMPTY_USAGE = { menuItems: [], inventoryItems: [], expenses: [], purchases: [] };
+const EMPTY_USAGE = { menuItems: [], inventoryItems: [], expenses: [], purchases: [], parties: [] };
 
 function membershipWith(...perms: string[]) {
   return { permissions: new Set(perms) };
@@ -79,6 +80,7 @@ describe("GET /api/media/[id]/file — usage-based permission model", () => {
       inventoryItems: [],
       expenses: [],
       purchases: [],
+      parties: [],
     } as never);
     const used = await GET(req(), ctx());
     expect(used.status).toBe(200);
@@ -99,6 +101,7 @@ describe("GET /api/media/[id]/file — usage-based permission model", () => {
       inventoryItems: [{ id: "ii-1", name: "شکر" }],
       expenses: [],
       purchases: [],
+      parties: [],
     } as never);
     const res = await GET(req(), ctx());
     expect(res.status).toBe(200);
@@ -115,12 +118,35 @@ describe("GET /api/media/[id]/file — usage-based permission model", () => {
       inventoryItems: [],
       expenses: [],
       purchases: [{ id: "po-1", name: "فاکتور تأمین‌کننده" }],
+      parties: [],
     } as never);
     const used = await GET(req(), ctx());
     expect(used.status).toBe(200);
 
     // Same permission as an inventory item's own photo, but never a blanket
     // grant — it must be THIS asset a purchase actually points at.
+    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue(EMPTY_USAGE as never);
+    const unused = await GET(req(), ctx());
+    expect(unused.status).toBe(403);
+  });
+
+  it("migration 0181: a parties.view-only member reads an image a party recorded as its avatar", async () => {
+    vi.mocked(auth.requireMember).mockResolvedValue({
+      session: SESSION,
+      membership: membershipWith(PERMISSIONS.partiesView),
+      error: null,
+    } as never);
+    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({
+      menuItems: [],
+      inventoryItems: [],
+      expenses: [],
+      purchases: [],
+      parties: [{ id: "party-1", name: "شرکت آزمایشی" }],
+    } as never);
+    const used = await GET(req(), ctx());
+    expect(used.status).toBe(200);
+
+    // The permission alone is not a blanket grant — it must be THIS asset.
     vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue(EMPTY_USAGE as never);
     const unused = await GET(req(), ctx());
     expect(unused.status).toBe(403);
@@ -138,6 +164,7 @@ describe("GET /api/media/[id]/file — usage-based permission model", () => {
       inventoryItems: [],
       expenses: [{ id: "exp-1", name: "خرید ملزومات" }],
       purchases: [],
+      parties: [],
     } as never);
     const used = await GET(req(), ctx());
     expect(used.status).toBe(200);
@@ -173,6 +200,7 @@ describe("GET /api/media/[id]/file — usage-based permission model", () => {
       inventoryItems: [],
       expenses: [],
       purchases: [],
+      parties: [],
     } as never);
     const res = await GET(req(), ctx());
     expect(res.status).toBe(403);

@@ -24,12 +24,14 @@ import { getMediaAssetUsage, getMediaConfig, isMediaStorageReady, readMediaObjec
  *      (`MenuItemImage` → this route), and an inventory screen renders an
  *      item's own photo the same way; an accountant with `ledger.view` but
  *      not `media.view` can likewise open a recorded expense's receipt photo
- *      (migration 0177), and a purchaser with `inventory.view` can open a
- *      draft purchase's own scanned invoice photo (migration 0179). Those
- *      roles hold `menu.view` / `inventory.view` / `ledger.view`; whether
- *      THIS SPECIFIC asset is the photo of a menu item, inventory item,
- *      expense receipt, or purchase invoice they are already authorized to
- *      see is what `getMediaAssetUsage` answers.
+ *      (migration 0177), a purchaser with `inventory.view` can open a
+ *      draft purchase's own scanned invoice photo (migration 0179), and a
+ *      CRM editor with `parties.view` can open a party's own uploaded avatar
+ *      (migration 0181). Those roles hold `menu.view` / `inventory.view` /
+ *      `ledger.view` / `parties.view`; whether THIS SPECIFIC asset is the
+ *      photo of a menu item, inventory item, expense receipt, purchase
+ *      invoice, or party avatar they are already authorized to see is what
+ *      `getMediaAssetUsage` answers.
  *
  * Neither path ever grants the DOCUMENT kinds this cheaply — a PDF/DOCX read
  * always requires `media.view`, because "used by a catalogue item" is not a
@@ -69,7 +71,8 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
       (usage.menuItems.length > 0 && membership.permissions.has(PERMISSIONS.menuView)) ||
       (usage.inventoryItems.length > 0 && membership.permissions.has(PERMISSIONS.inventoryView)) ||
       (usage.expenses.length > 0 && membership.permissions.has(PERMISSIONS.ledgerView)) ||
-      (usage.purchases.length > 0 && membership.permissions.has(PERMISSIONS.inventoryView));
+      (usage.purchases.length > 0 && membership.permissions.has(PERMISSIONS.inventoryView)) ||
+      (usage.parties.length > 0 && membership.permissions.has(PERMISSIONS.partiesView));
     if (!authorizedByUsage) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }

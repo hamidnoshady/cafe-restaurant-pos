@@ -113,9 +113,22 @@ What actually changed, in the order it was built:
     `GET /api/media/[id]/file`, rather than inventing a new permission. This closes the
     "invoice-OCR still ephemeral by design" gap this report previously listed under
     Section V as open. See Sections D, M, N, O.1, Q, T, U item 19.
+14. **CRM party avatar migrated onto canonical Media storage** (this session, migration
+    `0181`, immediately after item 13): the fourth per-flow migration this session, and
+    the one this report's own Section V had listed as open the longest. A new avatar
+    upload in the party form now goes through the same `MediaImageField`/
+    `MediaPickerDialog` every catalogue item's photo already used, becoming a real,
+    tenant-scoped, deduplicated Media Library asset (`parties.profile_image_asset_id`)
+    instead of a second base64 store living inside the `parties` row; the pre-existing
+    `profile_image` text column (a `data:`/`https://` value, migration `0137`) is kept
+    for backward compatibility and genuine external links, made mutually exclusive with
+    the new column at the write layer rather than dropped. `GET /api/media/[id]/file`
+    gained the matching `parties.view` usage exception. This closes the "CRM party
+    avatars ... still independent" gap this report previously listed under Section V as
+    open. See Sections D, N, O.1, O.2, T, U item 20.
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
-`0174`–`0180`, a full naming-system rebuild, CRM business-card scanning or Workspace
+`0174`–`0181`, a full naming-system rebuild, CRM business-card scanning or Workspace
 contract extraction (neither feature exists yet to migrate onto the now-twice-proven
 OCR-to-canonical-storage pattern), a shared "document-intelligence" abstraction above the
 two independently-built `runReceiptOcr`/`runInvoiceOcr` services, dead-route removal, or
@@ -216,6 +229,7 @@ Three new migration files, all applied and verified against a real local Postgre
 | `0178_media_source_ocr_receipt.sql` **(new, this session)** | Widens `media_assets_source_check` (from `0161`) to also allow `'ocr_receipt'` — the same drop-and-recreate-the-CHECK shape `0175`/`0176` already used for `variant`, applied to `source` instead. Gives a receipt photo its own honest provenance value distinct from `ai_attachment` (a chat-dropped photo) — no chat turn is involved in the receipt-OCR flow at all |
 | `0179_purchase_invoice_asset.sql` **(new, this session)** | `purchases.invoice_asset_id uuid REFERENCES media_assets(id) ON DELETE SET NULL` (nullable, additive) + partial index `idx_purchases_invoice_asset`; the exact same shape as `0177`, one migration cycle later, for the parallel invoice-OCR flow — closes the storage half of what Section M/V previously listed as "invoice-OCR still ephemeral by original design" |
 | `0180_media_source_ocr_invoice.sql` **(new, this session)** | Widens `media_assets_source_check` again to also allow `'ocr_invoice'` — the same shape as `0178`, distinguishing a purchaser's scanned invoice photo from an accountant's receipt photo (both `ocr_*`, neither `ai_attachment`) |
+| `0181_party_profile_image_asset.sql` **(new, this session)** | `parties.profile_image_asset_id uuid REFERENCES media_assets(id) ON DELETE SET NULL` (nullable, additive) plus partial index `idx_parties_profile_image_asset`; no `source` widening needed since a manually uploaded avatar is `source='upload'`, same as any other picked-from-library photo. Closes the storage half of the CRM avatar gap Section V previously listed as open |
 
 `0177` and `0178` were applied and verified against a real local `embedded-postgres`
 instance this session: a full 219-migration forward-apply from empty (fresh
@@ -245,6 +259,17 @@ never cascade into losing a purchase's stock/financial effects), and — for `01
 1 pre-existing unrelated skip) were re-run against a database with all four
 `0177`–`0180` migrations applied and are unaffected (Section U item 19). `purchases` is
 already `tenant_isolation`-protected; no RLS policy change was needed for either.
+
+`0181` was applied and verified the same way, one more migration cycle later this same
+session: a full 222-migration forward-apply from empty (fresh `npm run db:dev:start` +
+`npx tsx scripts/migrate.ts`), `information_schema`/`pg_indexes`/`pg_constraint` queried
+directly confirming `parties.profile_image_asset_id` is `uuid`/nullable, the partial index
+`idx_parties_profile_image_asset` exists exactly as written, and the FK
+`parties_profile_image_asset_id_fkey` has `confdeltype = 'n'` (`ON DELETE SET NULL` — a
+purged photo must never cascade into losing a CRM contact record). The complete `test:db`
+suite (134 files / 1576 tests + 1 pre-existing unrelated skip) was re-run against a
+database with all five `0177`–`0181` migrations applied and is unaffected (Section U item
+20). `parties` is already `tenant_isolation`-protected; no RLS policy change was needed.
 
 `0176` was verified this session (local `embedded-postgres` instance, no Docker/system
 package required — `npm run db:dev:start` then `DATABASE_URL=... npx tsx scripts/migrate.ts`
@@ -642,7 +667,7 @@ migrate onto a shared pipeline — new scope, not a gap in what already exists).
 | Website builder (`website/content-service.ts`, distinct first-party CMS, not WordPress) | **No** — pushes bytes to an external headless-CMS adapter by design (not this app's own storage); its byte-signature check now delegates to the canonical one (Section O.2), but its upload target is genuinely external, not a duplicate of local storage |
 | Accounting — expense receipt OCR | **Yes, this session** — `POST /api/ai/receipt-ocr` persists the photo via `storeMediaAsset` (tenant-scoped SHA-256 dedup, `source='ocr_receipt'`, migration 0178); the resulting expense links back to it via `expenses.receipt_asset_id` (migration 0177); `expense-section.tsx`'s upload control benefits from the same usage-based permission model B.1 describes (`ledger.view` can render a receipt photo without `media.view`, Section O.1) |
 | Inventory — supplier invoice OCR (`ai-invoice-ocr*`, purchases) | **Yes, this session** — test-coverage gap closed first (`ai-invoice-ocr-service.test.ts` + `invoice-ocr/route.test.ts`, 17 tests, Section M/T/U item 18), then `POST /api/ai/invoice-ocr` migrated onto canonical storage the same session (`storeMediaAsset`, tenant-scoped SHA-256 dedup, `source='ocr_invoice'`, migration 0180); the resulting draft purchase links back via `purchases.invoice_asset_id` (migration 0179); the purchases form's invoice-scan panel benefits from the same usage-based permission model B.1 describes (`inventory.view` can render a purchase's own invoice photo without `media.view`, Section O.1) |
-| CRM (party profile image) | **No** — inline `data:` URL on the party row, same architecture as the business logo (not S3-backed); this session added the server-side validation it was missing (Section O.2) but did not migrate it onto the Media Library |
+| CRM (party profile image) | **Yes, this session** — `parties.profile_image_asset_id uuid REFERENCES media_assets(id)` (migration 0181) alongside the pre-existing `profile_image` text column, mutually exclusive on one row (`normalizePartyWrite` always nulls the other when one is set); `party-form.tsx`'s avatar control now uses the same `MediaImageField`/`MediaPickerDialog` every catalogue item's photo uses for a *new* upload, with the legacy `data:`/`https://` value (migration 0137) still rendered as-is for a party that already had one and an explicit "replace with a library photo" action rather than a forced migration; the file-download route benefits from the same usage-based permission model B.1/O.1 describe (`parties.view` can render a party's own avatar without `media.view`) |
 | CRM — business-card scanning | **N/A, not a migration** — no such feature/entry point exists anywhere in the app yet (Section M); nothing to migrate onto the canonical library until it is built |
 | Workspace — contract extraction | **N/A, not a migration** — no such feature exists yet either (Section M) |
 | Workspace (files generally) | Not audited this session |
@@ -664,11 +689,14 @@ migrate onto a shared pipeline — new scope, not a gap in what already exists).
   per request against the database, not by role name. An accountant who can see an
   expense's own receipt photo, or a purchaser who can see a draft purchase's own scanned
   invoice photo, can now actually open it without also needing `media.view`, the same fix
-  B.1 already gave the cashier/waiter/kitchen roles for menu/inventory photos; a new
-  `src/app/api/media/[id]/file/route.test.ts` (8 tests — the route had **no direct test
-  at all** before this program, only incidental integration coverage) pins all four usage
-  branches plus the document-always-requires-`media.view` rule and the "the permission
-  alone is not a blanket grant, it must be *this* asset" behaviour for each one.
+  B.1 already gave the cashier/waiter/kitchen roles for menu/inventory photos; and — added
+  later this same session, migration 0181 — has `parties.view` and the asset is a party's
+  own `profile_image_asset_id`, so a CRM-only member can see a contact's avatar without
+  also needing `media.view`. A new `src/app/api/media/[id]/file/route.test.ts` (9 tests —
+  the route had **no direct test at all** before this program, only incidental integration
+  coverage) pins all five usage branches plus the document-always-requires-`media.view`
+  rule and the "the permission alone is not a blanket grant, it must be *this* asset"
+  behaviour for each one.
 
 This does not weaken tenant isolation: the usage lookup is itself tenant-scoped by RLS,
 and a caller must still separately hold the relevant `*.view` permission.
@@ -703,6 +731,24 @@ rather than weakened.
    integration tests against a real database (valid PNG accepted, valid https link
    accepted, a fake PNG rejected on create, a non-image string rejected, a fake JPEG
    rejected on update).
+3. **Migrated the storage, not just the validation (migration 0181, this session).**
+   `createParty`/`updateParty` now accept `profileImageAssetId`, resolved through a new
+   `assertProfileImageAssetOwned(businessId, assetId)` in `parties-service.ts` — a no-op
+   when the id is absent, otherwise a tenant-scoped `getMediaAsset` lookup that throws the
+   same `PartyValidationError("invalid_image", "profileImage")` when the asset does not
+   exist, belongs to a different business, or is not `kind='image'` (a document asset is
+   rejected the same as a fake-signature `data:` URL always was). `normalizePartyWrite`
+   makes the two storage mechanisms mutually exclusive on one row by construction: a
+   truthy `profileImageAssetId` always forces `profileImage` to `null` in the same write,
+   so the database can never carry both at once no matter which order a client sends them
+   in. Verified with 9 new integration tests against a real database: link + read back via
+   `getMediaAssetUsage`, legacy value cleared when an asset is linked in the same write,
+   asset cleared when a later edit picks the legacy link path instead, an unrelated edit
+   leaves an existing avatar alone, a cross-tenant asset id rejected, a nonexistent asset
+   id rejected, a document-kind asset rejected, the check also runs on update not just
+   create, and deleting the underlying asset leaves the party row intact with the
+   reference nulled out (`ON DELETE SET NULL`, not a cascade that would delete the CRM
+   contact).
 
 No security control was removed or weakened anywhere in this program; every change in
 this section either added a check that did not exist or moved an existing check to a
@@ -1019,6 +1065,46 @@ duplication to consolidate, not dead code to delete.
     RTL test — this mirrors the un-tested-at-the-frontend `expenses` key from the
     receipt-OCR step, an existing, disclosed gap in the RTL layer of the test pyramid
     for Media, not a new one).
+- **Migration 0181 (party avatar → canonical Media Library), this session's fourth and
+  final per-flow migration**:
+  - `src/app/api/media/[id]/file/route.test.ts` **(+1 test, 8 → 9)**: a new "migration
+    0181: a parties.view-only member reads an image a party recorded as its avatar"
+    case, mirroring the ledger.view/inventory.view precedents exactly; existing fixtures
+    updated to include the new `parties: []` usage-shape key.
+  - `integration/parties.integration.test.ts` **(+9 tests, this session's second block for
+    this file — the first 5 were the O.2 validation fix)**: `profileImageAssetId` links
+    and round-trips through `getMediaAssetUsage`; a legacy `profileImage` sent in the same
+    write as an asset id is cleared (the asset always wins); a later edit that sends the
+    legacy link path instead clears a previously-set asset id (mutual exclusivity holds in
+    both directions, not just on the initial write); an unrelated field edit leaves an
+    existing avatar untouched; a cross-tenant asset id, a nonexistent asset id, and a
+    document-kind asset are each rejected with `invalid_image`; the check also runs on
+    update, not just create; and deleting the underlying `media_assets` row afterward
+    leaves the party record intact with the reference nulled (`ON DELETE SET NULL`
+    proven against a real delete, not assumed from the schema).
+  - `src/app/dashboard/media/media-manager.tsx`'s own `MediaAssetUsage` interface and
+    usage-count/delete-confirmation logic gained the `parties` key, the same shape as
+    `purchases`/`expenses` before it (same disclosed RTL-layer gap: no dedicated new RTL
+    test for this specific key, consistent with the existing, disclosed gap noted above).
+    While in this code path, a **separate pre-existing display bug** was found and fixed
+    in the same paragraph: the "استفاده در:" (used in) usage-summary line rendered
+    `menuItems`/`inventoryItems`/`expenses` but silently omitted `purchases` from the
+    *displayed* list even though `purchases` was already counted in `usageCount` and
+    included in the delete-confirmation name list — a caller could see "used in 3 places"
+    but a description naming only 2. Fixed to list all five usage kinds including the new
+    `parties`; `media-manager.test.tsx`'s existing 18 tests pass unchanged (optional-
+    chaining fallbacks meant older fixtures lacking `parties`/`purchases` stayed safe).
+  - `src/app/dashboard/parties/party-form.tsx`: the client-side avatar picker (its own
+    `FileReader`, its own `PROFILE_IMAGE_TYPES`/`MAX_PROFILE_IMAGE_BYTES` checks, storing
+    a base64 string directly on `state.profileImage`) was replaced with the same
+    `MediaImageField`/`MediaPickerDialog` every catalogue item's photo uses for a *new*
+    upload; a party's pre-existing legacy value is still rendered via a plain `<img>`
+    with an explicit "replace with a library photo" action rather than being
+    force-migrated. `src/app/dashboard/parties/parties-directory-regressions.test.ts`'s
+    structural pin for the old FileReader path was rewritten (not deleted) into two tests
+    asserting the new components are used and the old `FileReader`/`readAsDataURL` path
+    is gone, plus that the legacy-value fallback still renders — 40/40 tests in that file
+    pass (was 39/40, 1 pinning the now-deliberately-changed code).
 
 No tests were skipped, stubbed, or marked as TODO anywhere in this program. Media now has
 three dedicated component-test files (`media-manager.test.tsx`'s crop/upload-panel
@@ -1305,6 +1391,35 @@ report described earlier is closed, not merely tested-and-left-as-is.
     133/1561 by exactly that one new file. `npm run build` was not re-attempted this
     step (Section U item 10/17's standing sandbox OOM ceiling, re-confirmed rather than
     re-investigated, unchanged).
+20. **This session, immediately after item 19 — CRM party avatar migrated onto canonical
+    Media storage (migration 0181, Sections D, N, O.1, O.2, T)**: wrote
+    `migrations/0181_party_profile_image_asset.sql`; added `assertProfileImageAssetOwned`
+    to `parties-service.ts` and wired `profileImageAssetId` through `createParty`/
+    `updateParty` with the mutual-exclusivity rule in `normalizePartyWrite` (a truthy
+    asset id always nulls the legacy `profileImage` column in the same write); extended
+    `getMediaAssetUsage`/`mediaAssetUsageIsEmpty` with a `parties` category and
+    `/api/media/[id]/file`'s usage exception with the matching `parties.view` branch;
+    rewrote `party-form.tsx`'s avatar control onto `MediaImageField`/`MediaPickerDialog`
+    (removing the component's own `FileReader`/type/size-check block entirely — the exact
+    duplicated-validation pattern this whole program exists to remove) while preserving a
+    read-only fallback for a party's pre-existing legacy value; fixed an unrelated
+    usage-display omission bug found in `media-manager.tsx`'s "استفاده در:" summary line while
+    extending it (it counted `purchases` toward the usage total but never listed it,
+    Section T). `npx tsc --noEmit` clean; `npx eslint .` clean (whole repo). Migration
+    applied and verified end-to-end against a real local `embedded-postgres` instance: a
+    clean 222-migration forward-apply from empty, direct `information_schema`/
+    `pg_indexes`/`pg_constraint` inspection confirming the exact column/index/FK-action
+    shape described in Section D. Full unit suite re-run after every edit, final state:
+    **440/440 files, 6128/6128 tests passed** (up from 440/6126 by exactly 2 net new
+    tests: `route.test.ts` +1, and `parties-directory-regressions.test.ts`'s single
+    FileReader-pinning test replaced by two tests for the new behaviour, net +1 there —
+    1+1=2 — 0 regressions elsewhere). The complete DB integration suite was run once
+    against the fully-migrated database, including the 9 new tests in
+    `integration/parties.integration.test.ts`'s migration-0181 block —
+    **134/134 files, 1576/1576 tests passed, 1 pre-existing unrelated skip**, up from
+    134/1567 by exactly those 9 new tests. `npm run build` was not re-attempted this step
+    (Section U item 10/17's standing sandbox OOM ceiling, re-confirmed rather than
+    re-investigated, unchanged).
 
 Net effect on the test suite across this whole program: **+35 unit tests from earlier
 sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx`
@@ -1323,9 +1438,11 @@ WordPress-correlation), plus the phase-2 trash/collections/WordPress-mapping int
 coverage from the middle of this program, plus +31 unit tests and +4 integration tests
 from this session's OCR/receipt-to-expense work (item 17), plus +17 unit tests from this
 session's invoice-OCR test-coverage closure (item 18), plus +9 unit tests and +6
-integration tests from this session's invoice-OCR storage migration (item 19 above) —
+integration tests from this session's invoice-OCR storage migration (item 19), plus +2
+net unit tests and +9 integration tests from this session's CRM party avatar storage
+migration (item 20 above) —
 0 net regressions** at every checkpoint where the full suite was re-run (final state:
-**440 unit-suite files / 6126 tests, 134 DB integration files / 1567 tests, both fully
+**440 unit-suite files / 6128 tests, 134 DB integration files / 1576 tests, both fully
 green**).
 
 ## V. Second audit / genuine remaining work
@@ -1406,11 +1523,15 @@ full-suite re-run this session, after every change, was green.
   shared abstraction was judged lower-value than closing the storage gap in both, and
   was not attempted; a genuine third consumer (business-card or contract extraction)
   would still be written as its own service today, not a plugin into a common one.
-- **CRM party avatars and the website builder's own media** are still independent of the
-  canonical Media Library's S3-backed storage (by different, individually-documented
-  reasons in each case — Section N) — not migrated onto `MediaImageField`/
-  `MediaPickerDialog`, only hardened where a genuine security gap was found (Section
-  O.2).
+- ~~**CRM party avatars** are still independent of the canonical Media Library's
+  S3-backed storage~~ — **resolved this session (migration 0181, Sections D, N, O.1,
+  O.2, T, U item 20)**: a new upload now goes through `MediaImageField`/
+  `MediaPickerDialog` and becomes a real, deduplicated Media Library asset via
+  `parties.profile_image_asset_id`. **The website builder's own media** remains
+  independent by design, not oversight — it pushes bytes to an external headless-CMS
+  adapter, a genuinely different target from this app's own S3-compatible storage
+  (Section N); its byte-signature check already delegates to the canonical one
+  (Section O.2).
 - **Workspace** files were not audited this session at all.
 - **E2E, mobile, and accessibility test coverage specific to Media** — never attempted;
   only the repo's pre-existing generic design-lint/RTL/dark-mode suites (which happen to

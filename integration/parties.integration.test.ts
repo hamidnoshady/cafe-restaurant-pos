@@ -89,6 +89,7 @@ beforeEach(async () => {
   await db.query("DELETE FROM suppliers");
   await db.query("DELETE FROM party_categories");
   await db.query("DELETE FROM parties");
+  await db.query("DELETE FROM media_assets");
   await db.query("DELETE FROM user_locations");
   await db.query("DELETE FROM users");
   await db.query("DELETE FROM locations");
@@ -260,6 +261,150 @@ describe("profile image validation (server-side trust boundary)", () => {
     await expect(
       parties.updateParty(biz.id, created.id, { profileImage: fakeJpeg }),
     ).rejects.toMatchObject({ code: "invalid_image", field: "profileImage" });
+  });
+});
+
+/**
+ * Migration 0181 closes the storage half of the CRM avatar gap this report
+ * disclosed: an uploaded avatar is now a real Media Library asset, not a
+ * second base64 store living inside `parties`. `profileImageAssetId` must be
+ * tenant-scoped like every other cross-reference in this app
+ * (`invalid_image`'s new failure mode), the two storage mechanisms must be
+ * mutually exclusive on one row, and the FK's `ON DELETE SET NULL` must
+ * survive the asset it points at actually being deleted — the party outlives
+ * its own avatar photo.
+ */
+describe("party avatar — canonical Media Library asset (migration 0181)", () => {
+  async function insertAsset(businessId: string, fileName = "avatar.png"): Promise<string> {
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO media_assets (business_id, kind, file_name, mime_type, byte_size, storage_key, sha256)
+       VALUES ($1, 'image', $2, 'image/png', 2048, $3, repeat('a', 64)) RETURNING id`,
+      [businessId, fileName, `media/${businessId}/${randomUUID()}/${fileName}`],
+    );
+    return rows[0].id;
+  }
+
+  it("links the party to the avatar asset and getMediaAssetUsage finds it back", async () => {
+    const assetId = await insertAsset(biz.id);
+    const party = await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "آواتار کتابخانه‌ای",
+      profileImageAssetId: assetId,
+    });
+    expect(party.profileImageAssetId).toBe(assetId);
+
+    const { rows } = await db.query<{ profile_image_asset_id: string }>(
+      "SELECT profile_image_asset_id FROM parties WHERE id = $1",
+      [party.id],
+    );
+    expect(rows[0].profile_image_asset_id).toBe(assetId);
+
+    const mediaService = await import("../src/lib/media-service");
+    const usage = await mediaService.getMediaAssetUsage(assetId);
+    expect(usage.parties).toEqual([{ id: party.id, name: "آواتار کتابخانه‌ای" }]);
+    expect(mediaService.mediaAssetUsageIsEmpty(usage)).toBe(false);
+  });
+
+  it("clears the legacy inline profileImage when an asset is linked in the same write", async () => {
+    const assetId = await insertAsset(biz.id);
+    const party = await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "بدون تصویر تودرتو",
+      // Sent together, as a client mid-migration to the new picker might:
+      // the asset always wins, and the row never carries both at once.
+      profileImage: "https://example.com/old-avatar.png",
+      profileImageAssetId: assetId,
+    });
+    expect(party.profileImageAssetId).toBe(assetId);
+    expect(party.profileImage).toBeNull();
+  });
+
+  it("clears a previously-set asset id when a later edit picks the legacy link path instead", async () => {
+    const assetId = await insertAsset(biz.id);
+    const created = await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "تغییر به لینک",
+      profileImageAssetId: assetId,
+    });
+    const updated = await parties.updateParty(biz.id, created.id, {
+      profileImageAssetId: null,
+      profileImage: "https://example.com/new-avatar.png",
+    });
+    expect(updated?.profileImageAssetId).toBeNull();
+    expect(updated?.profileImage).toBe("https://example.com/new-avatar.png");
+  });
+
+  it("leaves an untouched avatar alone when an unrelated field is edited", async () => {
+    const assetId = await insertAsset(biz.id);
+    const created = await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "آواتار پایدار",
+      profileImageAssetId: assetId,
+    });
+    const updated = await parties.updateParty(biz.id, created.id, { notes: "یادداشت تازه" });
+    expect(updated?.profileImageAssetId).toBe(assetId);
+    expect(updated?.notes).toBe("یادداشت تازه");
+  });
+
+  it("rejects an avatar asset belonging to a different business", async () => {
+    const foreignAssetId = await insertAsset(other.id);
+    await expect(
+      parties.createParty(biz.id, {
+        role: "Customer",
+        displayName: "شخص دیگر",
+        profileImageAssetId: foreignAssetId,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_image", field: "profileImage" });
+  });
+
+  it("rejects a profileImageAssetId that does not exist at all", async () => {
+    await expect(
+      parties.createParty(biz.id, {
+        role: "Customer",
+        displayName: "شخص بی‌تصویر",
+        profileImageAssetId: randomUUID(),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_image", field: "profileImage" });
+  });
+
+  it("rejects a document-kind asset — an avatar must actually be an image", async () => {
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO media_assets (business_id, kind, file_name, mime_type, byte_size, storage_key, sha256)
+       VALUES ($1, 'document', 'contract.pdf', 'application/pdf', 4096, $2, repeat('c', 64)) RETURNING id`,
+      [biz.id, `media/${biz.id}/${randomUUID()}/contract.pdf`],
+    );
+    await expect(
+      parties.createParty(biz.id, {
+        role: "Customer",
+        displayName: "شخص با سند",
+        profileImageAssetId: rows[0].id,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_image", field: "profileImage" });
+  });
+
+  it("also validates the asset on update, not just create", async () => {
+    const created = await parties.createParty(biz.id, { role: "Customer", displayName: "به‌روزرسانی نامعتبر" });
+    await expect(
+      parties.updateParty(biz.id, created.id, { profileImageAssetId: randomUUID() }),
+    ).rejects.toMatchObject({ code: "invalid_image", field: "profileImage" });
+  });
+
+  it("survives the avatar asset later being deleted — the party keeps its record, just loses the photo", async () => {
+    const assetId = await insertAsset(biz.id);
+    const created = await parties.createParty(biz.id, {
+      role: "Customer",
+      displayName: "قابل حذف",
+      profileImageAssetId: assetId,
+    });
+
+    await db.query("DELETE FROM media_assets WHERE id = $1", [assetId]);
+
+    const { rows } = await db.query<{ name: string; profile_image_asset_id: string | null }>(
+      "SELECT name, profile_image_asset_id FROM parties WHERE id = $1",
+      [created.id],
+    );
+    expect(rows[0].profile_image_asset_id).toBeNull();
+    expect(rows[0].name).toBe("قابل حذف");
   });
 });
 
