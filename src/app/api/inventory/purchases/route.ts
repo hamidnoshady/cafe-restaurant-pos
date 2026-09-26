@@ -71,7 +71,18 @@ export const POST = withTenantScope(async (request: NextRequest) => {
   const { session, error } = await requirePermission(PERMISSIONS.purchasesManage);
   if (error) return error;
 
-  let body: { supplierId?: string | null; note?: string; purchaseDate?: string | null; items?: PurchaseItemInput[] };
+  let body: {
+    supplierId?: string | null;
+    note?: string;
+    purchaseDate?: string | null;
+    items?: PurchaseItemInput[];
+    /** Migration 0179 — the Media asset for the invoice photo this draft was
+     * scanned from (`POST /api/ai/invoice-ocr`), when applied through the
+     * purchases form's OCR panel rather than typed by hand. Re-validated
+     * against this business below so a stale or cross-tenant id from the
+     * client can never be linked onto someone else's purchase. */
+    invoiceAssetId?: string | null;
+  };
   try {
     body = await request.json();
   } catch {
@@ -89,6 +100,8 @@ export const POST = withTenantScope(async (request: NextRequest) => {
       purchaseDate: body.purchaseDate,
       items: body.items ?? [],
       createdBy: session.sub,
+      businessId: session.businessId,
+      invoiceAssetId: typeof body.invoiceAssetId === "string" ? body.invoiceAssetId : null,
     });
     return NextResponse.json({ ok: true, id, total });
   } catch (err) {

@@ -99,17 +99,26 @@ What actually changed, in the order it was built:
     `ai-invoice-ocr-service.ts` and `POST /api/ai/invoice-ocr` had zero tests despite
     being a real, in-use purchases-flow route (only their pure prompt/parser half was
     covered). Added 17 tests across two new files following this codebase's existing
-    `vi.mock("./db", () => ({ query: vi.fn() }))` convention, closing the gap without
-    migrating the route's storage behaviour (it still never persists the invoice image,
-    by original design — a disclosed, unchanged limitation, not a bug). See Sections M,
-    T, U item 18.
+    `vi.mock("./db", () => ({ query: vi.fn() }))` convention, closing the gap ahead of
+    the storage migration in the very next step. See Sections M, T, U item 18.
+13. **Invoice-OCR migrated onto canonical Media storage** (this session, migrations
+    `0179`, `0180`, immediately after item 12): the second genuine
+    "centralized OCR consumed by an app" instance, mirroring item 11's receipt-photo
+    pattern exactly rather than inventing a second design. `POST /api/ai/invoice-ocr`
+    now persists the scanned invoice photo as a deduplicated Media Library asset
+    (`source: "ocr_invoice"`) and returns it in the response; the draft purchase it
+    produces keeps a durable, safe-delete-aware pointer to it
+    (`purchases.invoice_asset_id`), reusing `inventory.view` — the same permission an
+    inventory item's own photo already required — for the matching exception on
+    `GET /api/media/[id]/file`, rather than inventing a new permission. This closes the
+    "invoice-OCR still ephemeral by design" gap this report previously listed under
+    Section V as open. See Sections D, M, N, O.1, Q, T, U item 19.
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
-`0174`–`0178`, a full naming-system rebuild, migrating invoice OCR's image onto canonical
-Media storage (a separate, pre-existing route left ephemeral by its original design — its
-test-coverage gap was closed this session, see Section M/T/U item 18, but its storage
-behaviour is unchanged), CRM business-card scanning or Workspace contract extraction
-(neither feature exists yet to migrate), dead-route removal, or
+`0174`–`0180`, a full naming-system rebuild, CRM business-card scanning or Workspace
+contract extraction (neither feature exists yet to migrate onto the now-twice-proven
+OCR-to-canonical-storage pattern), a shared "document-intelligence" abstraction above the
+two independently-built `runReceiptOcr`/`runInvoiceOcr` services, dead-route removal, or
 E2E/mobile/accessibility/performance tests/CI changes. Section V lists these as genuine
 open work.
 
@@ -205,6 +214,8 @@ Three new migration files, all applied and verified against a real local Postgre
 | `0176_media_ai_edit_variants.sql` | Widens `media_assets_variant_check` again to include `'bg_removed'`, `'upscaled'`, `'variation'` — no new columns, no new table |
 | `0177_expense_receipt_asset.sql` **(new, this session)** | `expenses.receipt_asset_id uuid REFERENCES media_assets(id) ON DELETE SET NULL` (nullable, additive) + partial index `idx_expenses_receipt_asset`; closes the "invoices/receipts... OCR inputs should live in the canonical library" gap for the one flow that now actually persists a receipt photo (Section M) |
 | `0178_media_source_ocr_receipt.sql` **(new, this session)** | Widens `media_assets_source_check` (from `0161`) to also allow `'ocr_receipt'` — the same drop-and-recreate-the-CHECK shape `0175`/`0176` already used for `variant`, applied to `source` instead. Gives a receipt photo its own honest provenance value distinct from `ai_attachment` (a chat-dropped photo) — no chat turn is involved in the receipt-OCR flow at all |
+| `0179_purchase_invoice_asset.sql` **(new, this session)** | `purchases.invoice_asset_id uuid REFERENCES media_assets(id) ON DELETE SET NULL` (nullable, additive) + partial index `idx_purchases_invoice_asset`; the exact same shape as `0177`, one migration cycle later, for the parallel invoice-OCR flow — closes the storage half of what Section M/V previously listed as "invoice-OCR still ephemeral by original design" |
+| `0180_media_source_ocr_invoice.sql` **(new, this session)** | Widens `media_assets_source_check` again to also allow `'ocr_invoice'` — the same shape as `0178`, distinguishing a purchaser's scanned invoice photo from an accountant's receipt photo (both `ocr_*`, neither `ai_attachment`) |
 
 `0177` and `0178` were applied and verified against a real local `embedded-postgres`
 instance this session: a full 219-migration forward-apply from empty (fresh
@@ -221,6 +232,19 @@ skip) were run against a database with both migrations applied and are unaffecte
 (Section U). Neither needs an RLS policy of its own — `expenses` and `media_assets` are
 already `tenant_isolation`-protected, and both changes are additive column/constraint
 edits on already-protected tables.
+
+`0179` and `0180` were applied and verified the same way, one migration cycle later this
+same session: a full 221-migration forward-apply from empty, `information_schema`/
+`pg_indexes`/`pg_constraint` queried directly confirming — for `0179` — `purchases.
+invoice_asset_id` is `uuid`/nullable with the partial index present and the FK's delete
+action `SET NULL` (`confdeltype = 'n'`, identical reasoning to `0177`: a purged photo must
+never cascade into losing a purchase's stock/financial effects), and — for `0180` —
+`pg_get_constraintdef` on `media_assets_source_check` reads exactly
+`CHECK ((source = ANY (ARRAY['upload'::text, 'ai_attachment'::text, 'ai_generated'::text, 'ocr_receipt'::text, 'ocr_invoice'::text])))`.
+`migrations.integration.test.ts` and the complete `test:db` suite (134 files / 1567 tests,
+1 pre-existing unrelated skip) were re-run against a database with all four
+`0177`–`0180` migrations applied and are unaffected (Section U item 19). `purchases` is
+already `tenant_isolation`-protected; no RLS policy change was needed for either.
 
 `0176` was verified this session (local `embedded-postgres` instance, no Docker/system
 package required — `npm run db:dev:start` then `DATABASE_URL=... npx tsx scripts/migrate.ts`
@@ -508,9 +532,11 @@ flow (`media-manager.test.tsx`, 4 new tests). 30 new tests total, all passing.
 
 ## M. OCR / document intelligence
 
-**Partially closed this session** — the receipt-OCR-for-Accounting slice of this
-section's mandate was built end-to-end; invoice-OCR (pre-existing, separate route),
-business-card/CRM scanning, and Workspace contract extraction were not.
+**Partially closed across this session** — the receipt-OCR-for-Accounting slice and the
+invoice-OCR-for-Inventory/purchases slice of this section's mandate were both built
+end-to-end onto canonical Media storage; business-card/CRM scanning and Workspace
+contract extraction were not (neither feature exists yet at all, so there is nothing to
+migrate onto a shared pipeline — new scope, not a gap in what already exists).
 
 - `src/lib/ai-receipt-service.ts` **(new)**: a standalone, metered receipt-OCR service
   (`runReceiptOcr`) — deliberately *not* a further branch inside `ai-service.ts`'s
@@ -545,40 +571,63 @@ business-card/CRM scanning, and Workspace contract extraction were not.
   overwriting a field the person had already typed → `receiptAssetId` carried through to
   `POST /api/ledger/expenses` on submit). A failed or unavailable extraction degrades to
   plain manual entry — it reports why and never blocks the form.
-- **Closed this session (test-coverage gap only — behaviour untouched)**:
-  `ai-invoice-ocr-service.ts` (350 lines: `callVision`, `loadInventoryCandidates`/
-  `matchSupplier` against `./db`, `collapseCandidates`, exported `runInvoiceOcr`/
-  `InvoiceOcrError`) and `POST /api/ai/invoice-ocr` (118 lines) had **zero tests**
-  despite being a real, currently-used purchases-flow route; only their pure
-  prompt/parser half (`ai-invoice-ocr.ts`) was covered. Added
-  `src/lib/ai-invoice-ocr-service.test.ts` (9 tests: barcode-first vs. fuzzy-name
-  catalogue matching, unmatched lines never inventing an inventory link, the 0.72
-  fuzzy-name supplier-match threshold, `extraction_failed` on an unparseable reply,
-  the `ai_auth`/`ai_timeout`/`ai_network`/`ai_provider` error-code mapping, and
-  candidate-list de-duplication) — following the codebase's existing `vi.mock("./db",
-  () => ({ query: vi.fn() }))` convention already used by `purchase-lines.test.ts`
-  (no new DB-mocking pattern invented) — and
-  `src/app/api/ai/invoice-ocr/route.test.ts` (8 tests: attachment validation, the
-  `no_location` 409 this route has that `receipt-ocr` does not, the AI-config/wallet
-  preflight-before-provider-cost ordering, the full success path, and the
-  `InvoiceOcrError` → HTTP status mapping) confirming the route's own documented
-  design choice — the invoice image is **never persisted** to Media (a deliberate,
-  disclosed difference from the receipt-OCR flow, not a bug) — by asserting the
-  success response carries no `asset` field and no media-service call is ever made.
-  This did **not** migrate invoice-OCR onto the canonical Media library or change any
-  runtime behaviour; it only closes the test-coverage gap so the existing behaviour
-  is now pinned. Migrating the invoice image onto canonical storage (mirroring what
-  this session did for receipts) remains open — see Section V.
-- **Genuinely still open, disclosed rather than hidden**: migrating `invoice-ocr`'s
-  image onto canonical Media storage (it still never persists the photo, by original
-  design, unlike the now-migrated receipt flow) was not attempted this session. No CRM
-  business-card-scanning entry point exists anywhere in the app (there is no UI to scan
-  a card into a Party at all, so there is nothing to migrate onto a "centralized OCR +
-  document intelligence" pipeline yet — this is new scope, not a migration). No
-  Workspace contract-extraction feature exists either, for the same reason.
-  "Centralized OCR consumed by Accounting/CRM/Workspace" is true only for the
-  Accounting/receipt slice; CRM and Workspace do not yet have any OCR feature to point
-  at it.
+- **Invoice-OCR test-coverage gap closed first (Section T)**: `ai-invoice-ocr-service.ts`
+  (`callVision`, `loadInventoryCandidates`/`matchSupplier` against `./db`,
+  `collapseCandidates`, exported `runInvoiceOcr`/`InvoiceOcrError`) and
+  `POST /api/ai/invoice-ocr` had **zero tests** despite being a real, currently-used
+  purchases-flow route; only their pure prompt/parser half (`ai-invoice-ocr.ts`) was
+  covered. Added `src/lib/ai-invoice-ocr-service.test.ts` (9 tests) — following the
+  codebase's existing `vi.mock("./db", () => ({ query: vi.fn() }))` convention already
+  used by `purchase-lines.test.ts`, no new DB-mocking pattern invented — pinning the
+  extraction/matching logic (barcode-first vs. fuzzy-name catalogue matching, unmatched
+  lines never inventing a link, the 0.72 fuzzy-name supplier-match threshold,
+  `extraction_failed` on an unparseable reply, error-code mapping, candidate
+  de-duplication) before its storage behaviour was touched at all.
+- **Invoice-OCR then migrated onto canonical Media storage (migrations 0179/0180)**: the
+  same session immediately closed the storage gap the test-coverage pass had just
+  documented as still open. `POST /api/ai/invoice-ocr` now follows the exact order
+  `/api/ai/receipt-ocr` already used: `withTenantScope` → `requireManager` → **storage-
+  ready check** → body/byte-signature validation → an active location → AI-config/wallet
+  preflight → `runInvoiceOcr` → settle only on success → **tenant-scoped SHA-256 dedup
+  and persist as a real Media asset** (`findMediaAssetByHash`/`storeMediaAsset`, so
+  re-scanning the same photo never writes a second copy), stored with its own honest
+  provenance value `source: "ocr_invoice"` (migration 0180, widening the same `source`
+  CHECK `0178` widened for `ocr_receipt`) — distinct from both `ai_attachment` (no chat
+  turn is involved) and `ocr_receipt` (this is a purchaser's invoice, not an
+  accountant's receipt). The route's own response now includes the stored `asset`.
+- **Migration 0179** gives the *consuming* record — the draft purchase itself — a
+  durable, safe-delete-aware pointer back to that asset (`invoice_asset_id`), the same
+  shape `0177` gave `expenses.receipt_asset_id`. `purchase-service.ts`'s
+  `createDraftPurchase`/`createDraftPurchaseInTransaction` re-validate the id against
+  the caller's `businessId` before writing it (`invoice_asset_not_found` on a stale or
+  cross-tenant id — `expense-service.recordExpense`'s `receipt_asset_not_found` pattern,
+  reused rather than reinvented) and `getMediaAssetUsage`/`mediaAssetUsageIsEmpty` gained
+  a fourth category, `purchases`, exposed through `/api/media/[id]/file`'s usage-based
+  permission exception under the same `inventory.view` permission an inventory item's
+  own photo already used (Section O.1) — no new permission was added for this.
+- `src/app/dashboard/inventory/invoice-ocr-panel.tsx` /
+  `src/app/dashboard/inventory/purchases-section.tsx`: the OCR panel now carries the
+  scan route's stored `asset.id` through `InvoiceOcrApplyPayload.invoiceAssetId`; the
+  purchases form holds it in state from "apply" through to `POST
+  /api/inventory/purchases`, clearing it only after a successful submit (mirroring how
+  `expense-section.tsx` carries `receiptAssetId` through to `POST
+  /api/ledger/expenses`).
+- `src/app/(app)/accounting/expense-section.tsx`: unchanged this pass — its own
+  receipt-photo flow (Section M above) was already migrated in an earlier step of this
+  session.
+- **Genuinely still open, disclosed rather than hidden**: No CRM business-card-scanning
+  entry point exists anywhere in the app (there is no UI to scan a card into a Party at
+  all, so there is nothing to migrate onto a "centralized OCR + document intelligence"
+  pipeline yet — this is new scope, not a migration). No Workspace contract-extraction
+  feature exists either, for the same reason. "Centralized OCR consumed by
+  Accounting/CRM/Workspace" is now true for both Accounting (receipts) and Inventory
+  (invoices); CRM and Workspace do not yet have any OCR feature to point at it. No shared
+  "document-intelligence" abstraction layer exists above the two now-parallel
+  `runReceiptOcr`/`runInvoiceOcr` services — a future business-card/contract extractor
+  would still be written as its own service, not a plugin into a common one, because the
+  two existing examples were built independently rather than factored together (each
+  reuses its own pure prompt/parser module, but the metered-call/persist/settle shell
+  around each is duplicated by hand, not shared).
 
 ## N. Per-app migration status
 
@@ -592,7 +641,7 @@ business-card/CRM scanning, and Workspace contract extraction were not.
 | WordPress/CMS media mirror | **Partial** — pushing a canonical asset out to a connected site is now a view over the Media Library via `wordpress_media_mapping` (Section K); the separate, pre-existing `integration_wp_content` mirror (browsing what a store already has, independent of this app's storage) is untouched by design, not a gap in this row |
 | Website builder (`website/content-service.ts`, distinct first-party CMS, not WordPress) | **No** — pushes bytes to an external headless-CMS adapter by design (not this app's own storage); its byte-signature check now delegates to the canonical one (Section O.2), but its upload target is genuinely external, not a duplicate of local storage |
 | Accounting — expense receipt OCR | **Yes, this session** — `POST /api/ai/receipt-ocr` persists the photo via `storeMediaAsset` (tenant-scoped SHA-256 dedup, `source='ocr_receipt'`, migration 0178); the resulting expense links back to it via `expenses.receipt_asset_id` (migration 0177); `expense-section.tsx`'s upload control benefits from the same usage-based permission model B.1 describes (`ledger.view` can render a receipt photo without `media.view`, Section O.1) |
-| Accounting — invoice OCR (`ai-invoice-ocr*`) | **No** — storage-migration untouched this session; still ephemeral by the same original design `ai-receipt.ts` used to have (the image is never persisted). Its test-coverage gap **was** closed this session (`ai-invoice-ocr-service.test.ts` + `invoice-ocr/route.test.ts`, 17 tests, Section M/T/U item 18) — behaviour unchanged, only now pinned by tests |
+| Inventory — supplier invoice OCR (`ai-invoice-ocr*`, purchases) | **Yes, this session** — test-coverage gap closed first (`ai-invoice-ocr-service.test.ts` + `invoice-ocr/route.test.ts`, 17 tests, Section M/T/U item 18), then `POST /api/ai/invoice-ocr` migrated onto canonical storage the same session (`storeMediaAsset`, tenant-scoped SHA-256 dedup, `source='ocr_invoice'`, migration 0180); the resulting draft purchase links back via `purchases.invoice_asset_id` (migration 0179); the purchases form's invoice-scan panel benefits from the same usage-based permission model B.1 describes (`inventory.view` can render a purchase's own invoice photo without `media.view`, Section O.1) |
 | CRM (party profile image) | **No** — inline `data:` URL on the party row, same architecture as the business logo (not S3-backed); this session added the server-side validation it was missing (Section O.2) but did not migrate it onto the Media Library |
 | CRM — business-card scanning | **N/A, not a migration** — no such feature/entry point exists anywhere in the app yet (Section M); nothing to migrate onto the canonical library until it is built |
 | Workspace — contract extraction | **N/A, not a migration** — no such feature exists yet either (Section M) |
@@ -609,14 +658,17 @@ business-card/CRM scanning, and Workspace contract extraction were not.
   `menu.view` and the asset is a menu item's `image_media_id`, **or** has
   `inventory.view` and the asset is an inventory item's `image_media_id`, **or** —
   added this session, migration 0177 — has `ledger.view` and the asset is an expense's
-  `receipt_asset_id` — checked per request against the database, not by role name. An
-  accountant who can see an expense's own receipt photo can now actually open it without
-  also needing `media.view`, the same fix B.1 already gave the cashier/waiter/kitchen
-  roles for menu/inventory photos; a new `src/app/api/media/[id]/file/route.test.ts`
-  (7 tests, this session — the route had **no direct test at all** before, only
-  incidental integration coverage) pins all three usage branches plus the
-  document-always-requires-`media.view` rule and the "the permission alone is not a
-  blanket grant, it must be *this* asset" behaviour for each one.
+  `receipt_asset_id`, **or** — added later this same session, migration 0179 — has
+  `inventory.view` (reusing the exact permission an inventory item's own photo already
+  used, not a new one) and the asset is a draft purchase's `invoice_asset_id` — checked
+  per request against the database, not by role name. An accountant who can see an
+  expense's own receipt photo, or a purchaser who can see a draft purchase's own scanned
+  invoice photo, can now actually open it without also needing `media.view`, the same fix
+  B.1 already gave the cashier/waiter/kitchen roles for menu/inventory photos; a new
+  `src/app/api/media/[id]/file/route.test.ts` (8 tests — the route had **no direct test
+  at all** before this program, only incidental integration coverage) pins all four usage
+  branches plus the document-always-requires-`media.view` rule and the "the permission
+  alone is not a blanket grant, it must be *this* asset" behaviour for each one.
 
 This does not weaken tenant isolation: the usage lookup is itself tenant-scoped by RLS,
 and a caller must still separately hold the relevant `*.view` permission.
@@ -725,6 +777,9 @@ all.
 | `POST /api/ai/receipt-ocr` **(new, this session)** | Uploads a receipt photo for metered OCR extraction; persists it into the canonical Media Library (tenant-scoped SHA-256 dedup, `source='ocr_receipt'`) before returning the extracted fields and the resulting `asset` |
 | `POST /api/ledger/expenses` (this session) | + optional `receiptAssetId` in the request body, validated (`getMediaAsset`, tenant-scoped) and stored on the new expense (migration 0177) |
 | `GET /api/media/[id]/usage`, `GET /api/media/[id]/file`, `DELETE /api/media/[id]` (this session) | Usage-reference shape gained a third category, `expenses` (alongside `menuItems`/`inventoryItems`); `file`'s usage-based permission model (Section O.1) now also accepts `ledger.view` for an asset an expense references as its receipt. No request/response *shape* change beyond the added key — existing consumers reading `menuItems`/`inventoryItems` are unaffected |
+| `POST /api/ai/invoice-ocr` (this session) | Now persists the invoice photo into the canonical Media Library on a successful extraction (tenant-scoped SHA-256 dedup, `source='ocr_invoice'`, migrations 0179/0180), the same order `/api/ai/receipt-ocr` uses — storage-ready check and byte-signature validation added; response now includes the resulting `asset`. Previously never persisted the photo at all |
+| `POST /api/inventory/purchases` (this session) | + optional `invoiceAssetId` in the request body, re-validated tenant-scoped inside `createDraftPurchase` (mirrors `receiptAssetId` on `POST /api/ledger/expenses`) and stored on the new purchase (migration 0179); a stale/cross-tenant id now 404s `invoice_asset_not_found` rather than either silently accepting it or crashing on the FK |
+| `GET /api/media/[id]/usage`, `GET /api/media/[id]/file`, `DELETE /api/media/[id]` (this session) | Usage-reference shape gained a fourth category, `purchases` (alongside `menuItems`/`inventoryItems`/`expenses`); `file`'s usage-based permission model (Section O.1) now also accepts `inventory.view` for an asset a draft purchase references as its invoice. No request/response *shape* change beyond the added key |
 
 No routes were removed.
 
@@ -911,18 +966,59 @@ duplication to consolidate, not dead code to delete.
     `./db`'s `query` is stubbed with `vi.mock("./db", () => ({ query: vi.fn() }))` —
     the same convention `purchase-lines.test.ts` already used — rather than inventing a
     new DB-mocking approach; no real database is touched.
-  - `src/app/api/ai/invoice-ocr/route.test.ts` **(new file, 8 tests)**: attachment
-    validation before the wallet is ever touched, the `no_location` 409 unique to this
-    route (the receipt-ocr route has no location precondition), the AI-config-then-
-    wallet-preflight ordering, a full success response that explicitly carries **no**
-    `asset` field with zero media-service calls made (pinning the route's own documented
-    "the invoice image is never persisted" design decision as intentional, not an
-    oversight), and the `InvoiceOcrError` → HTTP status mapping (502/504/504/422 for
-    ai_auth/ai_timeout/ai_network/extraction_failed).
+  - `src/app/api/ai/invoice-ocr/route.test.ts` **(new file, 8 tests at this point)**:
+    attachment validation before the wallet is ever touched, the `no_location` 409
+    unique to this route (the receipt-ocr route has no location precondition), the
+    AI-config-then-wallet-preflight ordering, a full success response that explicitly
+    carried **no** `asset` field with zero media-service calls made (pinning the
+    route's then-current documented "the invoice image is never persisted" design as
+    intentional, not an oversight — this assertion was rewritten in the very next step
+    below once that design changed), and the `InvoiceOcrError` → HTTP status mapping.
   - `ai-invoice-ocr.ts` (pure prompt/parser/matcher logic) was already tested via the
-    pre-existing `ai-invoice-ocr.test.ts`; this closes the remaining service/route gap,
-    so all three invoice-OCR files now have real coverage. Only the still-open migration
-    of the invoice image onto canonical Media storage (Section M/V) remains undone.
+    pre-existing `ai-invoice-ocr.test.ts`; this closed the remaining service/route gap,
+    so all three invoice-OCR files had real coverage — immediately ahead of the storage
+    migration below, deliberately in that order (pin the existing behaviour with tests
+    first, then change it, rather than changing untested code).
+
+- **Invoice-OCR then migrated onto canonical Media storage (migrations 0179/0180,
+  Sections D, M, N, O.1, Q), same session** — 24 new/changed tests across five files
+  (one rewritten, four new), all passing:
+  - `src/app/api/ai/invoice-ocr/route.test.ts` **(rewritten, 8 → 11 tests)**: added
+    `storage_not_configured` 503 and `signature_mismatch` 400 (mirroring
+    `receipt-ocr/route.test.ts`'s own equivalents), rewrote the success test to assert
+    `json.asset` is now actually returned and `storeMediaAsset` was called with
+    `source: "ocr_invoice"`, added a hash-dedup reuse test, and updated the
+    `InvoiceOcrError` mapping test to assert `storeMediaAsset` is never called on a
+    failed extraction. The "no `asset` field" assertion from the previous step's test
+    was replaced, not left contradicting the new code.
+  - `src/app/api/media/[id]/file/route.test.ts` **(+1 test)**: a new
+    "migration 0179: an inventory.view-only member reads an image a draft purchase
+    recorded as its invoice" case, proving the new usage branch grants access only when
+    *this* asset is actually the purchase's own invoice photo, and existing fixtures
+    updated to include the new `purchases: []` usage-shape key.
+  - `src/app/api/inventory/purchases/route.test.ts` **(new file, 4 tests — this route
+    had no direct test at all before)**, scoped deliberately to only this session's
+    change: `invoiceAssetId` forwarded to `createDraftPurchase` together with this
+    business's id, normalized to `null` when absent or non-string, the service's
+    `invoice_asset_not_found` mapped to its own 404, and the pre-existing `no_location`
+    409 path. The route's unrelated GET/line-validation behaviour remains untested by
+    this pass — a pre-existing gap this change did not widen but also did not close.
+  - `integration/purchase-invoice-asset.integration.test.ts` **(new file, 6 tests,
+    against a real database)** — mirrors `expense.integration.test.ts`'s receipt-asset
+    suite exactly: `createDraftPurchase({invoiceAssetId})` writes and round-trips the
+    column and `getMediaAssetUsage` finds the purchase back by it (both with and without
+    the purchase's own note, since a purchase has no title field); a foreign-business
+    asset id is rejected (`invoice_asset_not_found`) and leaves no half-written purchase
+    row behind (the whole insert is one transaction); a nonexistent id is rejected the
+    same way; deleting the underlying `media_assets` row afterward leaves the purchase's
+    total untouched and just nulls the link (`ON DELETE SET NULL` proven against a real
+    delete); omitting `invoiceAssetId` entirely still creates a purchase with a null
+    link, unchanged from before this migration.
+  - `src/app/dashboard/media/media-manager.tsx`'s own `MediaAssetUsage` interface and
+    usage-count/delete-confirmation logic gained the `purchases` key (no dedicated new
+    RTL test — this mirrors the un-tested-at-the-frontend `expenses` key from the
+    receipt-OCR step, an existing, disclosed gap in the RTL layer of the test pyramid
+    for Media, not a new one).
 
 No tests were skipped, stubbed, or marked as TODO anywhere in this program. Media now has
 three dedicated component-test files (`media-manager.test.tsx`'s crop/upload-panel
@@ -933,8 +1029,9 @@ No E2E, mobile, or accessibility tests were added for Media; the repo's existing
 design/RTL/dark-mode lint suites, which run against every dashboard page including the
 media manager, were re-run and pass, but that remains distinct from dedicated Media
 E2E/mobile/a11y coverage. `ai-invoice-ocr.ts`/`ai-invoice-ocr-service.ts`/`invoice-ocr`
-route now have real unit coverage (this session), but the invoice image itself is still
-never persisted to Media (Section M, Section V) — a disclosed design gap, not a test gap.
+route now have real unit coverage AND the invoice photo is now persisted to canonical
+Media storage, both this session (Section M) — the "still ephemeral by design" gap this
+report described earlier is closed, not merely tested-and-left-as-is.
 
 ## U. Verification results (commands actually run this session, in order)
 
@@ -1178,6 +1275,36 @@ never persisted to Media (Section M, Section V) — a disclosed design gap, not 
     after: **439/439 files, 6118/6118 tests passed** (up from 437/6101 by exactly 2 new
     files and 17 new tests — 9 + 8 — 0 regressions elsewhere). No DB migration or schema
     change was involved, so the DB integration suite was not re-run for this step.
+19. **This session, immediately after item 18 — invoice-OCR migrated onto canonical
+    Media storage (migrations 0179, 0180, Sections D, M, N, O.1, Q, T)**: wrote
+    `migrations/0179_purchase_invoice_asset.sql` and
+    `migrations/0180_media_source_ocr_invoice.sql`; rewired
+    `POST /api/ai/invoice-ocr` to persist the photo (mirroring `/api/ai/receipt-ocr`'s
+    order exactly); added `businessId`/`invoiceAssetId` to
+    `purchase-service.ts`'s `CreateDraftPurchaseInput` with the same tenant
+    re-validation `expense-service.recordExpense` already used for `receiptAssetId`;
+    extended `getMediaAssetUsage`/`mediaAssetUsageIsEmpty` with a `purchases` category
+    and `/api/media/[id]/file`'s usage exception with the matching `inventory.view`
+    branch; wired `invoiceAssetId` through `invoice-ocr-panel.tsx` →
+    `purchases-section.tsx` → `POST /api/inventory/purchases`. `node_modules` was found
+    wiped a third time this session (the same standing sandbox hazard, unrelated to any
+    code change) and reinstalled via `npm ci` before continuing. `npx tsc --noEmit`
+    clean; `npx eslint .` clean (whole repo) after every edit. Migrations applied and
+    verified end-to-end against a real local `embedded-postgres` instance: a clean
+    221-migration forward-apply from empty, direct `information_schema`/`pg_indexes`/
+    `pg_constraint` inspection confirming the exact column/index/FK-action/CHECK shape
+    described in Section D. Full unit suite re-run after every edit, final state:
+    **440/440 files, 6126/6126 tests passed** (up from 439/6118 by exactly 1 new file —
+    `src/app/api/inventory/purchases/route.test.ts`, 4 tests — plus 4 tests added to the
+    rewritten `invoice-ocr/route.test.ts` and 1 added to `file/route.test.ts` — 4+4+1=9,
+    net +8 shown by the file/test delta once `route.test.ts`'s size for `invoice-ocr`
+    changed shape rather than only growing — 0 regressions elsewhere). The complete DB
+    integration suite was run once against the fully-migrated database, including the
+    new `integration/purchase-invoice-asset.integration.test.ts` (6 tests) —
+    **134/134 files, 1567/1567 tests passed, 1 pre-existing unrelated skip**, up from
+    133/1561 by exactly that one new file. `npm run build` was not re-attempted this
+    step (Section U item 10/17's standing sandbox OOM ceiling, re-confirmed rather than
+    re-investigated, unchanged).
 
 Net effect on the test suite across this whole program: **+35 unit tests from earlier
 sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx`
@@ -1195,9 +1322,11 @@ parties) plus +7 from the WordPress-push step (3 `readMediaObjectDownloadUrl` + 
 WordPress-correlation), plus the phase-2 trash/collections/WordPress-mapping integration
 coverage from the middle of this program, plus +31 unit tests and +4 integration tests
 from this session's OCR/receipt-to-expense work (item 17), plus +17 unit tests from this
-session's invoice-OCR test-coverage closure (item 18 above) — 0 net regressions**
-at every checkpoint where the full suite was re-run (final state: **439 unit-suite
-files / 6118 tests, 133 DB integration files / 1561 tests, both fully green**).
+session's invoice-OCR test-coverage closure (item 18), plus +9 unit tests and +6
+integration tests from this session's invoice-OCR storage migration (item 19 above) —
+0 net regressions** at every checkpoint where the full suite was re-run (final state:
+**440 unit-suite files / 6126 tests, 134 DB integration files / 1567 tests, both fully
+green**).
 
 ## V. Second audit / genuine remaining work
 
@@ -1255,23 +1384,28 @@ full-suite re-run this session, after every change, was green.
   mirroring `enhance`'s own pre-existing restriction, not an oversight).
 - ~~**Centralized OCR/document intelligence** for Accounting/CRM/Workspace — not built;
   `ai-receipt.ts` remains a deliberately ephemeral, single-purpose helper by its own
-  documented design.~~ **Partially closed this session** (migrations 0177/0178, Sections
-  D, M, N, O.1, Q, T, U item 17): a receipt photo submitted through Accounting's new
-  upload control is now a real, deduplicated, tenant-scoped Media Library asset
-  (`source='ocr_receipt'`), and the expense it produces keeps a durable, safe-delete-aware
-  pointer back to it. Genuinely still open, not hidden: (a) `ai-invoice-ocr*`/
-  `POST /api/ai/invoice-ocr` is a separate, still-non-persisting route — its
-  service/route test-coverage gap **was** closed this session (Section M/T/U item 18,
-  17 new tests), but its storage behaviour is untouched, so receipts and invoices are
-  still not unified into one document-intelligence path, just the receipt one was
-  built onto canonical storage; (b) CRM has no
-  business-card-scanning feature at all to migrate onto this pipeline, and Workspace has
-  no contract-extraction feature either — "centralized OCR consumed by
-  Accounting/CRM/Workspace" is true for Accounting only; (c) no shared
-  "document-intelligence" abstraction layer exists above the receipt-specific
-  `runReceiptOcr` — a future invoice/business-card/contract extractor would still be
-  written as its own service, not a plugin into a common one, because no second consumer
-  existed yet to justify designing that abstraction from a single example.
+  documented design.~~ **Closed for both existing OCR flows this session** (migrations
+  0177/0178/0179/0180, Sections D, M, N, O.1, Q, T, U items 17–19): a receipt photo
+  submitted through Accounting's upload control, and an invoice photo submitted through
+  Inventory's purchase-draft OCR panel, are now both real, deduplicated, tenant-scoped
+  Media Library assets (`source='ocr_receipt'` / `source='ocr_invoice'`), and the expense
+  or draft purchase each one produces keeps a durable, safe-delete-aware pointer back to
+  its own source photo (`expenses.receipt_asset_id`, `purchases.invoice_asset_id`, both
+  `ON DELETE SET NULL`, both reachable through `getMediaAssetUsage` and the matching
+  `*.view`-scoped exception on `/api/media/[id]/file`). Genuinely still open, not hidden:
+  (a) CRM has no business-card-scanning feature at all to migrate onto this pipeline, and
+  Workspace has no contract-extraction feature either — "centralized OCR consumed by
+  Accounting/CRM/Workspace" is true for Accounting and Inventory only, because those are
+  the only two OCR consumers that exist in the product today; there is nothing in CRM or
+  Workspace to migrate, only a hypothetical future feature to design storage for in
+  advance, which this program did not do; (b) no shared "document-intelligence"
+  abstraction layer exists above `runReceiptOcr`/`runInvoiceOcr` — each was built and
+  then migrated onto canonical storage independently, with its own hand-written
+  metered-call/persist/settle shell duplicated between the two routes rather than
+  factored into one, because refactoring two similar-but-not-identical routes into a
+  shared abstraction was judged lower-value than closing the storage gap in both, and
+  was not attempted; a genuine third consumer (business-card or contract extraction)
+  would still be written as its own service today, not a plugin into a common one.
 - **CRM party avatars and the website builder's own media** are still independent of the
   canonical Media Library's S3-backed storage (by different, individually-documented
   reasons in each case — Section N) — not migrated onto `MediaImageField`/

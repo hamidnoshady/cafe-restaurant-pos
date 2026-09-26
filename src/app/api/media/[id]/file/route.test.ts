@@ -11,7 +11,8 @@ import { GET } from "./route";
  * application record you're already authorized to see" are DIFFERENT
  * permissions. A cashier/waiter/kitchen member holds `menu.view` but never
  * `media.view` — they must still be able to render a menu item's own photo.
- * The same shape now extends to `inventory.view` (an inventory item's photo)
+ * The same shape now extends to `inventory.view` (an inventory item's photo,
+ * and — as of migration 0179 — a draft purchase's own scanned invoice photo)
  * and, as of migration 0177, `ledger.view` (an expense's receipt photo) —
  * each gated on `getMediaAssetUsage` actually naming THIS asset for a record
  * that permission covers, never a blanket grant.
@@ -32,7 +33,7 @@ vi.mock("@/lib/media-service", () => ({
 const SESSION = { businessId: "biz-1", sub: "user-1", role: "member" };
 const IMAGE_ASSET = { id: "asset-1", kind: "image" as const, mimeType: "image/png", fileName: "photo.png" };
 const DOC_ASSET = { id: "asset-2", kind: "document" as const, mimeType: "application/pdf", fileName: "doc.pdf" };
-const EMPTY_USAGE = { menuItems: [], inventoryItems: [], expenses: [] };
+const EMPTY_USAGE = { menuItems: [], inventoryItems: [], expenses: [], purchases: [] };
 
 function membershipWith(...perms: string[]) {
   return { permissions: new Set(perms) };
@@ -77,6 +78,7 @@ describe("GET /api/media/[id]/file — usage-based permission model", () => {
       menuItems: [{ id: "mi-1", name: "اسپرسو" }],
       inventoryItems: [],
       expenses: [],
+      purchases: [],
     } as never);
     const used = await GET(req(), ctx());
     expect(used.status).toBe(200);
@@ -96,9 +98,32 @@ describe("GET /api/media/[id]/file — usage-based permission model", () => {
       menuItems: [],
       inventoryItems: [{ id: "ii-1", name: "شکر" }],
       expenses: [],
+      purchases: [],
     } as never);
     const res = await GET(req(), ctx());
     expect(res.status).toBe(200);
+  });
+
+  it("migration 0179: an inventory.view-only member reads an image a draft purchase recorded as its invoice", async () => {
+    vi.mocked(auth.requireMember).mockResolvedValue({
+      session: SESSION,
+      membership: membershipWith(PERMISSIONS.inventoryView),
+      error: null,
+    } as never);
+    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({
+      menuItems: [],
+      inventoryItems: [],
+      expenses: [],
+      purchases: [{ id: "po-1", name: "فاکتور تأمین‌کننده" }],
+    } as never);
+    const used = await GET(req(), ctx());
+    expect(used.status).toBe(200);
+
+    // Same permission as an inventory item's own photo, but never a blanket
+    // grant — it must be THIS asset a purchase actually points at.
+    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue(EMPTY_USAGE as never);
+    const unused = await GET(req(), ctx());
+    expect(unused.status).toBe(403);
   });
 
   it("migration 0177: a ledger.view-only member reads an image an expense recorded as its receipt", async () => {
@@ -112,6 +137,7 @@ describe("GET /api/media/[id]/file — usage-based permission model", () => {
       menuItems: [],
       inventoryItems: [],
       expenses: [{ id: "exp-1", name: "خرید ملزومات" }],
+      purchases: [],
     } as never);
     const used = await GET(req(), ctx());
     expect(used.status).toBe(200);
@@ -146,6 +172,7 @@ describe("GET /api/media/[id]/file — usage-based permission model", () => {
       menuItems: [{ id: "mi-1", name: "اسپرسو" }],
       inventoryItems: [],
       expenses: [],
+      purchases: [],
     } as never);
     const res = await GET(req(), ctx());
     expect(res.status).toBe(403);

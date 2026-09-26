@@ -333,14 +333,18 @@ export const MEDIA_VARIATIONS_COUNT = 3;
 export type MediaAssetVariant = "original" | "enhanced" | "transformed" | "bg_removed" | "upscaled" | "variation";
 
 /**
- * How an asset entered the library (migrations 0161, 0178): a human upload,
- * a photo dropped into an AI Chat turn, an image the assistant generated
- * from scratch, or — as of 0178 — a receipt photo submitted specifically for
- * metered OCR extraction (`POST /api/ai/receipt-ocr`). `ocr_receipt` is
- * deliberately distinct from `ai_attachment`: no chat turn is involved, so
- * reporting it as "از گفت‌وگو" (from a conversation) would be wrong.
+ * How an asset entered the library (migrations 0161, 0178, 0180): a human
+ * upload, a photo dropped into an AI Chat turn, an image the assistant
+ * generated from scratch, a receipt photo submitted for metered OCR
+ * extraction (`POST /api/ai/receipt-ocr`, 0178), or — as of 0180 — a
+ * supplier-invoice photo submitted the same way (`POST /api/ai/invoice-ocr`).
+ * Both `ocr_*` values are deliberately distinct from `ai_attachment` (no chat
+ * turn is involved) and from each other (an accountant's receipt is not a
+ * purchaser's invoice), so reporting either as "از گفت‌وگو" (from a
+ * conversation) or conflating the two would be wrong.
  */
-export type MediaAssetSource = "upload" | "ai_attachment" | "ai_generated" | "ocr_receipt";
+export type MediaAssetSource = "upload" | "ai_attachment" | "ai_generated" | "ocr_receipt" | "ocr_invoice";
+
 
 // ---------------------------------------------------------------------------
 // Folder / asset input rules shared by the routes and the client

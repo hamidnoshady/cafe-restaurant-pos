@@ -5,16 +5,18 @@ import * as aiRuntime from "@/lib/ai-runtime";
 import * as aiWalletBilling from "@/lib/ai-wallet-billing";
 import * as invoiceOcrService from "@/lib/ai-invoice-ocr-service";
 import * as setupState from "@/lib/setup-state";
+import * as mediaService from "@/lib/media-service";
 import { POST } from "./route";
 
 /**
- * Owner/manager-only metered supplier-invoice OCR: permission → attachment
- * validation → an active location → AI-config guard → wallet gate (before
- * the metered call) → the provider call → settle only on success. Unlike
- * `/api/ai/receipt-ocr`, the image is never persisted anywhere — this route
- * has its own documented design decision for that, so there is no
- * media-service interaction to assert here at all (its absence is itself
- * part of what these tests pin).
+ * Owner/manager-only metered supplier-invoice OCR: permission → storage
+ * ready → attachment/signature validation → an active location → AI-config
+ * guard → wallet gate (before the metered call) → the provider call →
+ * settle only on success → persist the invoice photo as a real Media asset
+ * (tenant-scoped dedup, migrations 0179/0180) so the purchases form can
+ * attach it to the draft it produces. Mirrors `/api/ai/receipt-ocr`'s order
+ * and its own test file almost exactly — the two routes were built to the
+ * same shape on purpose.
  */
 
 vi.mock("@/lib/auth", () => ({
@@ -45,9 +47,17 @@ vi.mock("@/lib/ai-invoice-ocr-service", async (importOriginal) => {
   return { ...actual, runInvoiceOcr: vi.fn() };
 });
 
+vi.mock("@/lib/media-service", () => ({
+  getMediaConfig: vi.fn(),
+  isMediaStorageReady: vi.fn(() => true),
+  findMediaAssetByHash: vi.fn(),
+  storeMediaAsset: vi.fn(),
+}));
+
 const SESSION = { businessId: "biz-1", sub: "user-1", role: "owner" };
 const LOCATION = { id: "loc-1" };
 
+// A real, minimal 1x1 PNG — must pass hasMatchingMediaSignature("image/png", …).
 const PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const PNG_DATA_URL = `data:image/png;base64,${PNG_BASE64}`;
@@ -62,10 +72,14 @@ function req(body: unknown): NextRequest {
 beforeEach(() => {
   vi.clearAllMocks();
   // vi.clearAllMocks() clears call history but not a prior mockReturnValue —
-  // reset this one explicitly so an earlier test's override can't leak in.
+  // reset these explicitly so an earlier test's override can't leak in.
   vi.mocked(aiConfig.isPlatformAiConfigured).mockReturnValue(true);
+  vi.mocked(mediaService.isMediaStorageReady).mockReturnValue(true);
   vi.mocked(setupState.requireManager).mockResolvedValue({ session: SESSION, error: null } as never);
   vi.mocked(setupState.resolveActiveLocation).mockResolvedValue(LOCATION as never);
+  vi.mocked(mediaService.getMediaConfig).mockResolvedValue({} as never);
+  vi.mocked(mediaService.findMediaAssetByHash).mockResolvedValue(null);
+  vi.mocked(mediaService.storeMediaAsset).mockResolvedValue({ id: "asset-1", fileName: "invoice.png" } as never);
   vi.mocked(aiWalletBilling.gateAiTurn).mockResolvedValue(undefined as never);
   vi.mocked(aiWalletBilling.settleAiTurn).mockResolvedValue({ chargedRial: 4500 } as never);
   vi.mocked(invoiceOcrService.runInvoiceOcr).mockResolvedValue({
@@ -80,10 +94,26 @@ beforeEach(() => {
 });
 
 describe("POST /api/ai/invoice-ocr", () => {
+  it("503s storage_not_configured before any guard past permission, when Media storage is not ready", async () => {
+    vi.mocked(mediaService.isMediaStorageReady).mockReturnValue(false);
+    const res = await POST(req({ image: PNG_DATA_URL }));
+    expect(res.status).toBe(503);
+    expect(invoiceOcrService.runInvoiceOcr).not.toHaveBeenCalled();
+    expect(aiWalletBilling.gateAiTurn).not.toHaveBeenCalled();
+  });
+
   it("400s attachment_invalid for an unsupported format, before touching the wallet", async () => {
     const res = await POST(req({ image: "data:text/plain;base64,aGVsbG8=" }));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe("attachment_invalid");
+    expect(aiWalletBilling.gateAiTurn).not.toHaveBeenCalled();
+  });
+
+  it("400s signature_mismatch when the declared type and the bytes disagree", async () => {
+    const fakePng = `data:image/png;base64,${Buffer.from("not a real png").toString("base64")}`;
+    const res = await POST(req({ image: fakePng }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("signature_mismatch");
     expect(aiWalletBilling.gateAiTurn).not.toHaveBeenCalled();
   });
 
@@ -116,22 +146,33 @@ describe("POST /api/ai/invoice-ocr", () => {
     expect(invoiceOcrService.runInvoiceOcr).not.toHaveBeenCalled();
   });
 
-  it("on success: passes the resolved location's id, settles the wallet, and returns the full result — no media persistence call at all", async () => {
+  it("on success: passes the resolved location's id, settles the wallet, stores the invoice photo as a Media asset, and returns everything", async () => {
     const res = await POST(req({ image: PNG_DATA_URL }));
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.extraction.vendor).toBe("بازرگانی رضایی");
     expect(json.supplierId).toBe("sup-1");
     expect(json.costRial).toBe(4500);
-    expect(json).not.toHaveProperty("asset");
+    expect(json.asset).toMatchObject({ id: "asset-1" });
 
     expect(invoiceOcrService.runInvoiceOcr).toHaveBeenCalledWith(
       expect.objectContaining({ locationId: LOCATION.id, dataUrl: PNG_DATA_URL }),
     );
     expect(aiWalletBilling.settleAiTurn).toHaveBeenCalledTimes(1);
+    const [storeArgs] = vi.mocked(mediaService.storeMediaAsset).mock.calls[0];
+    expect(storeArgs).toMatchObject({ businessId: SESSION.businessId, kind: "image", mimeType: "image/png", source: "ocr_invoice" });
   });
 
-  it("maps InvoiceOcrError codes to their documented HTTP status and settles nothing", async () => {
+  it("reuses an existing asset by sha256 instead of storing a second copy of the same photo", async () => {
+    vi.mocked(mediaService.findMediaAssetByHash).mockResolvedValue({ id: "existing-asset" } as never);
+    const res = await POST(req({ image: PNG_DATA_URL }));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.asset).toMatchObject({ id: "existing-asset" });
+    expect(mediaService.storeMediaAsset).not.toHaveBeenCalled();
+  });
+
+  it("maps InvoiceOcrError codes to their documented HTTP status, settles nothing, and never persists the photo", async () => {
     const { InvoiceOcrError } = await import("@/lib/ai-invoice-ocr-service");
 
     vi.mocked(invoiceOcrService.runInvoiceOcr).mockRejectedValue(new InvoiceOcrError("ai_auth", "کلید نامعتبر است."));
@@ -153,6 +194,7 @@ describe("POST /api/ai/invoice-ocr", () => {
     expect(res.status).toBe(422);
 
     expect(aiWalletBilling.settleAiTurn).not.toHaveBeenCalled();
+    expect(mediaService.storeMediaAsset).not.toHaveBeenCalled();
   });
 
   it("400s on unparseable JSON before any guard runs", async () => {

@@ -6,6 +6,7 @@
  */
 import { getPool, query, type PoolClient } from "./db";
 import { preparePurchaseLines, purchaseDateOrNull, type PurchaseItemInput } from "./purchase-lines";
+import { getMediaAsset } from "./media-service";
 
 export class PurchaseServiceError extends Error {
   constructor(
@@ -24,6 +25,18 @@ export interface CreateDraftPurchaseInput {
   purchaseDate?: string | null;
   items: PurchaseItemInput[];
   createdBy: string | null;
+  /** Required whenever invoiceAssetId is set, so the asset can be
+   * re-validated against this tenant (see below) — every current caller that
+   * ever sets invoiceAssetId (the purchases route) already has this from its
+   * session; autopilot/sync callers never set invoiceAssetId and may omit it. */
+  businessId?: string;
+  /** Migration 0179 — the canonical Media asset for the supplier-invoice
+   * photo this draft was scanned from (`POST /api/ai/invoice-ocr`), when the
+   * operator applied an OCR result rather than typing the purchase by hand.
+   * Re-validated server-side against `businessId` so a stale or cross-tenant
+   * id from the client can never be linked onto someone else's purchase —
+   * the same pattern `expense-service.recordExpense` uses for receiptAssetId. */
+  invoiceAssetId?: string | null;
 }
 
 export async function createDraftPurchaseInTransaction(
@@ -38,15 +51,21 @@ export async function createDraftPurchaseInTransaction(
     if (supplier.length === 0) throw new PurchaseServiceError("supplier_not_found", 404);
   }
 
+  const invoiceAssetId = input.invoiceAssetId?.trim() || null;
+  if (invoiceAssetId) {
+    const asset = input.businessId ? await getMediaAsset(input.businessId, invoiceAssetId) : null;
+    if (!asset) throw new PurchaseServiceError("invoice_asset_not_found", 404);
+  }
+
   const purchaseDate = purchaseDateOrNull(input.purchaseDate);
   const { lines, total } = await preparePurchaseLines(input.items, input.locationId, client);
   const { rows: purchaseRows } = await client.query<{ id: string }>(
-    `INSERT INTO purchases (location_id, supplier_id, status, total, note, purchase_date, created_by)
+    `INSERT INTO purchases (location_id, supplier_id, status, total, note, purchase_date, created_by, invoice_asset_id)
      VALUES ($1, $2, 'draft', $3, $4,
              COALESCE($5::date, (SELECT app_business_date(now(), l.timezone, l.business_day_start_minutes)
                                    FROM locations l WHERE l.id = $1)),
-             $6) RETURNING id`,
-    [input.locationId, input.supplierId || null, total, input.note?.trim() || null, purchaseDate, input.createdBy],
+             $6, $7) RETURNING id`,
+    [input.locationId, input.supplierId || null, total, input.note?.trim() || null, purchaseDate, input.createdBy, invoiceAssetId],
   );
   const purchaseId = purchaseRows[0].id;
   for (const line of lines) {

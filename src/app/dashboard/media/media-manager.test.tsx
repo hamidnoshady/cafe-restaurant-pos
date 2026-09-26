@@ -117,7 +117,7 @@ describe("AssetDrawer WordPress push", () => {
   function wpFetch(connections: unknown[]) {
     return vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/media/asset-1/usage") {
-        return { ok: true, status: 200, json: async () => ({ usage: { menuItems: [], inventoryItems: [], expenses: [] } }) };
+        return { ok: true, status: 200, json: async () => ({ usage: { menuItems: [], inventoryItems: [], expenses: [], purchases: [] } }) };
       }
       if (url === "/api/media/asset-1/collections") {
         return { ok: true, status: 200, json: async () => ({ collections: [] }) };
@@ -223,7 +223,7 @@ describe("AssetDrawer AI edit operations", () => {
   function aiEditFetch(overrides: Record<string, { status: number; body: unknown }> = {}) {
     return vi.fn(async (url: string) => {
       if (url === "/api/media/asset-1/usage") {
-        return { ok: true, status: 200, json: async () => ({ usage: { menuItems: [], inventoryItems: [], expenses: [] } }) };
+        return { ok: true, status: 200, json: async () => ({ usage: { menuItems: [], inventoryItems: [], expenses: [], purchases: [] } }) };
       }
       if (url === "/api/media/asset-1/collections") {
         return { ok: true, status: 200, json: async () => ({ collections: [] }) };

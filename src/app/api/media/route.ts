@@ -55,7 +55,13 @@ export const GET = withTenantScope(async (request: NextRequest) => {
   const aiStatus = params.get("aiStatus");
   if (aiStatus === "pending_review") filter.aiStatus = "pending_review";
   const source = params.get("source");
-  if (source === "upload" || source === "ai_attachment" || source === "ai_generated" || source === "ocr_receipt")
+  if (
+    source === "upload" ||
+    source === "ai_attachment" ||
+    source === "ai_generated" ||
+    source === "ocr_receipt" ||
+    source === "ocr_invoice"
+  )
     filter.source = source;
   if (params.get("trashed") === "1") filter.trashed = true;
   const collectionId = params.get("collectionId");

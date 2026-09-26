@@ -343,14 +343,19 @@ export interface MediaAssetUsage {
    * (`expenses.receipt_asset_id`). `name` is the expense's own memo, since
    * expenses have no separate title field. */
   expenses: MediaAssetUsageRef[];
+  /** Migration 0179 — draft purchases scanned from this asset's supplier-
+   * invoice photo (`purchases.invoice_asset_id`). `name` is the purchase's
+   * own note when set, else its id, since a purchase has no title either. */
+  purchases: MediaAssetUsageRef[];
 }
 
 /**
  * Every catalogue row pointing at this asset through `image_media_id`, plus
- * every expense recorded from it as a receipt (`receipt_asset_id`).
- * `menu_items`/`inventory_items` carry no `business_id` column of their own
- * (they scope through `location_id` → `locations.business_id`), so this
- * relies on RLS — already true of every other read of these tables
+ * every expense recorded from it as a receipt (`receipt_asset_id`) and every
+ * draft purchase scanned from it as a supplier invoice (`invoice_asset_id`).
+ * `menu_items`/`inventory_items`/`purchases` carry no `business_id` column of
+ * their own (they scope through `location_id` → `locations.business_id`), so
+ * this relies on RLS — already true of every other read of these tables
  * (see branch-service.ts, ai-tools.ts) — rather than filtering twice.
  * `expenses` does carry `business_id` directly but is scoped the same way
  * for symmetry with its siblings — the caller already resolved this asset
@@ -359,10 +364,12 @@ export interface MediaAssetUsage {
  * This is also the authorization primitive behind `/api/media/[id]/file`:
  * an operational role that cannot browse the library may still render a
  * photo already referenced by a record their own permission (menu.view,
- * inventory.view, ledger.view) already lets them see.
+ * inventory.view, ledger.view) already lets them see. Purchases reuse
+ * inventory.view — the same permission that already gates GET
+ * /api/inventory/purchases — rather than a fourth permission just for this.
  */
 export async function getMediaAssetUsage(assetId: string): Promise<MediaAssetUsage> {
-  const [{ rows: menuItems }, { rows: inventoryItems }, { rows: expenses }] = await Promise.all([
+  const [{ rows: menuItems }, { rows: inventoryItems }, { rows: expenses }, { rows: purchases }] = await Promise.all([
     query<MediaAssetUsageRef>(`SELECT id, name FROM menu_items WHERE image_media_id = $1 ORDER BY name`, [assetId]),
     query<MediaAssetUsageRef>(`SELECT id, name FROM inventory_items WHERE image_media_id = $1 ORDER BY name`, [
       assetId,
@@ -371,12 +378,22 @@ export async function getMediaAssetUsage(assetId: string): Promise<MediaAssetUsa
       `SELECT id, memo AS name FROM expenses WHERE receipt_asset_id = $1 ORDER BY expense_date DESC`,
       [assetId],
     ),
+    query<MediaAssetUsageRef>(
+      `SELECT id, COALESCE(NULLIF(note, ''), id::text) AS name FROM purchases WHERE invoice_asset_id = $1
+        ORDER BY purchase_date DESC`,
+      [assetId],
+    ),
   ]);
-  return { menuItems, inventoryItems, expenses };
+  return { menuItems, inventoryItems, expenses, purchases };
 }
 
 export function mediaAssetUsageIsEmpty(usage: MediaAssetUsage): boolean {
-  return usage.menuItems.length === 0 && usage.inventoryItems.length === 0 && usage.expenses.length === 0;
+  return (
+    usage.menuItems.length === 0 &&
+    usage.inventoryItems.length === 0 &&
+    usage.expenses.length === 0 &&
+    usage.purchases.length === 0
+  );
 }
 
 /** The distinct categories and tags in use — the filter dropdowns. */

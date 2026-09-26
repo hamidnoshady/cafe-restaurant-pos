@@ -24,10 +24,12 @@ import { getMediaAssetUsage, getMediaConfig, isMediaStorageReady, readMediaObjec
  *      (`MenuItemImage` → this route), and an inventory screen renders an
  *      item's own photo the same way; an accountant with `ledger.view` but
  *      not `media.view` can likewise open a recorded expense's receipt photo
- *      (migration 0177). Those roles hold `menu.view` / `inventory.view` /
- *      `ledger.view`; whether THIS SPECIFIC asset is the photo of a menu
- *      item, inventory item, or expense receipt they are already authorized
- *      to see is what `getMediaAssetUsage` answers.
+ *      (migration 0177), and a purchaser with `inventory.view` can open a
+ *      draft purchase's own scanned invoice photo (migration 0179). Those
+ *      roles hold `menu.view` / `inventory.view` / `ledger.view`; whether
+ *      THIS SPECIFIC asset is the photo of a menu item, inventory item,
+ *      expense receipt, or purchase invoice they are already authorized to
+ *      see is what `getMediaAssetUsage` answers.
  *
  * Neither path ever grants the DOCUMENT kinds this cheaply — a PDF/DOCX read
  * always requires `media.view`, because "used by a catalogue item" is not a
@@ -66,7 +68,8 @@ export const GET = withTenantScope(async (_request: NextRequest, context: { para
     const authorizedByUsage =
       (usage.menuItems.length > 0 && membership.permissions.has(PERMISSIONS.menuView)) ||
       (usage.inventoryItems.length > 0 && membership.permissions.has(PERMISSIONS.inventoryView)) ||
-      (usage.expenses.length > 0 && membership.permissions.has(PERMISSIONS.ledgerView));
+      (usage.expenses.length > 0 && membership.permissions.has(PERMISSIONS.ledgerView)) ||
+      (usage.purchases.length > 0 && membership.permissions.has(PERMISSIONS.inventoryView));
     if (!authorizedByUsage) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }

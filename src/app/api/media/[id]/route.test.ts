@@ -187,7 +187,7 @@ describe("PATCH /api/media/[id]", () => {
 
 describe("DELETE /api/media/[id]", () => {
   it("answers 409 asset_in_use with the usage payload when a catalogue item still shows it", async () => {
-    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [{ id: "m1", name: "قهوه" }], inventoryItems: [], expenses: [] } as never);
+    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [{ id: "m1", name: "قهوه" }], inventoryItems: [], expenses: [], purchases: [] } as never);
     vi.mocked(mediaService.mediaAssetUsageIsEmpty).mockReturnValue(false);
     const res = await DELETE(deleteReq(), ctx());
     expect(res.status).toBe(409);
@@ -198,7 +198,7 @@ describe("DELETE /api/media/[id]", () => {
   });
 
   it("force=1 trashes despite active usage", async () => {
-    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [{ id: "m1", name: "قهوه" }], inventoryItems: [], expenses: [] } as never);
+    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [{ id: "m1", name: "قهوه" }], inventoryItems: [], expenses: [], purchases: [] } as never);
     vi.mocked(mediaService.mediaAssetUsageIsEmpty).mockReturnValue(false);
     vi.mocked(mediaService.softDeleteMediaAsset).mockResolvedValue(true);
     const res = await DELETE(deleteReq("?force=1"), ctx());
@@ -208,7 +208,7 @@ describe("DELETE /api/media/[id]", () => {
   });
 
   it("plain delete trashes an unused asset", async () => {
-    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [], inventoryItems: [], expenses: [] } as never);
+    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [], inventoryItems: [], expenses: [], purchases: [] } as never);
     vi.mocked(mediaService.mediaAssetUsageIsEmpty).mockReturnValue(true);
     vi.mocked(mediaService.softDeleteMediaAsset).mockResolvedValue(true);
     const res = await DELETE(deleteReq(), ctx());
@@ -217,7 +217,7 @@ describe("DELETE /api/media/[id]", () => {
   });
 
   it("a repeated trash request on an already-trashed asset is idempotent, not an error", async () => {
-    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [], inventoryItems: [], expenses: [] } as never);
+    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [], inventoryItems: [], expenses: [], purchases: [] } as never);
     vi.mocked(mediaService.mediaAssetUsageIsEmpty).mockReturnValue(true);
     vi.mocked(mediaService.softDeleteMediaAsset).mockResolvedValue(false); // already trashed
     vi.mocked(mediaService.getMediaAsset).mockResolvedValue(baseAsset({ deletedAt: "2026-01-01T00:00:00Z" }) as never);
@@ -227,7 +227,7 @@ describe("DELETE /api/media/[id]", () => {
   });
 
   it("404s a trash request for an asset that never existed", async () => {
-    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [], inventoryItems: [], expenses: [] } as never);
+    vi.mocked(mediaService.getMediaAssetUsage).mockResolvedValue({ menuItems: [], inventoryItems: [], expenses: [], purchases: [] } as never);
     vi.mocked(mediaService.mediaAssetUsageIsEmpty).mockReturnValue(true);
     vi.mocked(mediaService.softDeleteMediaAsset).mockResolvedValue(false);
     vi.mocked(mediaService.getMediaAsset).mockResolvedValue(null);

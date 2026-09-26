@@ -56,7 +56,7 @@ export interface AssetRow {
   aiLabels: { category?: string | null; tags?: string[]; description?: string };
   variant: MediaAssetVariant;
   sourceAssetId: string | null;
-  source: "upload" | "ai_attachment" | "ai_generated" | "ocr_receipt";
+  source: "upload" | "ai_attachment" | "ai_generated" | "ocr_receipt" | "ocr_invoice";
   createdByAi: boolean;
   createdAt: string;
 }
@@ -70,6 +70,8 @@ interface MediaAssetUsage {
   inventoryItems: MediaAssetUsageRef[];
   /** Migration 0177 — expenses recorded from this asset's receipt photo. */
   expenses: MediaAssetUsageRef[];
+  /** Migration 0179 — draft purchases scanned from this asset's invoice photo. */
+  purchases: MediaAssetUsageRef[];
 }
 
 interface CollectionRow {
@@ -136,6 +138,7 @@ const SOURCE_FILTERS: { key: "all" | AssetRow["source"]; label: string }[] = [
   { key: "ai_generated", label: "ساختهٔ هوش مصنوعی" },
   { key: "ai_attachment", label: "از گفت‌وگو" },
   { key: "ocr_receipt", label: "رسید هزینه" },
+  { key: "ocr_invoice", label: "فاکتور خرید" },
 ];
 
 interface FolderTreeActions {
@@ -1390,6 +1393,10 @@ export function MediaManager() {
                         <span className="absolute bottom-1 start-1">
                           <StatusBadge tone="neutral">رسید هزینه</StatusBadge>
                         </span>
+                      ) : asset.source === "ocr_invoice" ? (
+                        <span className="absolute bottom-1 start-1">
+                          <StatusBadge tone="neutral">فاکتور خرید</StatusBadge>
+                        </span>
                       ) : null}
                     </span>
                     <span className="block truncate px-2 pt-2 text-xs font-medium">{asset.fileName}</span>
@@ -1563,7 +1570,12 @@ export function AssetDrawer({
 
   const isTaggableImage = asset.kind === "image" && asset.mimeType !== "image/svg+xml";
   const pending = asset.aiStatus === "pending_review" ? asset.aiLabels : null;
-  const usageCount = usage ? usage.menuItems.length + usage.inventoryItems.length + (usage.expenses?.length ?? 0) : 0;
+  const usageCount = usage
+    ? usage.menuItems.length +
+      usage.inventoryItems.length +
+      (usage.expenses?.length ?? 0) +
+      (usage.purchases?.length ?? 0)
+    : 0;
 
   async function save() {
     setBusy(true);
@@ -1804,7 +1816,12 @@ export function AssetDrawer({
     setBusy(false);
     if (!ok) {
       if (status === 409 && data.usage) {
-        const names = [...data.usage.menuItems, ...data.usage.inventoryItems, ...(data.usage.expenses ?? [])]
+        const names = [
+          ...data.usage.menuItems,
+          ...data.usage.inventoryItems,
+          ...(data.usage.expenses ?? []),
+          ...(data.usage.purchases ?? []),
+        ]
           .map((r) => r.name)
           .join("، ");
         if (window.confirm(`این فایل هم‌اکنون استفاده می‌شود: ${names}. به سطل زباله منتقل شود؟`)) {
