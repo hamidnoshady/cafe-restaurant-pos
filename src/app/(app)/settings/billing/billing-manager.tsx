@@ -23,6 +23,15 @@ import { SectionCard, SectionCardSkeleton, cardClass } from "@/app/dashboard/pag
 import { cn } from "@/lib/utils";
 import { ErrorBox, InfoBox, api, errorMessage, inputClass } from "@/app/dashboard/ui";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
+import { useMoney } from "@/components/money/money-context";
+
+interface UsageMeter {
+  meterKey: string;
+  name: string;
+  used: number;
+  included: number | null;
+  estimatedRial: number;
+}
 
 interface Wallet {
   balanceRial: number;
@@ -65,7 +74,9 @@ export function BillingManager() {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [packages, setPackages] = useState<Pkg[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [meters, setMeters] = useState<UsageMeter[]>([]);
   const [loading, setLoading] = useState(true);
+  const money = useMoney();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -73,14 +84,16 @@ export function BillingManager() {
   const verifiedRef = useRef(false);
 
   const load = useCallback(async () => {
-    const [walletRes, pkgRes, payRes] = await Promise.all([
+    const [walletRes, pkgRes, payRes, usageRes] = await Promise.all([
       api<{ wallet: Wallet }>("/api/billing/wallet"),
       api<{ packages: Pkg[] }>("/api/billing/packages"),
       api<{ payments: Payment[] }>("/api/billing/payments"),
+      api<{ usage: { meters: UsageMeter[] } }>("/api/billing/usage"),
     ]);
     if (walletRes.ok) setWallet(walletRes.data.wallet);
     if (pkgRes.ok) setPackages(pkgRes.data.packages ?? []);
     if (payRes.ok) setPayments(payRes.data.payments ?? []);
+    if (usageRes.ok) setMeters(usageRes.data.usage?.meters ?? []);
     setLoading(false);
   }, []);
 
@@ -171,6 +184,23 @@ export function BillingManager() {
     <div className="space-y-4">
       {error && <ErrorBox>{error}</ErrorBox>}
       {info && <InfoBox>{info}</InfoBox>}
+
+      {meters.length > 0 && (
+        <SectionCard title="مصرف این دوره">
+          <ul className="space-y-2 text-sm">
+            {meters.map((meter) => (
+              <li key={meter.meterKey} className="flex items-center justify-between gap-3">
+                <span>{meter.name}</span>
+                <span className="tabular-nums">
+                  {toPersianDigits(String(meter.used))}
+                  {meter.included != null ? ` / ${toPersianDigits(String(meter.included))}` : ""}
+                  {meter.estimatedRial > 0 ? ` · ${money.format(meter.estimatedRial)}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      )}
 
       {/* Balance */}
       <SectionCard title="اعتبار فعلی">

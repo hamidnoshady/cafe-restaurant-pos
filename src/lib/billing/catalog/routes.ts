@@ -1,0 +1,98 @@
+import type { RouteClass } from "./types";
+
+/**
+ * Every top-level `/api/<segment>` classified once. A new segment fails CI
+ * until it is added here with a declaration.
+ */
+export const ROUTE_SEGMENT_BILLING: Record<string, RouteClass> = {
+  health: keys("platform.health"),
+  auth: keys("platform.auth"),
+  sessions: keys("platform.auth"),
+  host: keys("platform.host"),
+  "well-known": keys("platform.discovery"),
+  pairing: keys("platform.sync"),
+  peer: keys("platform.sync"),
+  "server-sync": keys("platform.sync"),
+  rollup: keys("platform.sync"),
+  sync: keys("platform.sync"),
+  internal: keys("platform.internal"),
+  platform: keys("platform.console"),
+  "cloud-exceptions": keys("platform.exceptions"),
+  billing: keys("platform.billing_self_service"),
+
+  orders: keys("accounting.orders"),
+  sales: keys("accounting.orders"),
+  "payment-methods": keys("accounting.orders"),
+  inventory: keys("accounting.inventory"),
+  stock: keys("accounting.inventory"),
+  barcodes: keys("accounting.inventory"),
+  wholesale: keys("accounting.inventory"),
+  products: keys("accounting.products"),
+  menu: keys("accounting.products"),
+  kitchen: keys("accounting.operations"),
+  floor: keys("accounting.operations"),
+  tables: keys("accounting.operations"),
+  "table-sessions": keys("accounting.operations"),
+  waiter: keys("accounting.operations"),
+  reservations: keys("accounting.operations"),
+  deliveries: keys("accounting.operations"),
+  couriers: keys("accounting.operations"),
+  shifts: keys("accounting.operations"),
+  "business-day": keys("accounting.operations"),
+  printers: keys("accounting.operations"),
+  printing: keys("accounting.operations"),
+  ledger: keys("accounting.ledger"),
+  parties: keys("accounting.parties"),
+  staff: keys("accounting.parties"),
+  team: keys("accounting.parties"),
+  reports: keys("accounting.reports"),
+  settings: keys("accounting.settings"),
+  "business-info": keys("accounting.settings"),
+  locations: keys("accounting.settings"),
+  branches: keys("accounting.settings"),
+  industry: keys("accounting.settings"),
+  setup: keys("accounting.settings"),
+  crm: keys("crm.workspace"),
+  loyalty: keys("growth.loyalty"),
+  promotions: keys("growth.loyalty"),
+  commission: keys("growth.loyalty"),
+  growth: keys("growth.loyalty"),
+  dashboard: keys("operations.shared"),
+  workspace: keys("operations.shared"),
+  knowledge: keys("operations.shared"),
+  support: keys("operations.shared"),
+  "support-access": keys("operations.shared"),
+  notifications: keys("operations.shared"),
+  devices: keys("operations.shared"),
+  "bug-report": keys("operations.shared"),
+  "audit-log": keys("operations.shared"),
+  security: keys("operations.shared"),
+  data: keys("operations.shared"),
+  connection: keys("operations.shared"),
+  connections: keys("operations.shared"),
+  "tools-fittings": keys("retail.trades"),
+  haberdashery: keys("retail.trades"),
+  merchandising: keys("retail.trades"),
+  jewelry: keys("retail.trades"),
+  watch: keys("retail.trades"),
+  accessories: keys("retail.trades"),
+  cosmetics: keys("retail.trades"),
+  integrations: keys("integrations.api"),
+  v1: keys("integrations.api"),
+  mcp: keys("integrations.api"),
+
+  ai: keys("ai.chat", "automation.run"),
+  messaging: keys("growth.messaging.sms", "growth.messaging.email"),
+  media: keys("media.storage", "media.image_enhance"),
+  website: keys("website.cms", "website.domain"),
+  cms: keys("website.cms", "website.domain"),
+  backup: keys("backup"),
+};
+
+function keys(...capabilityKeys: string[]): RouteClass {
+  return { keys: capabilityKeys };
+}
+
+export function capabilityKeysForSegment(segment: string): string[] {
+  return ROUTE_SEGMENT_BILLING[segment]?.keys ?? [];
+}

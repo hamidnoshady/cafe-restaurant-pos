@@ -289,6 +289,8 @@ export async function saveBillingPlan(input: SaveBillingPlanInput): Promise<Bill
       input.sortOrder || 0,
     ],
   );
+  const { syncAiAllowance } = await import("./billing/runtime");
+  await syncAiAllowance(key, aiCredit);
   const plan = await getBillingPlan(key);
   if (!plan) throw new Error("save_failed");
   return plan;
@@ -542,8 +544,19 @@ export async function revokeEntitlement(businessId: string, featureKey: string):
  * period ends; an expired one does not. Businesses with no subscription row
  * (pre-0176 data edge) are treated as active so nothing regresses.
  */
-export async function subscriptionCarriesPlan(businessId: string, nowIso: string): Promise<boolean> {
-  const { rows } = await query<{ status: string; current_period_end: string | null }>(
+type DbExec = {
+  query<T extends Record<string, unknown> = Record<string, unknown>>(
+    text: string,
+    params?: unknown[],
+  ): Promise<{ rows: T[] }>;
+};
+
+export async function subscriptionCarriesPlan(
+  businessId: string,
+  nowIso: string,
+  exec: DbExec = { query },
+): Promise<boolean> {
+  const { rows } = await exec.query<{ status: string; current_period_end: string | null }>(
     `SELECT status, current_period_end FROM business_subscriptions WHERE business_id = $1`,
     [businessId],
   );
@@ -569,8 +582,9 @@ export async function resolveFeatureAccess(
   businessId: string,
   featureKey: string,
   now: Date = new Date(),
+  exec: DbExec = { query },
 ): Promise<FeatureAccess> {
-  const [access] = await resolveFeaturesAccess(businessId, [featureKey], now);
+  const [access] = await resolveFeaturesAccess(businessId, [featureKey], now, exec);
   return access;
 }
 
@@ -578,16 +592,17 @@ async function resolveFeatureAccessImpl(
   businessId: string,
   featureKeys: string[],
   now: Date,
+  exec: DbExec = { query },
 ): Promise<FeatureAccess[]> {
   const nowIso = now.toISOString();
-  const { rows: bizRows } = await query<{ plan: string }>(
+  const { rows: bizRows } = await exec.query<{ plan: string }>(
     `SELECT plan FROM businesses WHERE id = $1`,
     [businessId],
   );
   const planKey = bizRows[0]?.plan ?? "free";
-  const planEffective = await subscriptionCarriesPlan(businessId, nowIso);
+  const planEffective = await subscriptionCarriesPlan(businessId, nowIso, exec);
 
-  const { rows: planFeatures } = await query<{
+  const { rows: planFeatures } = await exec.query<{
     feature_key: string;
     pricing_model: PricingModel;
     price_rial: string;
@@ -600,7 +615,7 @@ async function resolveFeatureAccessImpl(
     [planKey, featureKeys],
   );
 
-  const { rows: entitlements } = await query<{
+  const { rows: entitlements } = await exec.query<{
     feature_key: string;
     source: BusinessEntitlement["source"];
     expires_at: string | null;
@@ -613,7 +628,7 @@ async function resolveFeatureAccessImpl(
     [businessId, featureKeys],
   );
 
-  const { rows: usage } = await query<{
+  const { rows: usage } = await exec.query<{
     feature_key: string;
     used_count: string;
   }>(
@@ -764,9 +779,10 @@ export async function resolveFeaturesAccess(
   businessId: string,
   featureKeys: string[],
   now: Date = new Date(),
+  exec: DbExec = { query },
 ): Promise<FeatureAccess[]> {
   if (featureKeys.length === 0) return [];
-  return resolveFeatureAccessImpl(businessId, featureKeys, featureKeys.length ? now : new Date());
+  return resolveFeatureAccessImpl(businessId, featureKeys, featureKeys.length ? now : new Date(), exec);
 }
 
 /**

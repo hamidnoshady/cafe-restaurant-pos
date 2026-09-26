@@ -20,6 +20,7 @@
 import { randomUUID } from "node:crypto";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { getPool, query, withTenant, withoutTenantScope, type PoolClient } from "./db";
+import { chargeFeatureUse, postWalletEntryTx, WalletInsufficientFundsError } from "./wallet-service";
 import { getRealmSecret } from "./jwt-secret";
 import type { CampaignChannel } from "./campaign-channels";
 import type { MessageRate } from "./messaging-billing-pure";
@@ -674,22 +675,22 @@ async function grantMessageCreditInTransaction(
     createdByUserId?: string | null;
     platformAdminId?: string | null;
   },
-): Promise<string> {
-  const { rows } = await client.query<{ id: string }>(
-    `INSERT INTO message_credit_ledger
-       (business_id, kind, amount_rial, note, created_by_user_id, platform_admin_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id`,
-    [
-      input.businessId,
-      input.kind,
-      input.amountRial,
-      input.note,
-      input.createdByUserId ?? null,
-      input.platformAdminId ?? null,
-    ],
-  );
-  return rows[0]?.id ?? "";
+): Promise<string | null> {
+  // New credits land in the platform wallet. message_credit_ledger stays as
+  // history from before migration 0177 and is not written here.
+  if (input.amountRial <= 0) return null;
+  await postWalletEntryTx(client, {
+    businessId: input.businessId,
+    kind: input.kind === "top_up" ? "top_up" : "admin_grant",
+    direction: "credit",
+    amountRial: input.amountRial,
+    featureKey: "messaging",
+    note: input.note,
+    userId: input.createdByUserId ?? null,
+    platformAdminId: input.platformAdminId ?? null,
+    metadata: { source: "message_credit", legacyKind: input.kind },
+  });
+  return null;
 }
 
 /** Serialises a business's balance-changing ledger transaction without a mutable balance row. */
@@ -723,35 +724,25 @@ export async function reserveMessageSend(input: {
   if (!Number.isSafeInteger(input.reservedRial) || input.reservedRial <= 0) {
     throw new MessageInsufficientCreditError();
   }
-  const client = await getPool().connect();
+  const requestId = randomUUID();
   try {
-    await client.query("BEGIN");
-    await lockMessageCreditLedger(client, input.businessId);
-    const balance = await messageLedgerBalanceInTransaction(client, input.businessId);
-    if (balance < input.reservedRial) {
-      await client.query("ROLLBACK");
-      throw new MessageInsufficientCreditError();
-    }
-    const requestId = randomUUID();
-    await client.query(
-      `INSERT INTO message_credit_ledger
-         (business_id, kind, amount_rial, request_id, created_by_user_id, metadata)
-       VALUES ($1, 'usage', $2, $3, $4, $5::jsonb)`,
-      [
-        input.businessId,
-        -input.reservedRial,
-        requestId,
-        input.userId ?? null,
-        JSON.stringify({ ...input.metadata, reservedRial: input.reservedRial, phase: "reserved" }),
-      ],
-    );
-    await client.query("COMMIT");
+    await chargeFeatureUse({
+      businessId: input.businessId,
+      featureKey: "messaging",
+      priceRial: input.reservedRial,
+      note: "رزرو ارسال پیام",
+      userId: input.userId ?? null,
+      metadata: {
+        ...input.metadata,
+        messageRequestId: requestId,
+        phase: "reserved",
+        reservedRial: input.reservedRial,
+      },
+    });
     return { requestId, reservedRial: input.reservedRial };
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
+    if (error instanceof WalletInsufficientFundsError) throw new MessageInsufficientCreditError();
     throw error;
-  } finally {
-    client.release();
   }
 }
 
@@ -772,36 +763,54 @@ export async function settleMessageSend(input: {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    await lockMessageCreditLedger(client, input.businessId);
-    const { rows } = await client.query<{ id: string }>(
-      `UPDATE message_credit_ledger
-          SET actual_cost_rial = $3, note = $4,
-              metadata = metadata || $5::jsonb
-        WHERE business_id = $1 AND request_id = $2 AND kind = 'usage'
-          AND coalesce(metadata->>'phase', 'reserved') = 'reserved'
-        RETURNING id`,
+    const { rows } = await client.query<{ phase: string; charged: string | null; refunded: string | null }>(
+      `SELECT metadata->>'phase' AS phase,
+              metadata->>'chargedRial' AS charged,
+              metadata->>'refundedRial' AS refunded
+         FROM wallet_ledger
+        WHERE business_id = $1 AND metadata->>'messageRequestId' = $2
+        ORDER BY created_at
+        FOR UPDATE`,
+      [input.businessId, input.reservation.requestId],
+    );
+    const settled = rows.find((row) => row.phase === "settled" || row.phase === "refunded");
+    if (settled) {
+      await client.query("COMMIT");
+      return {
+        chargedRial: Number(settled.charged ?? chargedRial),
+        refundedRial: Number(settled.refunded ?? 0),
+      };
+    }
+    if (!rows.some((row) => row.phase === "reserved")) throw new Error("message_reservation_not_found");
+    if (refundedRial > 0) {
+      await postWalletEntryTx(client, {
+        businessId: input.businessId,
+        kind: "refund",
+        direction: "credit",
+        amountRial: refundedRial,
+        featureKey: "messaging",
+        note: input.note ?? "بازگشت مازاد رزرو پیام",
+        metadata: {
+          reversesSpend: true,
+          messageRequestId: input.reservation.requestId,
+          phase: "settled",
+          chargedRial,
+          refundedRial,
+          ...input.metadata,
+        },
+      });
+    }
+    await client.query(
+      `UPDATE wallet_ledger
+          SET metadata = metadata || $3::jsonb
+        WHERE business_id = $1 AND metadata->>'messageRequestId' = $2
+          AND metadata->>'phase' = 'reserved'`,
       [
         input.businessId,
         input.reservation.requestId,
-        chargedRial,
-        input.note ?? null,
-        JSON.stringify({ actualCostRial: chargedRial, phase: "settled", ...input.metadata }),
+        JSON.stringify({ phase: "settled", chargedRial, refundedRial }),
       ],
     );
-    if (!rows[0]) throw new Error("message_reservation_not_found");
-    if (refundedRial > 0) {
-      await client.query(
-        `INSERT INTO message_credit_ledger
-           (business_id, kind, amount_rial, request_id, metadata)
-         VALUES ($1, 'usage_refund', $2, $3, $4::jsonb)`,
-        [
-          input.businessId,
-          refundedRial,
-          input.reservation.requestId,
-          JSON.stringify({ reservedRial: input.reservation.reservedRial, actualCostRial: chargedRial }),
-        ],
-      );
-    }
     await client.query("COMMIT");
     return { chargedRial, refundedRial };
   } catch (error) {
@@ -825,30 +834,35 @@ export async function refundUnsentMessage(input: {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    await lockMessageCreditLedger(client, input.businessId);
-    const { rows } = await client.query<{ id: string }>(
-      `UPDATE message_credit_ledger
-          SET metadata = metadata || $3::jsonb
-        WHERE business_id = $1 AND request_id = $2 AND kind = 'usage'
-          AND coalesce(metadata->>'phase', 'reserved') = 'reserved'
-        RETURNING id`,
-      [
-        input.businessId,
-        input.reservation.requestId,
-        JSON.stringify({ phase: "refunded", reason: input.reason }),
-      ],
+    const { rows } = await client.query<{ phase: string }>(
+      `SELECT metadata->>'phase' AS phase FROM wallet_ledger
+        WHERE business_id = $1 AND metadata->>'messageRequestId' = $2
+        FOR UPDATE`,
+      [input.businessId, input.reservation.requestId],
     );
-    if (rows[0]) {
+    if (rows.some((row) => row.phase === "reserved") && !rows.some((row) => row.phase === "refunded" || row.phase === "settled")) {
+      await postWalletEntryTx(client, {
+        businessId: input.businessId,
+        kind: "refund",
+        direction: "credit",
+        amountRial: input.reservation.reservedRial,
+        featureKey: "messaging",
+        note: input.reason,
+        metadata: {
+          reversesSpend: true,
+          messageRequestId: input.reservation.requestId,
+          phase: "refunded",
+          chargedRial: 0,
+          refundedRial: input.reservation.reservedRial,
+          reason: input.reason,
+        },
+      });
       await client.query(
-        `INSERT INTO message_credit_ledger
-           (business_id, kind, amount_rial, request_id, metadata)
-         VALUES ($1, 'usage_refund', $2, $3, $4::jsonb)`,
-        [
-          input.businessId,
-          input.reservation.reservedRial,
-          input.reservation.requestId,
-          JSON.stringify({ reservedRial: input.reservation.reservedRial, reason: input.reason }),
-        ],
+        `UPDATE wallet_ledger
+            SET metadata = metadata || '{"phase":"refunded"}'::jsonb
+          WHERE business_id = $1 AND metadata->>'messageRequestId' = $2
+            AND metadata->>'phase' = 'reserved'`,
+        [input.businessId, input.reservation.requestId],
       );
     }
     await client.query("COMMIT");
@@ -888,7 +902,7 @@ export async function settleMessageAtCost(input: {
  */
 export async function getMessageLedgerBalance(businessId: string): Promise<number> {
   const { rows } = await query<{ balance_rial: string | null }>(
-    `SELECT sum(amount_rial) AS balance_rial FROM message_credit_ledger WHERE business_id = $1`,
+    `SELECT balance_rial FROM business_wallets WHERE business_id = $1`,
     [businessId],
   );
   return numberValue(rows[0]?.balance_rial);

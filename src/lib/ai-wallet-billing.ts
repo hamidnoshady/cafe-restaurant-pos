@@ -128,7 +128,7 @@ export async function settleAiTurn(input: {
     pricedBy = chargedRial > 0 ? "token_rate" : "free";
   }
 
-  return settleAiWalletCharge({
+  const settlement = await settleAiWalletCharge({
     businessId: input.businessId,
     requestId: input.requestId,
     chargedRial,
@@ -151,4 +151,46 @@ export async function settleAiTurn(input: {
     note: attribution.note,
     metadata: attribution.metadata,
   });
+  if (!settlement.duplicate) {
+    try {
+      const { appendUsageEvent, recordVendorCost } = await import("./billing/runtime");
+      if (providerCostRial > 0) {
+        await recordVendorCost({
+          businessId: input.businessId,
+          meterKey: "ai.credit",
+          provider: "litellm",
+          sourceReference: input.requestId,
+          amountRial: providerCostRial,
+          metadata: { model: attribution.model ?? null, pricedBy },
+        });
+      }
+      if (input.usage.inputTokens > 0) {
+        await appendUsageEvent({
+          eventId: `${input.requestId}:input`,
+          businessId: input.businessId,
+          meterKey: "ai.input_tokens",
+          source: "ai",
+          quantity: input.usage.inputTokens,
+          unit: "token",
+          resource: "ai_turn",
+          resourceId: input.requestId,
+        });
+      }
+      if (input.usage.outputTokens > 0) {
+        await appendUsageEvent({
+          eventId: `${input.requestId}:output`,
+          businessId: input.businessId,
+          meterKey: "ai.output_tokens",
+          source: "ai",
+          quantity: input.usage.outputTokens,
+          unit: "token",
+          resource: "ai_turn",
+          resourceId: input.requestId,
+        });
+      }
+    } catch (error) {
+      console.error("ai usage ledger failed:", input.requestId, error);
+    }
+  }
+  return settlement;
 }

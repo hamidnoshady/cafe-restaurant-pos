@@ -74,6 +74,17 @@ export const EXEMPT_TABLES = new Set([
   "credit_packages",
   "billing_plans",
   "billing_plan_features",
+  // Migration 0177 — commercial catalogues with no business_id. Tenant
+  // tables (usage events, ratings, rollups, spend policy, vendor cost,
+  // adjustments, entitlement projections) are FORCE RLS and stay out of
+  // this set.
+  "billing_meters",
+  "billing_plan_meter_allowances",
+  "billing_price_versions",
+  "billing_invoice_counters",
+  "billing_commercial_settings",
+  "billing_service_credentials",
+  "billing_service_nonces",
   // Phase 37 (SMS/email marketing) — the platform's own message config
   // (singleton, credentials encrypted at rest) and its global credit-package
   // catalogue: neither carries a business_id, the same shape as

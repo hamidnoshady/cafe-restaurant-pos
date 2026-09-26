@@ -266,6 +266,9 @@ export function unknownHostAllowedPath(pathname: string): boolean {
     // from JWT_SECRET (src/lib/internal-auth.ts), so letting it through on a
     // hostname nobody vouches for opens no entrance to anything.
     pathname === "/api/internal/rate-limit" ||
+    // CMS usage ingest authenticates with its own billing credential, not a
+    // tenant session and not the internal JWT secret.
+    pathname === "/api/internal/billing/usage/v1/batch" ||
     pathname === "/api/host" ||
     pathname.startsWith("/api/host/")
   );
@@ -1020,6 +1023,10 @@ async function handle(request: NextRequest, requestHeaders: Headers) {
   // through only when it carries the internal secret, which the route then
   // verifies again itself — middleware decides "this is our own call", the
   // route decides whether to trust it.
+  if (pathname === "/api/internal/billing/usage/v1/batch") {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
   if (isInternalRoutePath(pathname) && (await isInternalCall(request.headers))) {
     return NextResponse.next({ request: { headers: requestHeaders } });
   }

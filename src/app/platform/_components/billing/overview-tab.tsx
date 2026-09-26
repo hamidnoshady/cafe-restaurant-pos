@@ -129,14 +129,14 @@ export function BillingOverviewTab() {
           </p>
         </Card>
 
-        <Card title="پیام‌رسانی">
+        <Card title="کیف پول">
           <ul className="space-y-2 text-sm">
             <li className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">اعتبار پیام کسب‌وکارها</span>
+              <span className="text-muted-foreground">ماندهٔ کیف پول پلتفرم</span>
               <span className="font-semibold tabular-nums">{tomanLabel(data.messaging.creditBalanceRial)}</span>
             </li>
             <li className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">مصرف این ماه</span>
+              <span className="text-muted-foreground">هزینهٔ پیام این ماه</span>
               <span className="tabular-nums">{tomanLabel(data.messaging.usageRialThisMonth)}</span>
             </li>
           </ul>

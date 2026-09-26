@@ -13,10 +13,13 @@ export const BILLING_TABS = [
   { key: "overview", label: "نمای کلی" },
   { key: "plans", label: "پلن‌ها و بسته‌ها", cap: "plans.manage" },
   { key: "usage", label: "تعرفه مصرف و اعتبار", cap: "billing.manage" },
+  { key: "meters", label: "کنتورها و قیمت", cap: "billing.manage" },
   { key: "subscriptions", label: "اشتراک‌ها" },
   { key: "invoices", label: "فاکتورها" },
   { key: "payments", label: "پرداخت‌ها" },
+  { key: "spend", label: "سقف هزینه", cap: "billing.manage" },
   { key: "gateways", label: "درگاه‌های پرداخت", cap: "gateways.manage" },
+  { key: "rules", label: "قواعد و تنظیمات", cap: "billing.manage" },
   { key: "audit", label: "تاریخچه تغییرات" },
 ] as const satisfies readonly { key: string; label: string; cap?: PlatformCapability }[];
 

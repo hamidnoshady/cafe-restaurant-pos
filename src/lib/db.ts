@@ -407,6 +407,11 @@ export async function withTenantTransaction<T>(
  *     forever, which is the failure mode this reason exists to prevent rather
  *     than a convenience. Returns a boolean about the install, never a row.
  *
+ *   - **cms-billing-site-map** — resolving an eshobe-cms `site_id` on a usage
+ *     batch to the business that owns `eshobe_cms_connections`, before any
+ *     tenant is selected. The same identify-the-tenant-first shape as
+ *     woocommerce-webhook-auth. The CMS never supplies `business_id`.
+ *
  *   - **single-tenant-check** — `restoreAvailable()`: whether this install
  *     holds exactly one business. The same shape as `first-run` — a `count(*)`
  *     about the *install*, which no tenant scope can express, since the whole

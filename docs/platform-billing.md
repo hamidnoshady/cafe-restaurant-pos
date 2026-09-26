@@ -73,9 +73,11 @@ if (!gate.ok) return gate.response;   // 402 no credits / 403 not entitled
 
 - Not entitled at all → `403 feature_not_entitled`.
 - Entitled but wallet too low → `402 insufficient_credits` (with `topUpUrl`).
-- Free promo / zero price / function not priced → the work proceeds, not billed.
-  (Billing is **opt-in per function**: a feature with no plan-builder price row
-  behaves exactly as before — existing functions are unaffected.)
+- A free promo or a zero price proceeds without a debit.
+- A capability declared in `src/lib/billing/catalog/declarations.ts` is never
+  implicitly free. A route or `chargeForFeature` key with no declaration fails
+  the billing catalogue test. A key that predates that registry and is still
+  undeclared keeps the historical flag-governed path.
 
 `/api/backup/run` is wired as the reference integration.
 
@@ -103,3 +105,39 @@ deployment env vars are required beyond the existing `DATABASE_URL` and
 `JWT_SECRET`. Set the **callback URL** to the public `/dashboard/billing`
 address of the deployment (e.g. `https://app.example.com/dashboard/billing`),
 turn **sandbox off** for live payments, and paste the Zarinpal merchant ID.
+
+## One commercial system (migration 0177)
+
+`cafe-restaurant-pos` is the commercial authority. Customer price, wallet
+balance, subscription state and invoices are decided here. eshobe-cms may
+report a quantity of a known meter for a site; this app resolves that site to
+a business and rates the event. The CMS does not send a Rial amount and does
+not name the business.
+
+The domains are:
+
+- plan catalogue: `billing_plans`
+- capability declarations: `src/lib/billing/catalog/declarations.ts` (CI fails when a route segment or `chargeForFeature` key is undeclared)
+- meters: `billing_meters` and `src/lib/billing/catalog/meters.ts`
+- allowances: `billing_plan_meter_allowances`
+- usage ledger: `billing_usage_events` (append-only; daily rollups are derived)
+- prices: `billing_price_versions`
+- wallet: `business_wallets` / `wallet_ledger`
+- subscriptions and invoices: `business_subscriptions`, `billing_invoices`
+- spend policy: `business_spend_policies`
+- vendor cost: `billing_vendor_cost_events`
+
+CMS usage is `POST /api/internal/billing/usage/v1/batch`, signed with a
+credential whose only scope is `billing.usage.write`.
+
+### Compatibility that remains
+
+These are history or mirrors. They are not a second commercial authority:
+
+- `message_credit_ledger` — historical rows. New message reserves, settlements and top-ups write `wallet_ledger`. Migration 0177 copies a positive balance into the wallet once.
+- `website_service_plans`, `website_service_subscriptions`, `website_service_charges` — the site's operational plan and the idempotency claim. Money is the platform wallet plus a `billing_invoices` row. A failed charge leaves that invoice open.
+- `platform_media_config` price columns — a mirror. Saving the tariff also publishes `billing_price_versions`. The daily charge amount still follows the existing flat plus per-GiB formula so historical invoices stay reconcilable, and each day also appends `media.storage_byte_hour`.
+- `billing_plans.monthly_ai_credit_rial` — a mirror of the `ai.credit` allowance. Readers use the allowance row when it exists.
+- `feature_usage` — a counter for free-use quotas, not the financial usage ledger.
+
+The CMS collections for plans, subscriptions and invoices are not retired in this repository. The contract they must follow is the ingest route and `cms_entitlement_projections` (a newer version never overwrites an older one).

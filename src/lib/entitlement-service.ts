@@ -35,8 +35,10 @@
  * includes, what costs extra) is answered by the Billing plan domain above.
  */
 import { query } from "./db";
-import { resolveFeatureAccess, type FeatureAccess } from "./billing-plans-service";
+import { resolveFeaturesAccess, type FeatureAccess } from "./billing-plans-service";
 import { planLimitsFor } from "./plan-limits";
+import { declarationFor } from "./billing/catalog/declarations";
+import { evaluateSpend } from "./billing/policy/spend";
 
 export type DenialReason =
   | "platform_unavailable"
@@ -45,7 +47,8 @@ export type DenialReason =
   | "addon_required"
   | "limit_reached"
   | "permission_denied"
-  | "insufficient_credit";
+  | "insufficient_credit"
+  | "spend_limit_reached";
 
 export type EntitlementSource = "plan" | "addon" | "promo" | "manual" | "flag";
 
@@ -149,12 +152,18 @@ export async function getBusinessEntitlements(
     capabilityOverrides.set(row.flag_key, row.enabled);
   }
 
-  // Resolve the plan's commercial rows in one batched call.
-  const { rows: planFeatureKeys } = await query<{ feature_key: string }>(
+  // Resolve the plan's commercial rows in one batched call, on the same
+  // executor the rest of this snapshot used.
+  const { rows: planFeatureKeys } = await exec.query<{ feature_key: string }>(
     `SELECT feature_key FROM billing_plan_features WHERE plan_key = $1`,
     [planKey],
   );
-  const access = await resolveFeaturesAccessSafe(businessId, planFeatureKeys.map((r) => r.feature_key));
+  const access = await resolveFeaturesAccess(
+    businessId,
+    planFeatureKeys.map((r) => r.feature_key),
+    new Date(),
+    exec,
+  );
 
   return {
     businessId,
@@ -193,12 +202,6 @@ function subscriptionCarrying(
     return !(snapshot.subscriptionCancelAtPeriodEnd && snapshot.subscriptionPeriodEnd != null && snapshot.subscriptionPeriodEnd <= now.toISOString());
   }
   return status === "trialing" || status === "past_due";
-}
-
-async function resolveFeaturesAccessSafe(businessId: string, keys: string[]): Promise<FeatureAccess[]> {
-  if (keys.length === 0) return [];
-  const { resolveFeaturesAccess } = await import("./billing-plans-service");
-  return resolveFeaturesAccess(businessId, keys);
 }
 
 /**
@@ -281,29 +284,86 @@ export async function resolveBusinessCapability(
           };
         }
       }
-      return allowMetered(capabilityKey, access);
+      return finishAllowed(allowMetered(capabilityKey, access), businessId, opts.permissions);
     }
     if (!access.entitled) {
       // An addon row without purchase is addon_required.
       return deny(capabilityKey, "addon_required");
     }
-    return {
-      capability: capabilityKey,
-      allowed: true,
-      reason: null,
-      source: access.source ?? "plan",
-    };
+    return finishAllowed(
+      {
+        capability: capabilityKey,
+        allowed: true,
+        reason: null,
+        source: access.source ?? "plan",
+      },
+      businessId,
+      opts.permissions,
+    );
   }
 
-  // 4 — no commercial row: the feature-flag layer governs (historical
-  //     behaviour — unpriced features were never gated by the plan builder).
-  if (opts.permissions && flagRow[0]) {
-    // The permission axis is the caller's to name; when supplied, an unknown
-    // capability is only reachable with some permission the user holds.
-    const hasAny = opts.permissions.length > 0;
-    if (!hasAny) return deny(capabilityKey, "permission_denied");
+  const declaration = declarationFor(capabilityKey);
+  // A declared capability with no commercial row is not implicitly free.
+  // Keys outside the registry keep the historical flag-governed answer.
+  if (declaration && declaration.mode !== "exempt") {
+    return deny(capabilityKey, "not_in_plan");
   }
   return { capability: capabilityKey, allowed: true, reason: null, source: "flag" };
+}
+
+async function finishAllowed(
+  resolution: CapabilityResolution,
+  businessId: string,
+  permissions?: readonly string[],
+): Promise<CapabilityResolution> {
+  if (!resolution.allowed) return resolution;
+  const declaration = declarationFor(resolution.capability);
+  if (!declaration || declaration.mode === "exempt") return resolution;
+  if (
+    "requiredPermission" in declaration &&
+    declaration.requiredPermission &&
+    permissions &&
+    !permissions.includes(declaration.requiredPermission)
+  ) {
+    return deny(resolution.capability, "permission_denied");
+  }
+  if (await spendDenial(businessId, declaration.critical, { query })) {
+    return deny(resolution.capability, "spend_limit_reached");
+  }
+  return resolution;
+}
+
+async function spendDenial(
+  businessId: string,
+  critical: boolean,
+  exec: EntitlementExecutor,
+): Promise<boolean> {
+  const { rows } = await exec.query<{
+    monthly_budget_rial: string | null;
+    thresholds: number[] | null;
+    action_at_limit: "continue" | "warn_only" | "block_noncritical" | "throttle_noncritical";
+  }>(
+    `SELECT monthly_budget_rial, thresholds, action_at_limit
+       FROM business_spend_policies WHERE business_id = $1`,
+    [businessId],
+  );
+  const policy = rows[0];
+  if (!policy || policy.monthly_budget_rial == null) return false;
+  const { rows: spentRows } = await exec.query<{ spent: string }>(
+    `SELECT COALESCE(SUM(amount_rial), 0)::text AS spent
+       FROM wallet_ledger
+      WHERE business_id = $1 AND direction = 'debit'
+        AND created_at >= date_trunc('month', now())`,
+    [businessId],
+  );
+  const decision = evaluateSpend({
+    spentRial: Number(spentRows[0]?.spent ?? 0),
+    budgetRial: Number(policy.monthly_budget_rial),
+    thresholds: policy.thresholds ?? [50, 75, 90, 100],
+    action: policy.action_at_limit,
+    critical,
+  });
+  return decision.blocked;
 }
 
 function deny(capability: string, reason: DenialReason): CapabilityResolution {
