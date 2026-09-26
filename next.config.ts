@@ -5,12 +5,6 @@ const nextConfig: NextConfig = {
   // development node_modules. The custom WebSocket/background server is
   // bundled separately by scripts/build-desktop-runtime.mjs.
   output: "standalone",
-  // CMS entitlement push is a central-platform background tick; subscription
-  // changes lazy-import it for cloud deployments. Exclude it from the traced
-  // standalone tree so the desktop runtime guard does not stage raw src/.
-  outputFileTracingExcludes: {
-    "*": ["./src/lib/billing/entitlement/**"],
-  },
   async headers() {
     const commonHeaders = [
       { key: "X-Content-Type-Options", value: "nosniff" },

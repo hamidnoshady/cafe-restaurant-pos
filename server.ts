@@ -406,7 +406,7 @@ app.prepare().then(async () => {
     runMessagingTick().catch((err) => console.error("messaging tick failed:", err));
   scheduleCentralTick(messagingTick, MESSAGE_TICK_INTERVAL_MS, 35_000);
 
-  if (process.env.ESHOBE_CMS_URL?.trim()) {
+  if (process.env.DEPLOYMENT_ROLE !== "site") {
     const { runCmsEntitlementOutboxTick } = await import("./src/lib/billing/entitlement/outbox-service");
     const cmsEntitlementTick = () =>
       runCmsEntitlementOutboxTick().catch((err) => console.error("cms entitlement tick failed:", err));

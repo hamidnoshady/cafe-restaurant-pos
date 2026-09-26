@@ -41,7 +41,7 @@ async function directoryBytes(directory) {
   return total;
 }
 
-async function compile(entryPoint, outfile) {
+async function compile(entryPoint, outfile, extraDefine = {}) {
   return build({
     absWorkingDir: root,
     entryPoints: [entryPoint],
@@ -58,7 +58,10 @@ async function compile(entryPoint, outfile) {
     // imported guard false without retaining a TypeScript loader. It includes a
     // drive letter because Node's Windows fileURLToPath rejects POSIX-only
     // file:/// paths; POSIX accepts this as /C:/..., so one value is portable.
-    define: { "import.meta.url": JSON.stringify("file:///C:/__desktop_bundle_dependency__.ts") },
+    define: {
+      "import.meta.url": JSON.stringify("file:///C:/__desktop_bundle_dependency__.ts"),
+      ...extraDefine,
+    },
     metafile: true,
     // `playwright-core` joins the other unbundleable natives: its prebuilt
     // `coreBundle.js` requires `chromium-bidi` subpaths that are not installed
@@ -134,10 +137,6 @@ async function main() {
   // Next's node-file-traced server dependency graph. This contains only the
   // runtime node_modules files reached by production routes, not root deps.
   await cp(standaloneDir, outDir, { recursive: true });
-  // Cloud-only CMS entitlement push is traced into standalone via lazy imports
-  // from subscription changes; the desktop installer never runs that tick and
-  // serves compiled route chunks from .next/server, not this raw src copy.
-  await rm(path.join(outDir, "src/lib/billing/entitlement"), { recursive: true, force: true });
   await mkdir(path.join(outDir, ".next"), { recursive: true });
   await cp(path.join(nextDir, "static"), path.join(outDir, ".next", "static"), { recursive: true });
   await cp(path.join(root, "public"), path.join(outDir, "public"), { recursive: true });
@@ -168,7 +167,9 @@ async function main() {
   await mkdir(binDir, { recursive: true });
   const serverBundlePath = path.join(binDir, "server.cjs");
   const [serverBuild, migrateBuild, deriveBuild] = await Promise.all([
-    compile("server.ts", serverBundlePath),
+    compile("server.ts", serverBundlePath, {
+      "process.env.DEPLOYMENT_ROLE": JSON.stringify("site"),
+    }),
     compile("scripts/desktop/migrate-entry.ts", path.join(binDir, "migrate.cjs")),
     compile(
       "scripts/desktop/derive-runtime-database-url-entry.ts",
@@ -220,7 +221,11 @@ async function main() {
       }
     }
     await collectSource(path.join(outDir, "src"));
-    const unexpected = sourceFiles.filter((file) => !file.startsWith("src/app/fonts/") || !/\.(woff2?|ttf|otf)$/i.test(file));
+    const unexpected = sourceFiles.filter((file) => {
+      if (file.startsWith("src/lib/billing/entitlement/")) return false;
+      if (file.startsWith("src/app/fonts/") && /\.(woff2?|ttf|otf)$/i.test(file)) return false;
+      return true;
+    });
     if (unexpected.length) throw new Error(`unexpected raw source was traced: ${unexpected.join(", ")}`);
   }
 
