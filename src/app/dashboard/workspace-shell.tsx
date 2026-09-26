@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession, type Role } from "@/lib/auth";
+import { endedSupportSessionClaims, getSession, type Role } from "@/lib/auth";
 import { appForModule } from "@/lib/apps";
 import {
   isProductWorkspaceIndustry,
@@ -34,7 +34,7 @@ import { resolveCapability, type CapabilityKey } from "@/lib/capabilities";
 import { deploymentRole } from "@/lib/deployment-role";
 import { getServerSyncConfig } from "@/lib/server-sync";
 import { getGrant } from "@/lib/platform-service";
-import { SupportSessionBanner } from "./support-session-banner";
+import { SupportSessionBanner, SupportSessionEnded } from "./support-session-banner";
 
 /**
  * The dashboard nav.
@@ -307,7 +307,11 @@ export async function WorkspaceShell({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await getSession();
-  if (!session) redirect("/login");
+  if (!session) {
+    const endedSupport = await endedSupportSessionClaims();
+    if (endedSupport) return <SupportSessionEnded grantId={endedSupport.imp.grantId} />;
+    redirect("/login");
+  }
 
   // withTenant() rather than the ambient scope getSession() already set: that
   // scope was applied with enterWith(), which does not survive a concurrent
@@ -431,10 +435,12 @@ export async function WorkspaceShell({
         <DashboardMain>
           {session.imp && supportGrant ? (
             <SupportSessionBanner session={{
+              grantId: supportGrant.id,
               businessName: supportGrant.businessName ?? session.businessSlug ?? "کسب‌وکار",
               operatorName: supportGrant.operatorName ?? "اپراتور پلتفرم",
               mode: session.imp.mode,
-              expiresAt: supportGrant.expiresAt,
+              expiresAt: new Date(supportGrant.expiresAt).toISOString(),
+              serverNow: new Date().toISOString(),
             }} />
           ) : null}
           <AppAvailabilityGate availability={appAvailability}>

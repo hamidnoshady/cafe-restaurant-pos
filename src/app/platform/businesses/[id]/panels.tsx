@@ -538,8 +538,9 @@ export function ImpersonationPanel() {
     setBusy(true); setError(null);
     const { ok, data } = await api<{ error?: string }>(`/api/platform/impersonation/${grant.id}${revoke ? "?action=revoke" : ""}`, { method: "DELETE" });
     setBusy(false);
-    if (ok) { setNotice(revoke ? "نشست پشتیبانی لغو شد." : "نشست پشتیبانی پایان یافت."); void load(); }
+    if (ok) setNotice(revoke ? "نشست پشتیبانی لغو شد." : "نشست پشتیبانی پایان یافت.");
     else setError(errorMessage(data.error));
+    void load();
   }
 
   return (

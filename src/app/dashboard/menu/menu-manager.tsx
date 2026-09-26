@@ -554,6 +554,11 @@ function ItemSection({
     return map;
   }, [data.itemModifierGroups]);
 
+  const groupsById = useMemo(
+    () => new Map(data.modifierGroups.map((g) => [g.id, g])),
+    [data.modifierGroups],
+  );
+
   return (
     <SectionCard title="آیتم‌ها">
       <form
@@ -690,6 +695,7 @@ function ItemSection({
                         item={i}
                         categories={data.categories}
                         groups={data.modifierGroups}
+                        groupsById={groupsById}
                         links={data.itemModifierGroups}
                         itemLinks={linksByItem.get(i.id) ?? []}
                         siblings={items}
@@ -717,6 +723,7 @@ function ItemSection({
                     item={i}
                     categories={data.categories}
                     groups={data.modifierGroups}
+                    groupsById={groupsById}
                     links={data.itemModifierGroups}
                     itemLinks={linksByItem.get(i.id) ?? []}
                     siblings={uncategorizedItems}
@@ -737,6 +744,7 @@ function ItemRow({
   item,
   categories,
   groups,
+  groupsById,
   links,
   itemLinks,
   siblings,
@@ -746,6 +754,7 @@ function ItemRow({
   item: Item;
   categories: Category[];
   groups: ModifierGroup[];
+  groupsById: Map<string, ModifierGroup>;
   links: ItemModifierGroupLink[];
   itemLinks: ItemModifierGroupLink[];
   siblings: Item[];
@@ -757,11 +766,15 @@ function ItemRow({
   const [showingPricing, setShowingPricing] = useState(false);
   const money = useMoney();
 
-  const activeGroupNames = groups
-    .filter((g) =>
-      itemLinks.some((l) => l.modifierGroupId === g.id && l.isActive),
-    )
-    .map((g) => g.name);
+  // ⚡ Bolt: Replace O(N*C) render-loop filtering across all menu groups
+  // with an O(1) Map lookup based on the item's pre-filtered links.
+  const activeGroupNames = useMemo(() => {
+    return itemLinks
+      .filter((l) => l.isActive)
+      .map((l) => groupsById.get(l.modifierGroupId)?.name)
+      .filter((name): name is string => Boolean(name));
+  }, [itemLinks, groupsById]);
+
   const categoryName =
     categories.find((c) => c.id === item.categoryId)?.name ?? "—";
 

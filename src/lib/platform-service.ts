@@ -29,6 +29,7 @@ import {
   IMPERSONATION_HANDOFF_TTL_MINUTES,
 } from "./impersonation-handoff";
 import { validSupportReason } from "./support-session";
+import { isUuid } from "./uuid";
 import { SETTING_KEYS } from "./settings";
 import type { AppUpdateStatus } from "./app-update";
 
@@ -1419,41 +1420,118 @@ export async function activeGrant(
   return platformCan(row.operator_role, capability) ? toGrant(row) : null;
 }
 
-/** The admin ends their own window (they left the business). */
-export async function endImpersonation(grantId: string, adminId: string): Promise<boolean> {
-  const result = await withoutTenantScope("platform", () =>
-    query(
-      `UPDATE impersonation_grants
-          SET ended_at = now(), ended_by_type = 'operator', ended_by_id = $2
-        WHERE id = $1 AND platform_admin_id = $2 AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()`,
-      [grantId, adminId],
+/**
+ * Who is closing a support session, and therefore which grants they may touch:
+ *
+ *   - `operator` — the admin leaving their *own* session (the tenant banner's
+ *     «پایان نشست», or «پایان نشست من» in the console). Scoped to their grant,
+ *     and to one business when the caller knows it from a signed token.
+ *   - `platform_admin` — the kill switch: any grant, `impersonate.revoke`.
+ *   - `tenant_admin` — the business's own owner/admin, only grants on their business.
+ */
+export type SupportSessionCloser =
+  | { type: "operator"; adminId: string; businessId?: string }
+  | { type: "platform_admin"; adminId: string }
+  | { type: "tenant_admin"; userId: string; businessId: string };
+
+export type SupportSessionCloseResult =
+  | {
+      status: "ended" | "revoked" | "expired";
+      session: { id: string; adminId: string; businessId: string; startedAt: string; endedAt: string };
+    }
+  | { status: "not_active" };
+
+/**
+ * The one way a support session stops: every exit — the operator leaving, a
+ * console revoke, the business revoking, and the window running out — goes
+ * through this single statement, so there is one lifecycle
+ * (active → ended | revoked | expired) and one audit trail for it.
+ *
+ * Atomic by construction: the UPDATE only matches a grant that is not yet
+ * closed, so of two racing closes exactly one changes the row and writes the
+ * audit row in the same statement; the other returns `not_active`. A closed
+ * grant is never reopened — nothing writes `ended_at`/`revoked_at` back to NULL.
+ *
+ * A grant whose window already ran out is stamped `ended_by_type = 'system'`
+ * with `ended_at = expires_at` and audited as `support_session.expired`,
+ * whoever happened to notice, so an expiry is told apart from a manual end.
+ * `activeGrant` never needed that stamp to refuse it; the stamp is the record.
+ */
+export async function closeSupportSession(
+  grantId: string,
+  closer: SupportSessionCloser,
+  meta: { channel: string; ipAddress?: string | null; userAgent?: string | null },
+): Promise<SupportSessionCloseResult> {
+  if (!isUuid(grantId)) return { status: "not_active" };
+  const adminScope = closer.type === "operator" ? closer.adminId : null;
+  const businessScope = closer.type === "platform_admin" ? null : (closer.businessId ?? null);
+  const actorId = closer.type === "tenant_admin" ? closer.userId : closer.adminId;
+
+  const { rows } = await withoutTenantScope("platform", () =>
+    query<{
+      id: string;
+      platform_admin_id: string;
+      business_id: string;
+      created_at: Date;
+      closed_at: Date;
+      ended_by_type: "operator" | "platform_admin" | "tenant_admin" | "system";
+    }>(
+      `WITH closed AS (
+         UPDATE impersonation_grants g
+            SET ended_at = CASE WHEN g.expires_at <= now() THEN g.expires_at
+                                WHEN $4::text = 'operator' THEN now()
+                                ELSE NULL END,
+                revoked_at = CASE WHEN g.expires_at > now() AND $4::text <> 'operator' THEN now() ELSE NULL END,
+                revoked_by = CASE WHEN g.expires_at > now() AND $4::text = 'platform_admin' THEN $5::uuid ELSE NULL END,
+                ended_by_type = CASE WHEN g.expires_at <= now() THEN 'system' ELSE $4::text END,
+                ended_by_id = CASE WHEN g.expires_at <= now() THEN NULL ELSE $5::uuid END
+          WHERE g.id = $1 AND g.ended_at IS NULL AND g.revoked_at IS NULL
+            AND ($2::uuid IS NULL OR g.platform_admin_id = $2::uuid)
+            AND ($3::uuid IS NULL OR g.business_id = $3::uuid)
+          RETURNING g.id, g.platform_admin_id, g.business_id, g.created_at,
+                    COALESCE(g.revoked_at, g.ended_at) AS closed_at, g.ended_by_type
+       ), audit AS (
+         INSERT INTO platform_audit_log
+           (platform_admin_id, business_id, action, entity, entity_id, payload, ip_address, user_agent)
+         SELECT CASE WHEN c.ended_by_type = 'platform_admin' THEN $5::uuid ELSE c.platform_admin_id END,
+                c.business_id,
+                CASE c.ended_by_type
+                  WHEN 'system' THEN 'support_session.expired'
+                  WHEN 'operator' THEN 'support_session.ended'
+                  WHEN 'platform_admin' THEN 'support_session.revoked'
+                  ELSE 'support_session.tenant_revoked' END,
+                'impersonation_grant', c.id::text,
+                jsonb_build_object(
+                  'sessionId', c.id,
+                  'operatorId', c.platform_admin_id,
+                  'businessId', c.business_id,
+                  'startedAt', c.created_at,
+                  'endedAt', c.closed_at,
+                  'durationSeconds', floor(extract(epoch FROM c.closed_at - c.created_at))::int,
+                  'source', CASE WHEN c.ended_by_type = 'system' THEN 'expired' ELSE 'manual' END,
+                  'endedByType', c.ended_by_type,
+                  'endedById', CASE WHEN c.ended_by_type = 'system' THEN NULL ELSE $5::uuid END,
+                  'channel', $6::text),
+                $7, $8
+           FROM closed c
+       )
+       SELECT id, platform_admin_id, business_id, created_at, closed_at, ended_by_type FROM closed`,
+      [grantId, adminScope, businessScope, closer.type, actorId, meta.channel, meta.ipAddress ?? null, meta.userAgent ?? null],
     ),
   );
-  return (result.rowCount ?? 0) > 0;
-}
 
-/** A different admin pulls the plug on a live grant (kill switch). */
-export async function revokeImpersonation(grantId: string, revokedBy: string): Promise<boolean> {
-  const result = await withoutTenantScope("platform", () =>
-    query(
-      `UPDATE impersonation_grants
-          SET revoked_at = now(), revoked_by = $2, ended_by_type = 'platform_admin', ended_by_id = $2
-        WHERE id = $1 AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()`,
-      [grantId, revokedBy],
-    ),
-  );
-  return (result.rowCount ?? 0) > 0;
-}
-
-/** A tenant owner/admin immediately revokes one live grant for their business. */
-export async function tenantRevokeImpersonation(grantId: string, businessId: string, actorId: string): Promise<boolean> {
-  const result = await withoutTenantScope("platform", () => query(
-    `UPDATE impersonation_grants
-        SET revoked_at = now(), ended_by_type = 'tenant_admin', ended_by_id = $3
-      WHERE id = $1 AND business_id = $2 AND ended_at IS NULL AND revoked_at IS NULL AND expires_at > now()`,
-    [grantId, businessId, actorId],
-  ));
-  return (result.rowCount ?? 0) > 0;
+  const row = rows[0];
+  if (!row) return { status: "not_active" };
+  return {
+    status: row.ended_by_type === "system" ? "expired" : row.ended_by_type === "operator" ? "ended" : "revoked",
+    session: {
+      id: row.id,
+      adminId: row.platform_admin_id,
+      businessId: row.business_id,
+      startedAt: new Date(row.created_at).toISOString(),
+      endedAt: new Date(row.closed_at).toISOString(),
+    },
+  };
 }
 
 export async function getGrant(grantId: string, businessId: string): Promise<ImpersonationGrant | null> {

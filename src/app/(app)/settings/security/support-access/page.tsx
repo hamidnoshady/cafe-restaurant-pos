@@ -37,7 +37,8 @@ export default function TenantSupportAccessPage() {
 
   async function revoke(id: string) {
     const response = await fetch(`/api/support-access?grantId=${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (response.ok) void load(); else setError("نشست پیش‌تر پایان یافته یا دیگر در دسترس نیست.");
+    if (!response.ok) setError("نشست پیش‌تر پایان یافته یا دیگر در دسترس نیست.");
+    void load();
   }
 
   return (
