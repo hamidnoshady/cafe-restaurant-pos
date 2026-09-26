@@ -93,6 +93,12 @@ One run does all of this, in order:
    version in «به‌روزرسانی‌های موجود», and installs with one click / auto-update /
    `wp plugin update pos-accounting-connector`.
 
+If the manifest host is down (DNS, firewall, TLS), stores keep the last **successful**
+check on file; the plugin shows a quiet notice on «اشوبه ← به‌روزرسانی» instead of
+spamming the event log on every retry. To fall back to GitHub until your server is
+fixed, set `POS_CONNECTOR_UPDATE_URL` to `''` in `pos-accounting-connector.php` (or
+override with the `pos_connector_update_url` filter) and deploy that build.
+
 The manifest is what WordPress cannot do without: it is how the plugin learns a new
 version exists without downloading the whole zip. The workflow generates it, so
 hosting a release is uploading two files.
