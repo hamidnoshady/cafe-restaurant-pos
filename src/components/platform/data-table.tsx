@@ -1,7 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDownIcon, ChevronUpIcon, ChevronsUpDownIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ChevronsUpDownIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Table,
@@ -12,7 +16,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PlatformEmptyState, PlatformFilteredEmptyState, PlatformErrorState } from "./states";
+import {
+  PlatformEmptyState,
+  PlatformFilteredEmptyState,
+  PlatformErrorState,
+} from "./states";
 
 /**
  * The one operational table for the console (section 6). It renders a real
@@ -99,12 +107,23 @@ export function PlatformDataTable<T>({
   const showInitialLoading = loading && (rows === null || rows.length === 0);
 
   if (error && (rows === null || rows.length === 0)) {
-    return <PlatformErrorState message={error} status={errorStatus} onRetry={onRetry} />;
+    return (
+      <PlatformErrorState
+        message={error}
+        status={errorStatus}
+        onRetry={onRetry}
+      />
+    );
   }
 
   if (showInitialLoading) {
     return (
-      <div className="space-y-2" role="status" aria-busy="true" aria-label="در حال بارگذاری">
+      <div
+        className="space-y-2"
+        role="status"
+        aria-busy="true"
+        aria-label="در حال بارگذاری"
+      >
         {Array.from({ length: 6 }).map((_, i) => (
           <Skeleton key={i} className="h-14 w-full rounded-xl" />
         ))}
@@ -113,15 +132,23 @@ export function PlatformDataTable<T>({
   }
 
   if (rows && rows.length === 0) {
-    if (isFiltered) return <PlatformFilteredEmptyState onReset={onResetFilters} />;
-    return <PlatformEmptyState title={emptyTitle} description={emptyDescription} action={emptyAction} />;
+    if (isFiltered)
+      return <PlatformFilteredEmptyState onReset={onResetFilters} />;
+    return (
+      <PlatformEmptyState
+        title={emptyTitle}
+        description={emptyDescription}
+        action={emptyAction}
+      />
+    );
   }
 
   const data = rows ?? [];
 
   function handleSort(col: Column<T>) {
     if (!col.sortable || !onSort) return;
-    const nextDir: SortDirection = sortKey === col.key && sortDir === "desc" ? "asc" : "desc";
+    const nextDir: SortDirection =
+      sortKey === col.key && sortDir === "desc" ? "asc" : "desc";
     onSort(col.key, nextDir);
   }
 
@@ -145,17 +172,27 @@ export function PlatformDataTable<T>({
                     <button
                       type="button"
                       onClick={() => handleSort(col)}
+                      aria-label={`مرتب‌سازی بر اساس ${typeof col.header === "string" ? col.header : "این ستون"}`}
                       className="inline-flex items-center gap-1 rounded font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {col.header}
                       {sortKey === col.key ? (
                         sortDir === "asc" ? (
-                          <ChevronUpIcon className="size-3.5" aria-hidden="true" />
+                          <ChevronUpIcon
+                            className="size-3.5"
+                            aria-hidden="true"
+                          />
                         ) : (
-                          <ChevronDownIcon className="size-3.5" aria-hidden="true" />
+                          <ChevronDownIcon
+                            className="size-3.5"
+                            aria-hidden="true"
+                          />
                         )
                       ) : (
-                        <ChevronsUpDownIcon className="size-3.5 opacity-40" aria-hidden="true" />
+                        <ChevronsUpDownIcon
+                          className="size-3.5 opacity-40"
+                          aria-hidden="true"
+                        />
                       )}
                     </button>
                   ) : (
@@ -163,7 +200,9 @@ export function PlatformDataTable<T>({
                   )}
                 </TableHead>
               ))}
-              {rowActions ? <TableHead className="w-10" aria-label="عملیات" /> : null}
+              {rowActions ? (
+                <TableHead className="w-10" aria-label="عملیات" />
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -174,12 +213,21 @@ export function PlatformDataTable<T>({
                 className={cn(onRowClick && "cursor-pointer")}
               >
                 {columns.map((col) => (
-                  <TableCell key={col.key} className={cn(col.align && alignClass[col.align], col.className)}>
+                  <TableCell
+                    key={col.key}
+                    className={cn(
+                      col.align && alignClass[col.align],
+                      col.className,
+                    )}
+                  >
                     {col.cell(row)}
                   </TableCell>
                 ))}
                 {rowActions ? (
-                  <TableCell className="text-end" onClick={(e) => e.stopPropagation()}>
+                  <TableCell
+                    className="text-end"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {rowActions(row)}
                   </TableCell>
                 ) : null}
@@ -216,23 +264,39 @@ export function PlatformDataTable<T>({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1 space-y-1.5">
                 {mobileTitle ? (
-                  <div className="font-medium text-foreground">{mobileTitle(row)}</div>
+                  <div className="font-medium text-foreground">
+                    {mobileTitle(row)}
+                  </div>
                 ) : null}
                 {columns
-                  .filter((c) => (mobileTitle ? true : c.key !== columns[0].key ? true : false))
+                  .filter((c) =>
+                    mobileTitle
+                      ? true
+                      : c.key !== columns[0].key
+                        ? true
+                        : false,
+                  )
                   .map((col) => {
                     // When there's an explicit mobileTitle, show every column as a labelled row.
                     // Otherwise the first column IS the title (rendered above via cell fallback).
                     if (!mobileTitle && col.key === columns[0].key) {
                       return (
-                        <div key={col.key} className="font-medium text-foreground">
+                        <div
+                          key={col.key}
+                          className="font-medium text-foreground"
+                        >
                           {(col.mobileCell ?? col.cell)(row)}
                         </div>
                       );
                     }
                     return (
-                      <div key={col.key} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="shrink-0 text-muted-foreground">{col.header}</span>
+                      <div
+                        key={col.key}
+                        className="flex items-center justify-between gap-2 text-xs"
+                      >
+                        <span className="shrink-0 text-muted-foreground">
+                          {col.header}
+                        </span>
                         <span className="min-w-0 text-end text-foreground">
                           {(col.mobileCell ?? col.cell)(row)}
                         </span>
