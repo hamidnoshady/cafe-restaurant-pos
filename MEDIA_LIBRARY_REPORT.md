@@ -93,13 +93,23 @@ What actually changed, in the order it was built:
     metered AI call, stored as a deduplicated Media Library asset
     (`source: "ocr_receipt"`), and durably linked from the expense it produces
     (`receipt_asset_id`), reusing the existing usage-reference safe-delete/permission
-    pattern menu/inventory items already had rather than inventing a parallel one. See
-    Sections D, M, N, O.1, Q, T, U item 17.
+  pattern menu/inventory items already had rather than inventing a parallel one. See
+  Sections D, M, N, O.1, Q, T, U item 17.
+12. **Invoice-OCR test-coverage gap closed** (this session, no schema/behaviour change):
+    `ai-invoice-ocr-service.ts` and `POST /api/ai/invoice-ocr` had zero tests despite
+    being a real, in-use purchases-flow route (only their pure prompt/parser half was
+    covered). Added 17 tests across two new files following this codebase's existing
+    `vi.mock("./db", () => ({ query: vi.fn() }))` convention, closing the gap without
+    migrating the route's storage behaviour (it still never persists the invoice image,
+    by original design — a disclosed, unchanged limitation, not a bug). See Sections M,
+    T, U item 18.
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
-`0174`–`0178`, a full naming-system rebuild, invoice OCR (a separate, still-untested,
-pre-existing route left as-is), CRM business-card scanning or Workspace contract
-extraction (neither feature exists yet to migrate), dead-route removal, or
+`0174`–`0178`, a full naming-system rebuild, migrating invoice OCR's image onto canonical
+Media storage (a separate, pre-existing route left ephemeral by its original design — its
+test-coverage gap was closed this session, see Section M/T/U item 18, but its storage
+behaviour is unchanged), CRM business-card scanning or Workspace contract extraction
+(neither feature exists yet to migrate), dead-route removal, or
 E2E/mobile/accessibility/performance tests/CI changes. Section V lists these as genuine
 open work.
 
@@ -535,17 +545,40 @@ business-card/CRM scanning, and Workspace contract extraction were not.
   overwriting a field the person had already typed → `receiptAssetId` carried through to
   `POST /api/ledger/expenses` on submit). A failed or unavailable extraction degrades to
   plain manual entry — it reports why and never blocks the form.
-- **Genuinely still open, disclosed rather than hidden**: `ai-invoice-ocr.ts`/
-  `ai-invoice-ocr-service.ts`/`POST /api/ai/invoice-ocr` are a separate, pre-existing
-  route that still has **zero tests** and was not touched or migrated onto the canonical
-  library this session — it remains exactly the ephemeral, non-persisting design
-  `ai-receipt.ts` used to be. No CRM business-card-scanning entry point exists anywhere
-  in the app (there is no UI to scan a card into a Party at all, so there is nothing to
-  migrate onto a "centralized OCR + document intelligence" pipeline yet — this is new
-  scope, not a migration). No Workspace contract-extraction feature exists either, for
-  the same reason. "Centralized OCR consumed by Accounting/CRM/Workspace" is true only
-  for the Accounting/receipt slice; CRM and Workspace do not yet have any OCR feature to
-  point at it.
+- **Closed this session (test-coverage gap only — behaviour untouched)**:
+  `ai-invoice-ocr-service.ts` (350 lines: `callVision`, `loadInventoryCandidates`/
+  `matchSupplier` against `./db`, `collapseCandidates`, exported `runInvoiceOcr`/
+  `InvoiceOcrError`) and `POST /api/ai/invoice-ocr` (118 lines) had **zero tests**
+  despite being a real, currently-used purchases-flow route; only their pure
+  prompt/parser half (`ai-invoice-ocr.ts`) was covered. Added
+  `src/lib/ai-invoice-ocr-service.test.ts` (9 tests: barcode-first vs. fuzzy-name
+  catalogue matching, unmatched lines never inventing an inventory link, the 0.72
+  fuzzy-name supplier-match threshold, `extraction_failed` on an unparseable reply,
+  the `ai_auth`/`ai_timeout`/`ai_network`/`ai_provider` error-code mapping, and
+  candidate-list de-duplication) — following the codebase's existing `vi.mock("./db",
+  () => ({ query: vi.fn() }))` convention already used by `purchase-lines.test.ts`
+  (no new DB-mocking pattern invented) — and
+  `src/app/api/ai/invoice-ocr/route.test.ts` (8 tests: attachment validation, the
+  `no_location` 409 this route has that `receipt-ocr` does not, the AI-config/wallet
+  preflight-before-provider-cost ordering, the full success path, and the
+  `InvoiceOcrError` → HTTP status mapping) confirming the route's own documented
+  design choice — the invoice image is **never persisted** to Media (a deliberate,
+  disclosed difference from the receipt-OCR flow, not a bug) — by asserting the
+  success response carries no `asset` field and no media-service call is ever made.
+  This did **not** migrate invoice-OCR onto the canonical Media library or change any
+  runtime behaviour; it only closes the test-coverage gap so the existing behaviour
+  is now pinned. Migrating the invoice image onto canonical storage (mirroring what
+  this session did for receipts) remains open — see Section V.
+- **Genuinely still open, disclosed rather than hidden**: migrating `invoice-ocr`'s
+  image onto canonical Media storage (it still never persists the photo, by original
+  design, unlike the now-migrated receipt flow) was not attempted this session. No CRM
+  business-card-scanning entry point exists anywhere in the app (there is no UI to scan
+  a card into a Party at all, so there is nothing to migrate onto a "centralized OCR +
+  document intelligence" pipeline yet — this is new scope, not a migration). No
+  Workspace contract-extraction feature exists either, for the same reason.
+  "Centralized OCR consumed by Accounting/CRM/Workspace" is true only for the
+  Accounting/receipt slice; CRM and Workspace do not yet have any OCR feature to point
+  at it.
 
 ## N. Per-app migration status
 
@@ -559,7 +592,7 @@ business-card/CRM scanning, and Workspace contract extraction were not.
 | WordPress/CMS media mirror | **Partial** — pushing a canonical asset out to a connected site is now a view over the Media Library via `wordpress_media_mapping` (Section K); the separate, pre-existing `integration_wp_content` mirror (browsing what a store already has, independent of this app's storage) is untouched by design, not a gap in this row |
 | Website builder (`website/content-service.ts`, distinct first-party CMS, not WordPress) | **No** — pushes bytes to an external headless-CMS adapter by design (not this app's own storage); its byte-signature check now delegates to the canonical one (Section O.2), but its upload target is genuinely external, not a duplicate of local storage |
 | Accounting — expense receipt OCR | **Yes, this session** — `POST /api/ai/receipt-ocr` persists the photo via `storeMediaAsset` (tenant-scoped SHA-256 dedup, `source='ocr_receipt'`, migration 0178); the resulting expense links back to it via `expenses.receipt_asset_id` (migration 0177); `expense-section.tsx`'s upload control benefits from the same usage-based permission model B.1 describes (`ledger.view` can render a receipt photo without `media.view`, Section O.1) |
-| Accounting — invoice OCR (`ai-invoice-ocr*`) | **No** — separate, pre-existing route, untouched this session; still ephemeral by the same original design `ai-receipt.ts` used to have, and still has zero tests (Section M, Section V) |
+| Accounting — invoice OCR (`ai-invoice-ocr*`) | **No** — storage-migration untouched this session; still ephemeral by the same original design `ai-receipt.ts` used to have (the image is never persisted). Its test-coverage gap **was** closed this session (`ai-invoice-ocr-service.test.ts` + `invoice-ocr/route.test.ts`, 17 tests, Section M/T/U item 18) — behaviour unchanged, only now pinned by tests |
 | CRM (party profile image) | **No** — inline `data:` URL on the party row, same architecture as the business logo (not S3-backed); this session added the server-side validation it was missing (Section O.2) but did not migrate it onto the Media Library |
 | CRM — business-card scanning | **N/A, not a migration** — no such feature/entry point exists anywhere in the app yet (Section M); nothing to migrate onto the canonical library until it is built |
 | Workspace — contract extraction | **N/A, not a migration** — no such feature exists yet either (Section M) |
@@ -865,6 +898,32 @@ duplication to consolidate, not dead code to delete.
     re-run after `getMediaAssetUsage` gained the `expenses` category and are unaffected
     (Section U).
 
+- **Invoice-OCR service/route test-coverage gap closed (Section M), this session** —
+  17 new tests across two new files, zero behavior changes, all passing on first run:
+  - `src/lib/ai-invoice-ocr-service.test.ts` **(new file, 9 tests)**: barcode-first
+    catalogue matching, fuzzy-name fallback when a line has no barcode, an unmatched
+    line producing `matchStatus: "unmatched"` / a null `inventoryItemId` and a
+    non-`"pass"` verdict rather than a guessed link, the vendor-to-supplier fuzzy match
+    never firing below its 0.72 name-score threshold, `extraction_failed` thrown (not a
+    fabricated result) on an unparseable provider reply, the `ai_auth`/`ai_timeout`/
+    `ai_network`/`ai_provider` error-code mapping (mirroring `ai-receipt-service.ts`'s),
+    and `collapseCandidates` de-duplicating a catalogue item that a join returned twice.
+    `./db`'s `query` is stubbed with `vi.mock("./db", () => ({ query: vi.fn() }))` —
+    the same convention `purchase-lines.test.ts` already used — rather than inventing a
+    new DB-mocking approach; no real database is touched.
+  - `src/app/api/ai/invoice-ocr/route.test.ts` **(new file, 8 tests)**: attachment
+    validation before the wallet is ever touched, the `no_location` 409 unique to this
+    route (the receipt-ocr route has no location precondition), the AI-config-then-
+    wallet-preflight ordering, a full success response that explicitly carries **no**
+    `asset` field with zero media-service calls made (pinning the route's own documented
+    "the invoice image is never persisted" design decision as intentional, not an
+    oversight), and the `InvoiceOcrError` → HTTP status mapping (502/504/504/422 for
+    ai_auth/ai_timeout/ai_network/extraction_failed).
+  - `ai-invoice-ocr.ts` (pure prompt/parser/matcher logic) was already tested via the
+    pre-existing `ai-invoice-ocr.test.ts`; this closes the remaining service/route gap,
+    so all three invoice-OCR files now have real coverage. Only the still-open migration
+    of the invoice image onto canonical Media storage (Section M/V) remains undone.
+
 No tests were skipped, stubbed, or marked as TODO anywhere in this program. Media now has
 three dedicated component-test files (`media-manager.test.tsx`'s crop/upload-panel
 suites, and `expense-section.test.tsx`, this session's first for that component) plus one
@@ -874,8 +933,8 @@ No E2E, mobile, or accessibility tests were added for Media; the repo's existing
 design/RTL/dark-mode lint suites, which run against every dashboard page including the
 media manager, were re-run and pass, but that remains distinct from dedicated Media
 E2E/mobile/a11y coverage. `ai-invoice-ocr.ts`/`ai-invoice-ocr-service.ts`/`invoice-ocr`
-route still have zero tests (Section M, Section V) — a real, disclosed gap, not one this
-session closed.
+route now have real unit coverage (this session), but the invoice image itself is still
+never persisted to Media (Section M, Section V) — a disclosed design gap, not a test gap.
 
 ## U. Verification results (commands actually run this session, in order)
 
@@ -1100,6 +1159,25 @@ session closed.
     heap-adjusted invocation; the default (no `NODE_OPTIONS`) invocation still hits the
     same OOM this sandbox's memory ceiling has shown throughout this program, unchanged
     from item 10.
+18. **This session — invoice-OCR service/route test-coverage gap closed (Section M,
+    Section T)**: added `src/lib/ai-invoice-ocr-service.test.ts` (9 tests) and
+    `src/app/api/ai/invoice-ocr/route.test.ts` (8 tests); zero production code changed.
+    Before writing either file, checked this repo's actual convention for unit-testing
+    DB-touching service functions (`grep` found no existing `vi.mock("./db")` under
+    `src/lib/*.test.ts` at first, then a second broader grep across the same glob found
+    ten files already doing exactly that, e.g. `purchase-lines.test.ts`'s
+    `vi.mock("./db", () => ({ query: vi.fn() }))` — matched that pattern rather than
+    inventing a new one or reaching for the DB-integration suite). Along the way,
+    `node_modules` was found wiped again (the same standing sandbox hazard noted for
+    item 17 — not a code issue) and reinstalled via `npm ci` before any test could run.
+    `npx tsc --noEmit` clean; `npx eslint` clean on both new files; both new files
+    passed in full on their first real run once written correctly (one route-test
+    ordering bug — `vi.clearAllMocks()` not undoing an earlier test's
+    `mockReturnValue(false)` override — was caught and fixed by an explicit reset in
+    `beforeEach`, before ever being reported as "passing"). Full unit suite re-run
+    after: **439/439 files, 6118/6118 tests passed** (up from 437/6101 by exactly 2 new
+    files and 17 new tests — 9 + 8 — 0 regressions elsewhere). No DB migration or schema
+    change was involved, so the DB integration suite was not re-run for this step.
 
 Net effect on the test suite across this whole program: **+35 unit tests from earlier
 sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx`
@@ -1116,9 +1194,10 @@ integration tests from an earlier session (3 transform + 6 orphan-reconciliation
 parties) plus +7 from the WordPress-push step (3 `readMediaObjectDownloadUrl` + 4
 WordPress-correlation), plus the phase-2 trash/collections/WordPress-mapping integration
 coverage from the middle of this program, plus +31 unit tests and +4 integration tests
-from this session's OCR/receipt-to-expense work (item 17 above) — 0 net regressions**
-at every checkpoint where the full suite was re-run (final state: **437 unit-suite
-files / 6101 tests, 133 DB integration files / 1561 tests, both fully green**).
+from this session's OCR/receipt-to-expense work (item 17), plus +17 unit tests from this
+session's invoice-OCR test-coverage closure (item 18 above) — 0 net regressions**
+at every checkpoint where the full suite was re-run (final state: **439 unit-suite
+files / 6118 tests, 133 DB integration files / 1561 tests, both fully green**).
 
 ## V. Second audit / genuine remaining work
 
@@ -1181,9 +1260,11 @@ full-suite re-run this session, after every change, was green.
   upload control is now a real, deduplicated, tenant-scoped Media Library asset
   (`source='ocr_receipt'`), and the expense it produces keeps a durable, safe-delete-aware
   pointer back to it. Genuinely still open, not hidden: (a) `ai-invoice-ocr*`/
-  `POST /api/ai/invoice-ocr` is a separate, still-untouched, still-untested,
-  still-non-persisting route — receipts and invoices are not unified into one
-  document-intelligence path, just the receipt one was built; (b) CRM has no
+  `POST /api/ai/invoice-ocr` is a separate, still-non-persisting route — its
+  service/route test-coverage gap **was** closed this session (Section M/T/U item 18,
+  17 new tests), but its storage behaviour is untouched, so receipts and invoices are
+  still not unified into one document-intelligence path, just the receipt one was
+  built onto canonical storage; (b) CRM has no
   business-card-scanning feature at all to migrate onto this pipeline, and Workspace has
   no contract-extraction feature either — "centralized OCR consumed by
   Accounting/CRM/Workspace" is true for Accounting only; (c) no shared
