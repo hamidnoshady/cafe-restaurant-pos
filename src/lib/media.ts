@@ -332,6 +332,16 @@ export const MEDIA_VARIATIONS_COUNT = 3;
  */
 export type MediaAssetVariant = "original" | "enhanced" | "transformed" | "bg_removed" | "upscaled" | "variation";
 
+/**
+ * How an asset entered the library (migrations 0161, 0178): a human upload,
+ * a photo dropped into an AI Chat turn, an image the assistant generated
+ * from scratch, or — as of 0178 — a receipt photo submitted specifically for
+ * metered OCR extraction (`POST /api/ai/receipt-ocr`). `ocr_receipt` is
+ * deliberately distinct from `ai_attachment`: no chat turn is involved, so
+ * reporting it as "از گفت‌وگو" (from a conversation) would be wrong.
+ */
+export type MediaAssetSource = "upload" | "ai_attachment" | "ai_generated" | "ocr_receipt";
+
 // ---------------------------------------------------------------------------
 // Folder / asset input rules shared by the routes and the client
 // ---------------------------------------------------------------------------

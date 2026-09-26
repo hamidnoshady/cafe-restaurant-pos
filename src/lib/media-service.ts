@@ -26,6 +26,7 @@ import {
   MEDIA_STORAGE_FEATURE_KEY,
   MEDIA_TRASH_RETENTION_DAYS,
   normalizeSearchTerm,
+  type MediaAssetSource,
   type MediaAssetVariant,
   type MediaKind,
   type MediaSort,
@@ -139,7 +140,7 @@ export type MediaAssetRecord = {
   variant: MediaAssetVariant;
   sourceAssetId: string | null;
   /** Phase G — how the asset entered the library. */
-  source: "upload" | "ai_attachment" | "ai_generated";
+  source: MediaAssetSource;
   /** Phase G — true when the assistant, not a person, authored the bytes. */
   createdByAi: boolean;
   /** Phase G — the chat this asset came from, if any. */
@@ -338,32 +339,44 @@ export interface MediaAssetUsageRef {
 export interface MediaAssetUsage {
   menuItems: MediaAssetUsageRef[];
   inventoryItems: MediaAssetUsageRef[];
+  /** Migration 0177 — expenses recorded from this asset's receipt photo
+   * (`expenses.receipt_asset_id`). `name` is the expense's own memo, since
+   * expenses have no separate title field. */
+  expenses: MediaAssetUsageRef[];
 }
 
 /**
- * Every catalogue row pointing at this asset through `image_media_id`.
+ * Every catalogue row pointing at this asset through `image_media_id`, plus
+ * every expense recorded from it as a receipt (`receipt_asset_id`).
  * `menu_items`/`inventory_items` carry no `business_id` column of their own
  * (they scope through `location_id` → `locations.business_id`), so this
  * relies on RLS — already true of every other read of these tables
  * (see branch-service.ts, ai-tools.ts) — rather than filtering twice.
+ * `expenses` does carry `business_id` directly but is scoped the same way
+ * for symmetry with its siblings — the caller already resolved this asset
+ * against the tenant before ever calling this function.
  *
  * This is also the authorization primitive behind `/api/media/[id]/file`:
  * an operational role that cannot browse the library may still render a
  * photo already referenced by a record their own permission (menu.view,
- * inventory.view) already lets them see.
+ * inventory.view, ledger.view) already lets them see.
  */
 export async function getMediaAssetUsage(assetId: string): Promise<MediaAssetUsage> {
-  const [{ rows: menuItems }, { rows: inventoryItems }] = await Promise.all([
+  const [{ rows: menuItems }, { rows: inventoryItems }, { rows: expenses }] = await Promise.all([
     query<MediaAssetUsageRef>(`SELECT id, name FROM menu_items WHERE image_media_id = $1 ORDER BY name`, [assetId]),
     query<MediaAssetUsageRef>(`SELECT id, name FROM inventory_items WHERE image_media_id = $1 ORDER BY name`, [
       assetId,
     ]),
+    query<MediaAssetUsageRef>(
+      `SELECT id, memo AS name FROM expenses WHERE receipt_asset_id = $1 ORDER BY expense_date DESC`,
+      [assetId],
+    ),
   ]);
-  return { menuItems, inventoryItems };
+  return { menuItems, inventoryItems, expenses };
 }
 
 export function mediaAssetUsageIsEmpty(usage: MediaAssetUsage): boolean {
-  return usage.menuItems.length === 0 && usage.inventoryItems.length === 0;
+  return usage.menuItems.length === 0 && usage.inventoryItems.length === 0 && usage.expenses.length === 0;
 }
 
 /** The distinct categories and tags in use — the filter dropdowns. */
@@ -412,7 +425,7 @@ export async function storeMediaAsset(input: {
   /** Migration 0175 — which deterministic transform(s) produced this asset. */
   transformOps?: unknown[];
   /** Phase G — provenance. Defaults preserve the historic "human upload". */
-  source?: "upload" | "ai_attachment" | "ai_generated";
+  source?: MediaAssetSource;
   createdByAi?: boolean;
   conversationId?: string | null;
   projectId?: string | null;
