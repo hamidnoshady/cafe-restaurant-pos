@@ -96,6 +96,7 @@ describe("entitlement outbox", () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
+    await db.query(`INSERT INTO platform_cms_config (id) VALUES (true) ON CONFLICT (id) DO NOTHING`);
     await db.query(
       `UPDATE platform_cms_config
           SET base_url = 'https://cms.example',
