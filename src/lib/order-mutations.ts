@@ -28,8 +28,8 @@ import { ensureSessionForTable } from "./table-session-service";
 import {
   businessIdForLocation,
   monthlyOrderCount,
-  planLimitsFor,
 } from "./plan-limits";
+import { resolveLimitCeiling } from "./entitlement-service";
 import type { PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
 import type { Role } from "./auth";
@@ -238,10 +238,12 @@ export async function createOrder(
 
   const businessId = await businessIdForLocation(input.locationId);
   if (businessId) {
-    const limits = await planLimitsFor(businessId);
+    // Override-aware monthly-order ceiling (entitlement-service): a business
+    // exception (§25) raises or lowers the plan's own limit.
+    const ceiling = await resolveLimitCeiling(businessId, "monthly_order_limit");
     if (
-      limits.monthlyOrderLimit !== null &&
-      (await monthlyOrderCount(businessId)) >= limits.monthlyOrderLimit
+      ceiling.limit !== null &&
+      (await monthlyOrderCount(businessId)) >= ceiling.limit
     ) {
       return { ok: false, error: "monthly_order_limit_exceeded", status: 403 };
     }

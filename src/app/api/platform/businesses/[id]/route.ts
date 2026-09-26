@@ -8,13 +8,11 @@ import {
 import {
   getBusiness,
   setBusinessStatus,
-  setBusinessPlan,
   updateBusiness,
   renameBusinessSubdomain,
   changeBusinessIndustry,
   industryDataCounts,
   resetBusiness,
-  listPlans,
   hardDeleteBusiness,
   BusinessNotFoundError,
   ResetBusinessNotPossibleError,
@@ -222,19 +220,27 @@ export const PATCH = withPlatformScope(async (request: NextRequest, ctx: Ctx) =>
     const existing = await getBusiness(id);
     if (!existing) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-    const plans = await listPlans();
-    if (!plans.some((p) => p.key === plan)) {
-      return NextResponse.json({ error: "invalid_plan" }, { status: 400 });
+    // The ONE plan-transition path: validation, the subscription row, add-on
+    // preservation and the entitlement restamp all live in
+    // changeBusinessPlan — never a bare `businesses.plan` UPDATE.
+    const { changeBusinessPlan, SubscriptionError } = await import("@/lib/subscription-service");
+    let outcome;
+    try {
+      outcome = await changeBusinessPlan({ businessId: id, planKey: plan, source: "admin" });
+    } catch (err) {
+      if (err instanceof SubscriptionError) {
+        const status = err.code === "plan_not_found" ? 404 : 400;
+        return NextResponse.json({ error: err.code }, { status });
+      }
+      throw err;
     }
-
-    await setBusinessPlan(id, plan);
     await platformAudit({
       adminId: guard.session.padmin,
       businessId: id,
-      action: "business.plan",
+      action: outcome.outcome === "created" ? "subscription.created" : "business.plan.changed",
       entity: "business",
       entityId: id,
-      payload: { plan },
+      payload: { plan, from: existing.plan, source: "admin" },
     });
     return NextResponse.json({ business: await getBusiness(id) });
   }

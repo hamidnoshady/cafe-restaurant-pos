@@ -224,8 +224,9 @@ describe("payment settlement", () => {
         key: "gold",
         name: "پلن طلایی",
         monthlyPriceRial: 900_000,
-        isActive: true,
+        status: "active",
         sortOrder: 40,
+        limits: { branches: { unlimited: true }, members: { unlimited: true }, monthlyOrders: { unlimited: true } },
       });
       const pay = await wallet.createPayment({
         businessId: BID,

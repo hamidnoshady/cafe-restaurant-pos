@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePlatformAdmin, requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
+import { requirePlatformAdmin, requirePlatformCapability, platformAudit, withPlatformScope } from "@/lib/platform-auth";
 import {
   deductCredits,
   getWallet,
@@ -8,6 +8,13 @@ import {
   listPayments,
 } from "@/lib/wallet-service";
 import { listEntitlements } from "@/lib/billing-plans-service";
+import {
+  getBusinessSubscription,
+  listInvoices,
+  calculateSubscriptionTotal,
+} from "@/lib/subscription-service";
+import { getMessageBusinessBilling } from "@/lib/messaging-billing";
+import { mediaUsageFor } from "@/lib/media-service";
 import { getPlatformAiConfig } from "@/lib/ai-config";
 import {
   getAiGatewayConfig,
@@ -16,11 +23,14 @@ import {
   toPublicBusinessGateway,
 } from "@/lib/ai-gateway-service";
 import { rialFromGatewayUsd } from "@/lib/ai-gateway";
+import { getPlanAllowance } from "@/lib/ai-plan-allowance";
 import { query } from "@/lib/db";
 
 /**
- * One business's billing state for the console: wallet balance, recent
- * ledger, entitlements, payments and per-feature usage.
+ * One business's complete commercial view for the consolidated Billing page
+ * (migration 0176): subscription, plan limits, wallet, ledger, entitlements,
+ * usage across AI / messaging / media, invoices, payments, overrides and the
+ * LiteLLM spend read-back.
  */
 export const GET = withPlatformScope(
   async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
@@ -34,27 +44,67 @@ export const GET = withPlatformScope(
     );
     if (!bizRows[0]) return NextResponse.json({ error: "business_not_found" }, { status: 404 });
 
-    const [wallet, ledger, entitlements, payments, usage, gateway, platform, gatewayRows] =
-      await Promise.all([
-        getWallet(businessId),
-        listLedger(businessId, 50),
-        listEntitlements(businessId),
-        listPayments({ businessId, limit: 50 }),
-        query<{
-          feature_key: string;
-          used_count: string;
-          charged_count: string;
-          spent_rial: string;
-        }>(
-          `SELECT feature_key, used_count, charged_count, spent_rial
-             FROM feature_usage WHERE business_id = $1
-            ORDER BY spent_rial DESC, feature_key`,
-          [businessId],
-        ),
-        getAiGatewayConfig(),
-        getPlatformAiConfig(),
-        listBusinessGateways(businessId),
-      ]);
+    const [
+      wallet,
+      ledger,
+      entitlements,
+      payments,
+      usage,
+      gateway,
+      platform,
+      gatewayRows,
+      subscription,
+      invoices,
+      recurring,
+      messageBilling,
+      mediaUsage,
+      planAllowance,
+      overrides,
+    ] = await Promise.all([
+      getWallet(businessId),
+      listLedger(businessId, 50),
+      listEntitlements(businessId),
+      listPayments({ businessId, limit: 50 }),
+      query<{
+        feature_key: string;
+        used_count: string;
+        charged_count: string;
+        spent_rial: string;
+      }>(
+        `SELECT feature_key, used_count, charged_count, spent_rial
+           FROM feature_usage WHERE business_id = $1
+          ORDER BY spent_rial DESC, feature_key`,
+        [businessId],
+      ),
+      getAiGatewayConfig(),
+      getPlatformAiConfig(),
+      listBusinessGateways(businessId),
+      getBusinessSubscription(businessId),
+      listInvoices({ businessId, limit: 50 }),
+      calculateSubscriptionTotal(businessId).catch(() => null),
+      getMessageBusinessBilling(businessId).catch(() => ({ balanceRial: 0 })),
+      mediaUsageFor(businessId).catch(() => ({ totalBytes: 0, assetCount: 0, byKind: {} })),
+      getPlanAllowance(businessId),
+      query<{
+        id: string;
+        kind: string;
+        target: string;
+        value_int: number | null;
+        value_bool: boolean | null;
+        reason: string;
+        expires_at: string | null;
+        created_at: string;
+        admin_name: string | null;
+      }>(
+        `SELECT o.id, o.kind, o.target, o.value_int, o.value_bool, o.reason,
+                o.expires_at, o.created_at, adm.full_name AS admin_name
+           FROM business_billing_overrides o
+           LEFT JOIN platform_admins adm ON adm.id = o.created_by
+          WHERE o.business_id = $1 AND o.active
+          ORDER BY o.created_at DESC`,
+        [businessId],
+      ),
+    ]);
 
     // The LiteLLM side of this business: each virtual key's reported USD spend,
     // converted to Rial at the platform's stored rate so the console can show
@@ -84,11 +134,33 @@ export const GET = withPlatformScope(
 
     return NextResponse.json({
       business: { id: businessId, name: bizRows[0].name, plan: bizRows[0].plan },
+      subscription,
+      recurring,
       wallet,
       ledger,
       entitlements,
       payments,
+      invoices,
       litellm,
+      ai: {
+        allowance: planAllowance,
+        walletSpentRial: usage.rows
+          .filter((u) => u.feature_key === "ai")
+          .reduce((sum, u) => sum + Number(u.spent_rial), 0),
+      },
+      messaging: { balanceRial: messageBilling.balanceRial },
+      media: { usage: mediaUsage },
+      overrides: overrides.rows.map((o) => ({
+        id: o.id,
+        kind: o.kind,
+        target: o.target,
+        valueInt: o.value_int,
+        valueBool: o.value_bool,
+        reason: o.reason,
+        expiresAt: o.expires_at,
+        createdAt: o.created_at,
+        createdBy: o.admin_name,
+      })),
       usage: usage.rows.map((u) => ({
         featureKey: u.feature_key,
         usedCount: Number(u.used_count),
@@ -101,11 +173,12 @@ export const GET = withPlatformScope(
 
 /**
  * Manual wallet adjustment by the super-admin: grant (positive) or deduct
- * (negative) credits with a note.
+ * (negative) credits with a note. Every adjustment is audited (§36) with the
+ * before/after balance.
  */
 export const POST = withPlatformScope(
   async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
-    const guard = await requirePlatformCapability("billing.manage");
+    const guard = await requirePlatformCapability("adjustments.manage");
     if (guard.error) return guard.error;
     const { id: businessId } = await ctx.params;
 
@@ -160,9 +233,12 @@ export const POST = withPlatformScope(
     }
 
     const amount = Math.floor(Number(body.amountRial ?? 0));
-    if (amount === 0) return NextResponse.json({ error: "bad_amount" }, { status: 400 });
+    if (amount === 0 || !Number.isSafeInteger(amount)) {
+      return NextResponse.json({ error: "bad_amount" }, { status: 400 });
+    }
 
     try {
+      const before = await getWallet(businessId);
       const result =
         amount > 0
           ? await grantCredits({
@@ -177,6 +253,19 @@ export const POST = withPlatformScope(
               note: body.note?.trim() || undefined,
               platformAdminId: guard.session.padmin,
             });
+      await platformAudit({
+        adminId: guard.session.padmin,
+        businessId,
+        action: "wallet.adjusted",
+        entity: "business_wallets",
+        entityId: businessId,
+        payload: {
+          amountRial: amount,
+          note: body.note?.trim() || null,
+          beforeRial: before.balanceRial,
+          afterRial: result.balanceRial,
+        },
+      });
       return NextResponse.json({ balanceRial: result.balanceRial });
     } catch (err) {
       if (err instanceof Error && err.message === "insufficient_credits") {

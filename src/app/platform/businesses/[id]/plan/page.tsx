@@ -1,13 +1,15 @@
-"use client";
+import { redirect } from "next/navigation";
 
-/** Plan assignment and the usage snapshot it is bounded by. */
-import { PlanPanel, UsagePanel } from "../panels";
-
-export default function BusinessPlanPage() {
-  return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <PlanPanel />
-      <UsagePanel />
-    </div>
-  );
+/**
+ * Retired route (migration 0176): a business's plan, limits and usage are part
+ * of its consolidated commercial page now. `/platform/businesses/:id/plan` →
+ * the subscription tab of the business billing page.
+ */
+export default async function BusinessPlanRedirectPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  redirect(`/platform/businesses/${encodeURIComponent(id)}/billing?tab=subscription`);
 }

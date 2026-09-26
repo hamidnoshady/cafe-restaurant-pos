@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { withTenantScope, requirePermission } from "@/lib/auth";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getPaymentById, verifyPayment } from "@/lib/wallet-service";
-import { activatePurchasedPlan, fulfilPurchasedEntitlement } from "@/lib/billing-service";
-import { listPlanFeatures } from "@/lib/billing-plans-service";
+import { fulfilPurchasedPayment } from "@/lib/billing-service";
 import { GatewayError, gatewayErrorMessage } from "@/lib/payment-gateway";
 
 /**
@@ -43,32 +42,16 @@ export const POST = withTenantScope(async (req: Request) => {
     const payment = await getPaymentById(paymentId);
     if (!payment) return NextResponse.json({ error: "payment_not_found" }, { status: 404 });
 
-    // Grant the entitlement a plan/addon purchase paid for.
+    // Grant the entitlement a plan/addon purchase paid for — through the one
+    // shared fulfilment path (the super-admin manual approval uses the same
+    // function), so activation logic can never drift between the two.
     if (payment.status === "verified" && payment.purpose !== "top_up") {
-      if (payment.purpose === "addon_purchase" && payment.featureKey) {
-        await fulfilPurchasedEntitlement({
-          businessId: session.businessId,
-          featureKey: payment.featureKey,
-          source: "addon",
-        });
-      } else if (payment.purpose === "plan_purchase" && payment.planKey) {
-        // Switch the business onto the purchased plan so its plan-builder
-        // prices become the ones it is billed at, and stamp the plan's
-        // included/monthly features as owned via plan.
-        await activatePurchasedPlan({ businessId: session.businessId, planKey: payment.planKey });
-        const features = await listPlanFeatures(payment.planKey);
-        for (const f of features) {
-          if (f.pricingModel === "included" || f.pricingModel === "monthly") {
-            await fulfilPurchasedEntitlement({
-              businessId: session.businessId,
-              featureKey: f.featureKey,
-              source: "plan",
-              freeUntil: f.freeUntil,
-              freeLimit: f.freeLimit,
-            });
-          }
-        }
-      }
+      await fulfilPurchasedPayment({
+        businessId: session.businessId,
+        purpose: payment.purpose,
+        planKey: payment.planKey,
+        featureKey: payment.featureKey,
+      });
     }
 
     return NextResponse.json({

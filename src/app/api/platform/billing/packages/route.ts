@@ -1,15 +1,34 @@
 import { NextResponse } from "next/server";
-import { requirePlatformAdmin, requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
+import { requirePlatformAdmin, requirePlatformCapability, platformAudit, withPlatformScope } from "@/lib/platform-auth";
 import { listCreditPackages, saveCreditPackage } from "@/lib/wallet-service";
+import {
+  listMessageCreditPackages,
+  saveMessageCreditPackage,
+} from "@/lib/messaging-billing";
 
-/** All credit packages (active and inactive) for the plan/billing console. */
-export const GET = withPlatformScope(async () => {
+/**
+ * The ONE credit-package catalogue (migration 0176): wallet top-up packages
+ * and messaging credit packages are both commercial products, so both are
+ * managed from `/platform/billing?tab=usage` — the app consoles
+ * (/platform/messaging) only display them read-only.
+ *
+ *   GET  /api/platform/billing/packages?kind=wallet|messaging (default: both)
+ *   POST /api/platform/billing/packages  { kind, id?, name, priceRial,
+ *                                          creditRial, isActive, sortOrder }
+ */
+export const GET = withPlatformScope(async (req: Request) => {
   const { error } = await requirePlatformAdmin();
   if (error) return error;
-  return NextResponse.json({ packages: await listCreditPackages(false) });
+  const url = new URL(req.url);
+  const kind = url.searchParams.get("kind");
+  const [wallet, messaging] = await Promise.all([
+    kind && kind !== "wallet" ? Promise.resolve([]) : listCreditPackages(false),
+    kind && kind !== "messaging" ? Promise.resolve([]) : listMessageCreditPackages(false),
+  ]);
+  return NextResponse.json({ packages: wallet, messagePackages: messaging });
 });
 
-/** Create or update a credit package. */
+/** Create or update a credit package (wallet top-up or messaging credit). */
 export const POST = withPlatformScope(async (req: Request) => {
   const guard = await requirePlatformCapability("billing.manage");
   if (guard.error) return guard.error;
@@ -21,20 +40,64 @@ export const POST = withPlatformScope(async (req: Request) => {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
+  const kind = body.kind === "messaging" ? "messaging" : "wallet";
   const name = String(body.name ?? "").trim();
   const priceRial = Math.floor(Number(body.priceRial ?? 0));
   const creditRial = Math.floor(Number(body.creditRial ?? 0));
   if (!name || priceRial <= 0 || creditRial <= 0) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
+  if (!Number.isSafeInteger(priceRial) || !Number.isSafeInteger(creditRial)) {
+    return NextResponse.json({ error: "INVALID_AMOUNT" }, { status: 400 });
+  }
 
+  const id = typeof body.id === "string" && body.id ? body.id : undefined;
+  const isActive = body.isActive !== false;
+  const sortOrder = Math.floor(Number(body.sortOrder ?? 0)) || 0;
+
+  if (kind === "messaging") {
+    const before = id ? (await listMessageCreditPackages(false)).find((p) => p.id === id) ?? null : null;
+    const pkg = await saveMessageCreditPackage({
+      id,
+      name,
+      priceRial,
+      creditAmountRial: creditRial,
+      isActive,
+      sortOrder,
+    });
+    await platformAudit({
+      adminId: guard.session.padmin,
+      action: "credit_package.changed",
+      entity: "message_credit_packages",
+      entityId: pkg.id,
+      payload: {
+        kind,
+        before: before ? { name: before.name, priceRial: before.priceRial, creditRial: before.creditAmountRial, isActive: before.isActive } : null,
+        after: { name, priceRial, creditRial, isActive },
+      },
+    });
+    return NextResponse.json({ package: pkg, kind });
+  }
+
+  const before = id ? (await listCreditPackages(false)).find((p) => p.id === id) ?? null : null;
   const pkg = await saveCreditPackage({
-    id: typeof body.id === "string" && body.id ? body.id : undefined,
+    id,
     name,
     priceRial,
     creditRial,
-    isActive: body.isActive !== false,
-    sortOrder: Math.floor(Number(body.sortOrder ?? 0)) || 0,
+    isActive,
+    sortOrder,
   });
-  return NextResponse.json({ package: pkg });
+  await platformAudit({
+    adminId: guard.session.padmin,
+    action: "credit_package.changed",
+    entity: "credit_packages",
+    entityId: pkg.id,
+    payload: {
+      kind,
+      before: before ? { name: before.name, priceRial: before.priceRial, creditRial: before.creditRial, isActive: before.isActive } : null,
+      after: { name, priceRial, creditRial, isActive },
+    },
+  });
+  return NextResponse.json({ package: pkg, kind });
 });

@@ -46,8 +46,10 @@ export async function planLimitsFor(businessId: string, exec: Executor = { query
     member_limit: number | null;
     monthly_order_limit: number | null;
   }>(
+    // Migration 0176 folded the 0034 `plans` limits catalogue into
+    // `billing_plans` — one plan domain: limits + pricing + lifecycle.
     `SELECT p.key, p.name, p.branch_limit, p.member_limit, p.monthly_order_limit
-       FROM businesses b JOIN plans p ON p.key = b.plan
+       FROM businesses b JOIN billing_plans p ON p.key = b.plan
       WHERE b.id = $1`,
     [businessId],
   );

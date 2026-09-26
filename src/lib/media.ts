@@ -206,6 +206,12 @@ export type MediaConfigResult =
  * Validate a console PUT against the stored config. Secrets follow the
  * platform convention exactly: an omitted `secretAccessKey` keeps what is
  * stored, an empty string clears it.
+ *
+ * Migration 0176 ownership split: this validator accepts the TECHNICAL
+ * connection only (endpoint/bucket/credentials/enabled). The customer-facing
+ * tariff (billingEnabled, dailyFlatRial, dailyPerGbRial, freeQuotaMb,
+ * enhancePriceRial) is Billing-owned and validated by
+ * `validateMediaTariffInput` — /platform/media's save keeps the stored values.
  */
 export function validateMediaConfigInput(input: unknown, existing: MediaStorageConfig): MediaConfigResult {
   if (!input || typeof input !== "object") return { ok: false, error: "bad_request" };
@@ -213,11 +219,6 @@ export function validateMediaConfigInput(input: unknown, existing: MediaStorageC
 
   const str = (v: unknown, fallback: string) => (typeof v === "string" ? v.trim() : fallback);
   const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
-  const money = (v: unknown, fallback: number) => {
-    if (v === undefined || v === null || v === "") return fallback;
-    const n = Number(v);
-    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : NaN;
-  };
 
   const enabled = bool(body.enabled, existing.enabled);
   const endpoint = str(body.endpoint, existing.endpoint);
@@ -228,16 +229,13 @@ export function validateMediaConfigInput(input: unknown, existing: MediaStorageC
   const secretAccessKey =
     body.secretAccessKey === undefined ? existing.secretAccessKey : String(body.secretAccessKey);
 
-  const billingEnabled = bool(body.billingEnabled, existing.billingEnabled);
-  const dailyFlatRial = money(body.dailyFlatRial, existing.dailyFlatRial);
-  const dailyPerGbRial = money(body.dailyPerGbRial, existing.dailyPerGbRial);
-  const freeQuotaMb = money(body.freeQuotaMb, existing.freeQuotaMb);
+  // Tariff: Billing-owned (kept untouched by this technical save).
+  const billingEnabled = existing.billingEnabled;
+  const dailyFlatRial = existing.dailyFlatRial;
+  const dailyPerGbRial = existing.dailyPerGbRial;
+  const freeQuotaMb = existing.freeQuotaMb;
   const enhanceModel = str(body.enhanceModel, existing.enhanceModel) || "gpt-image-1";
-  const enhancePriceRial = money(body.enhancePriceRial, existing.enhancePriceRial);
-
-  if ([dailyFlatRial, dailyPerGbRial, freeQuotaMb, enhancePriceRial].some((n) => Number.isNaN(n))) {
-    return { ok: false, error: "invalid_price" };
-  }
+  const enhancePriceRial = existing.enhancePriceRial;
 
   if (enabled) {
     if (!endpoint) return { ok: false, error: "endpoint_required" };
@@ -269,6 +267,51 @@ export function validateMediaConfigInput(input: unknown, existing: MediaStorageC
       enhanceModel,
       enhancePriceRial,
     },
+  };
+}
+
+export interface MediaTariff {
+  billingEnabled: boolean;
+  dailyFlatRial: number;
+  dailyPerGbRial: number;
+  freeQuotaMb: number;
+  enhancePriceRial: number;
+}
+
+export type MediaTariffResult =
+  | { ok: true; tariff: MediaTariff }
+  | { ok: false; error: string };
+
+/**
+ * Validate the customer-facing storage/media tariff — the Billing rates
+ * console's write path (migration 0176 moved this ownership from
+ * /platform/media to /platform/billing). The enhance *model* stays technical
+ * (media console); its *price* is commercial (here).
+ */
+export function validateMediaTariffInput(input: unknown, existing: MediaTariff): MediaTariffResult {
+  if (!input || typeof input !== "object") return { ok: false, error: "bad_request" };
+  const body = input as Record<string, unknown>;
+
+  const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+  const money = (v: unknown, fallback: number) => {
+    if (v === undefined || v === null || v === "") return fallback;
+    const n = Number(v);
+    return Number.isSafeInteger(n) && n >= 0 ? n : NaN;
+  };
+
+  const billingEnabled = bool(body.billingEnabled, existing.billingEnabled);
+  const dailyFlatRial = money(body.dailyFlatRial, existing.dailyFlatRial);
+  const dailyPerGbRial = money(body.dailyPerGbRial, existing.dailyPerGbRial);
+  const freeQuotaMb = money(body.freeQuotaMb, existing.freeQuotaMb);
+  const enhancePriceRial = money(body.enhancePriceRial, existing.enhancePriceRial);
+
+  if ([dailyFlatRial, dailyPerGbRial, freeQuotaMb, enhancePriceRial].some((n) => Number.isNaN(n))) {
+    return { ok: false, error: "invalid_price" };
+  }
+
+  return {
+    ok: true,
+    tariff: { billingEnabled, dailyFlatRial, dailyPerGbRial, freeQuotaMb, enhancePriceRial },
   };
 }
 

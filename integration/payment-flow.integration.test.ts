@@ -479,12 +479,17 @@ describe("plan builder", () => {
         name: "پلن ایکس",
         description: "تست",
         monthlyPriceRial: 1_000_000,
-        isActive: true,
+        status: "active",
         sortOrder: 99,
+        limits: { branches: { unlimited: true }, members: { unlimited: true }, monthlyOrders: { unlimited: true } },
       });
-      // Backed by the shared plans catalogue (limits table) too.
-      const { rows } = await db.query(`SELECT name FROM plans WHERE key = 'tier-x'`);
+      // One authoritative row in billing_plans — the old dual-write into the
+      // 0034 `plans` catalogue is gone (migration 0176).
+      const { rows } = await db.query(
+        `SELECT name, status FROM billing_plans WHERE key = 'tier-x'`,
+      );
       expect(rows[0].name).toBe("پلن ایکس");
+      expect(rows[0].status).toBe("active");
 
       await plans.savePlanFeature({
         planKey: "tier-x",

@@ -24,6 +24,7 @@ import {
   MEDIA_STORAGE_FEATURE_KEY,
   type MediaKind,
   type MediaStorageConfig,
+  type MediaTariff,
 } from "./media";
 import { s3Delete, s3Get, s3Put, type S3Config } from "./s3-lite";
 import { chargeFeatureUse, WalletInsufficientFundsError } from "./wallet-service";
@@ -95,6 +96,32 @@ export async function saveMediaConfig(config: MediaStorageConfig, adminId: strin
       config.freeQuotaMb,
       config.enhanceModel,
       config.enhancePriceRial,
+      adminId,
+    ],
+  );
+}
+
+/**
+ * Save ONLY the customer-facing tariff — the Billing rates console's write
+ * path (migration 0176). The technical connection (endpoint/bucket/keys) is
+ * untouched here; /platform/media's own save no longer accepts these fields.
+ */
+export async function saveMediaTariff(
+  tariff: MediaTariff,
+  adminId: string | null,
+): Promise<void> {
+  await query(
+    `UPDATE platform_media_config SET
+        billing_enabled = $1, daily_flat_rial = $2, daily_per_gb_rial = $3,
+        free_quota_mb = $4, enhance_price_rial = $5,
+        updated_by = $6, updated_at = now()
+      WHERE id = true`,
+    [
+      tariff.billingEnabled,
+      tariff.dailyFlatRial,
+      tariff.dailyPerGbRial,
+      tariff.freeQuotaMb,
+      tariff.enhancePriceRial,
       adminId,
     ],
   );

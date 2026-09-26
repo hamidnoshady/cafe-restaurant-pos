@@ -37,10 +37,10 @@ export const EXEMPT_TABLES = new Set([
   // have no session yet, so there is no business_id to scope by. The row is a
   // key, a count and a window start — no tenant data at all.
   "rate_limits",
-  // Phase 17 — a global plan catalogue (branch/member/order-count ceilings),
-  // the same shape as feature_flags: every business reads the same few rows,
-  // there is nothing to isolate.
-  "plans",
+  // Migration 0176 retired the 0034 `plans` limits catalogue into
+  // `billing_plans` (one plan domain: limits + pricing + lifecycle). The
+  // exempt entry for `plans` is gone with the table; `billing_plans` (below)
+  // remains the one exempt plan catalogue.
   // Platform-wide singleton config for the desktop installer's update
   // distribution (migration 0038) — carries no business_id/location_id,
   // nothing to scope by, same shape as feature_flags/plans.

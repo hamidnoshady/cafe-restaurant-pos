@@ -1,19 +1,31 @@
 /**
- * Plan builder: per-feature pricing catalogue on billing plans, business
- * entitlements, and the "free for a limited time / limited use" promotions.
+ * The ONE plan domain service (migration 0176) — definitions, packaging,
+ * limits and the per-feature pricing catalogue, plus business entitlements.
  *
- * Model (migration 0130):
- *  - `billing_plans`       — a plan key with an optional monthly fee.
- *  - `billing_plan_features` — for each (plan, feature) a pricing model:
+ * Model after the consolidation:
+ *  - `billing_plans` — a plan's identity, base pricing (monthly fee, currency
+ *    is Rial platform-wide), operational limits (branch/member/monthly-order,
+ *    NULL = intentionally unlimited), trial/grace defaults, monthly AI credit
+ *    and a lifecycle status:
+ *      • draft   — editable, not purchasable, not assignable
+ *      • active  — purchasable, usable by businesses
+ *      • retired — closed to new customers, still valid for existing
+ *                  subscriptions and historical references (never hard-deleted)
+ *  - `billing_plan_features` — for each (plan, feature) a commercial model:
  *      • included — part of the plan, no extra charge
- *      • monthly  — costs price_rial per month (subscription add-on)
+ *      • monthly  — costs price_rial per month (a recurring add-on)
  *      • per_use  — costs price_rial for each use, charged from the wallet
  *      • addon    — one-off purchase, then owned
- *    plus optional `free_until` / `free_limit` promotion fields.
+ *    plus optional `free_until` / `free_limit` promotions.
  *  - `business_entitlements` — features a business owns (via plan/addon/promo/
  *    manual grant), with expiry and free-promo allowances copied at grant.
  *  - `feature_usage` — counters; a per_use feature is free until the promo
  *    window closes or `free_limit` uses are consumed.
+ *
+ * Money is integer Rial everywhere. The old `plans` limits catalogue
+ * (migration 0034) was folded into `billing_plans` by 0176; this service is
+ * the only writer, so a plan can never again exist in one catalogue with its
+ * limits missing from the other.
  *
  * Entitlement resolution order (most specific wins):
  *   manual grant → addon purchase → plan feature → promo row
@@ -39,10 +51,32 @@ function iso(value: Date | string | null | undefined): string | null {
 
 export type PricingModel = "included" | "monthly" | "per_use" | "addon";
 
+/** The plan lifecycle (migration 0176). Historical rows are never deleted. */
+export type PlanStatus = "draft" | "active" | "retired";
+
+/**
+ * How one operational limit is expressed. `unlimited` is an explicit choice,
+ * never an accident of a missing row: the API requires this object for every
+ * limit when a plan is created, and stores unlimited as NULL by design.
+ */
+export interface LimitSpec {
+  unlimited: boolean;
+  value?: number | null;
+}
+
+export interface PlanLimitsSpec {
+  branches: LimitSpec;
+  members: LimitSpec;
+  monthlyOrders: LimitSpec;
+}
+
 export interface BillingPlan {
   key: string;
   name: string;
   description: string | null;
+  status: PlanStatus;
+  /** Derived: status === 'active'. */
+  isActive: boolean;
   monthlyPriceRial: number | null;
   /**
    * AI credit included per calendar month (migration 0168). Consumed by the
@@ -51,7 +85,12 @@ export interface BillingPlan {
    * balance. NULL = the plan includes no AI credit.
    */
   monthlyAiCreditRial: number | null;
-  isActive: boolean;
+  /** Operational limits — NULL = unlimited (an explicit choice, see LimitSpec). */
+  branchLimit: number | null;
+  memberLimit: number | null;
+  monthlyOrderLimit: number | null;
+  trialDays: number;
+  graceDays: number;
   sortOrder: number;
 }
 
@@ -104,42 +143,96 @@ export interface FeatureAccess {
 // Plan catalogue
 // ---------------------------------------------------------------------------
 
-export async function listBillingPlans(activeOnly = false): Promise<BillingPlan[]> {
-  const { rows } = await query<{
-    key: string;
-    name: string;
-    description: string | null;
-    monthly_price_rial: string | null;
-    monthly_ai_credit_rial: string | null;
-    is_active: boolean;
-    sort_order: number;
-  }>(
-    `SELECT key, name, description, monthly_price_rial, monthly_ai_credit_rial, is_active, sort_order
-       FROM billing_plans
-      WHERE ($1::boolean = false OR is_active)
-      ORDER BY sort_order, key`,
-    [activeOnly],
-  );
-  return rows.map((r) => ({
+const PLAN_COLUMNS = `key, name, description, status, monthly_price_rial, monthly_ai_credit_rial,
+       branch_limit, member_limit, monthly_order_limit, trial_days, grace_days, sort_order`;
+
+type PlanRow = {
+  key: string;
+  name: string;
+  description: string | null;
+  status: PlanStatus;
+  monthly_price_rial: string | null;
+  monthly_ai_credit_rial: string | null;
+  branch_limit: number | null;
+  member_limit: number | null;
+  monthly_order_limit: number | null;
+  trial_days: number;
+  grace_days: number;
+  sort_order: number;
+}
+
+function toPlan(r: PlanRow): BillingPlan {
+  return {
     key: r.key,
     name: r.name,
     description: r.description,
+    status: r.status,
+    isActive: r.status === "active",
     monthlyPriceRial: r.monthly_price_rial == null ? null : n(r.monthly_price_rial),
     monthlyAiCreditRial: r.monthly_ai_credit_rial == null ? null : n(r.monthly_ai_credit_rial),
-    isActive: r.is_active,
+    branchLimit: r.branch_limit,
+    memberLimit: r.member_limit,
+    monthlyOrderLimit: r.monthly_order_limit,
+    trialDays: r.trial_days,
+    graceDays: r.grace_days,
     sortOrder: r.sort_order,
-  }));
+  };
 }
 
-export async function saveBillingPlan(input: {
+/** Which plans a business may be put on: active plans (retired is historical). */
+export async function listAssignablePlans(): Promise<BillingPlan[]> {
+  const { rows } = await query<PlanRow>(
+    `SELECT ${PLAN_COLUMNS} FROM billing_plans WHERE status = 'active' ORDER BY sort_order, key`,
+  );
+  return rows.map(toPlan);
+}
+
+export async function listBillingPlans(activeOnly = false): Promise<BillingPlan[]> {
+  const { rows } = await query<PlanRow>(
+    `SELECT ${PLAN_COLUMNS} FROM billing_plans
+      WHERE ($1::boolean = false OR status = 'active')
+      ORDER BY sort_order, key`,
+    [activeOnly],
+  );
+  return rows.map(toPlan);
+}
+
+export async function getBillingPlan(key: string): Promise<BillingPlan | null> {
+  const { rows } = await query<PlanRow>(`SELECT ${PLAN_COLUMNS} FROM billing_plans WHERE key = $1`, [key]);
+  return rows[0] ? toPlan(rows[0]) : null;
+}
+
+/** Normalizes one LimitSpec into the stored integer (NULL = unlimited). */
+function limitValue(spec: LimitSpec | undefined): number | null {
+  if (!spec || spec.unlimited) return null;
+  const value = Math.floor(n(spec.value ?? 0));
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error("invalid_limit");
+  return value;
+}
+
+export interface SaveBillingPlanInput {
   key?: string;
   name: string;
   description?: string | null;
   monthlyPriceRial?: number | null;
   monthlyAiCreditRial?: number | null;
-  isActive: boolean;
+  status?: PlanStatus;
   sortOrder: number;
-}): Promise<BillingPlan> {
+  trialDays?: number;
+  graceDays?: number;
+  /**
+   * Required when CREATING a plan: every limit must be an explicit
+   * limited/unlimited choice, so a new plan can never become unlimited by
+   * accident. Optional when UPDATING — absent limits keep their stored value.
+   */
+  limits?: PlanLimitsSpec;
+}
+
+/**
+ * Create or update a plan. One table, one write: the old dual-write into the
+ * 0034 `plans` catalogue is gone with the table (migration 0176).
+ */
+export async function saveBillingPlan(input: SaveBillingPlanInput): Promise<BillingPlan> {
   const name = input.name.trim();
   if (!name) throw new Error("missing_fields");
   const key = (input.key ?? "").trim() || slugifyKey(name);
@@ -150,26 +243,53 @@ export async function saveBillingPlan(input: {
     input.monthlyAiCreditRial == null || n(input.monthlyAiCreditRial) <= 0
       ? null
       : Math.max(0, Math.floor(n(input.monthlyAiCreditRial)));
+  const status = input.status ?? "active";
+  if (!["draft", "active", "retired"].includes(status)) throw new Error("bad_status");
+
+  const existing = await getBillingPlan(key);
+  if (!existing && !input.limits) throw new Error("limits_required");
+
+  const branchLimit = input.limits ? limitValue(input.limits.branches) : existing?.branchLimit ?? null;
+  const memberLimit = input.limits ? limitValue(input.limits.members) : existing?.memberLimit ?? null;
+  const monthlyOrderLimit = input.limits
+    ? limitValue(input.limits.monthlyOrders)
+    : existing?.monthlyOrderLimit ?? null;
+  const trialDays = Math.max(0, Math.floor(n(input.trialDays ?? existing?.trialDays ?? 0)));
+  const graceDays = Math.max(0, Math.floor(n(input.graceDays ?? existing?.graceDays ?? 7)));
+
   await query(
-    `INSERT INTO billing_plans (key, name, description, monthly_price_rial, monthly_ai_credit_rial, is_active, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO billing_plans
+       (key, name, description, monthly_price_rial, monthly_ai_credit_rial, status,
+        branch_limit, member_limit, monthly_order_limit, trial_days, grace_days, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      ON CONFLICT (key) DO UPDATE SET
        name = EXCLUDED.name, description = EXCLUDED.description,
        monthly_price_rial = EXCLUDED.monthly_price_rial,
        monthly_ai_credit_rial = EXCLUDED.monthly_ai_credit_rial,
-       is_active = EXCLUDED.is_active, sort_order = EXCLUDED.sort_order,
+       status = EXCLUDED.status,
+       branch_limit = EXCLUDED.branch_limit,
+       member_limit = EXCLUDED.member_limit,
+       monthly_order_limit = EXCLUDED.monthly_order_limit,
+       trial_days = EXCLUDED.trial_days,
+       grace_days = EXCLUDED.grace_days,
+       sort_order = EXCLUDED.sort_order,
        updated_at = now()`,
-    [key, name, input.description?.trim() || null, price, aiCredit, input.isActive, input.sortOrder || 0],
+    [
+      key,
+      name,
+      input.description?.trim() || null,
+      price,
+      aiCredit,
+      status,
+      branchLimit,
+      memberLimit,
+      monthlyOrderLimit,
+      trialDays,
+      graceDays,
+      input.sortOrder || 0,
+    ],
   );
-  // A new billing plan row should also exist in the `plans` limits table so
-  // plan-limits.ts and business.plan FK keep working.
-  await query(
-    `INSERT INTO plans (key, name) VALUES ($1,$2)
-     ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name`,
-    [key, name],
-  );
-  const all = await listBillingPlans();
-  const plan = all.find((p) => p.key === key);
+  const plan = await getBillingPlan(key);
   if (!plan) throw new Error("save_failed");
   return plan;
 }
@@ -180,6 +300,57 @@ function slugifyKey(name: string): string {
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
   return base || `plan_${Date.now().toString(36)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Plan lifecycle
+// ---------------------------------------------------------------------------
+
+export class PlanTransitionError extends Error {
+  constructor(public code: string) {
+    super(code);
+  }
+}
+
+/** draft → active: the plan becomes purchasable and assignable. */
+export async function activatePlan(key: string): Promise<BillingPlan> {
+  const plan = await getBillingPlan(key);
+  if (!plan) throw new PlanTransitionError("plan_not_found");
+  if (plan.status === "retired") throw new PlanTransitionError("plan_retired");
+  await query(`UPDATE billing_plans SET status = 'active', updated_at = now() WHERE key = $1`, [key]);
+  return (await getBillingPlan(key))!;
+}
+
+/** active → retired: closed to new customers; existing references stay valid. */
+export async function retirePlan(key: string): Promise<BillingPlan> {
+  const plan = await getBillingPlan(key);
+  if (!plan) throw new PlanTransitionError("plan_not_found");
+  if (plan.status !== "active") throw new PlanTransitionError("plan_not_active");
+  await query(`UPDATE billing_plans SET status = 'retired', updated_at = now() WHERE key = $1`, [key]);
+  return (await getBillingPlan(key))!;
+}
+
+/**
+ * Hard-delete a plan. Only an UNUSED DRAFT may be removed: an active plan is
+ * purchasable by definition, a retired plan keeps historical references
+ * honest, and any plan a business (or a payment) ever pointed at is history.
+ * The businesses.plan FK is the hard guarantee; this check turns a would-be
+ * FK violation into an actionable reason.
+ */
+export async function deleteDraftPlan(key: string): Promise<void> {
+  const plan = await getBillingPlan(key);
+  if (!plan) throw new PlanTransitionError("plan_not_found");
+  if (plan.status !== "draft") throw new PlanTransitionError("plan_not_draft");
+  const { rows } = await query<{ businesses: string; subscriptions: string; payments: string }>(
+    `SELECT
+       (SELECT count(*)::text FROM businesses WHERE plan = $1) AS businesses,
+       (SELECT count(*)::text FROM business_subscriptions WHERE plan_key = $1) AS subscriptions,
+       (SELECT count(*)::text FROM billing_payments WHERE plan_key = $1) AS payments`,
+    [key],
+  );
+  const used = Number(rows[0]?.businesses ?? 0) + Number(rows[0]?.subscriptions ?? 0) + Number(rows[0]?.payments ?? 0);
+  if (used > 0) throw new PlanTransitionError("plan_in_use");
+  await query(`DELETE FROM billing_plans WHERE key = $1`, [key]);
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +417,10 @@ export async function savePlanFeature(input: {
   if (!["included", "monthly", "per_use", "addon"].includes(input.pricingModel)) {
     throw new Error("bad_pricing_model");
   }
+  const plan = await getBillingPlan(input.planKey);
+  if (!plan) throw new PlanTransitionError("plan_not_found");
+  // A retired plan is a historical record: its pricing rows no longer move.
+  if (plan.status === "retired") throw new PlanTransitionError("plan_retired");
   const price = Math.max(0, Math.floor(n(input.priceRial)));
   if ((input.pricingModel === "per_use" || input.pricingModel === "monthly" || input.pricingModel === "addon") && price <= 0) {
     // A price of zero is legal — it reads as "free" — but the promo columns
@@ -283,6 +458,8 @@ export async function savePlanFeature(input: {
 }
 
 export async function deletePlanFeature(planKey: string, featureKey: string): Promise<void> {
+  const plan = await getBillingPlan(planKey);
+  if (plan?.status === "retired") throw new PlanTransitionError("plan_retired");
   await query(`DELETE FROM billing_plan_features WHERE plan_key = $1 AND feature_key = $2`, [
     planKey,
     featureKey,
@@ -360,6 +537,26 @@ export async function revokeEntitlement(businessId: string, featureKey: string):
 // ---------------------------------------------------------------------------
 
 /**
+ * Whether the business's subscription still carries its plan: an active,
+ * trialing or in-grace subscription does; a cancelled one does until its paid
+ * period ends; an expired one does not. Businesses with no subscription row
+ * (pre-0176 data edge) are treated as active so nothing regresses.
+ */
+export async function subscriptionCarriesPlan(businessId: string, nowIso: string): Promise<boolean> {
+  const { rows } = await query<{ status: string; current_period_end: string | null }>(
+    `SELECT status, current_period_end FROM business_subscriptions WHERE business_id = $1`,
+    [businessId],
+  );
+  const row = rows[0];
+  if (!row) return true;
+  if (row.status === "active" || row.status === "trialing" || row.status === "past_due") return true;
+  if (row.status === "cancelled") {
+    return row.current_period_end ? iso(row.current_period_end)! > nowIso : false;
+  }
+  return false; // expired
+}
+
+/**
  * Resolve how one feature stands for a business: whether it is usable and the
  * per-use Rial price in the current moment.
  *
@@ -388,6 +585,7 @@ async function resolveFeatureAccessImpl(
     [businessId],
   );
   const planKey = bizRows[0]?.plan ?? "free";
+  const planEffective = await subscriptionCarriesPlan(businessId, nowIso);
 
   const { rows: planFeatures } = await query<{
     feature_key: string;
@@ -448,7 +646,8 @@ async function resolveFeatureAccessImpl(
     const usedCount = usedByKey.get(featureKey) ?? 0;
 
     // Manual / addon entitlement (not expired) → entitled; its free promo may
-    // still zero the price of a metered feature.
+    // still zero the price of a metered feature. These survive a plan change
+    // and an expired subscription — an addon is owned, not rented.
     const ownedEntitlement =
       entitlement &&
       (entitlement.source === "manual" || entitlement.source === "addon") &&
@@ -491,15 +690,16 @@ async function resolveFeatureAccessImpl(
       entitled = true;
       source = ownedEntitlement.source;
     } else if (model === "included" || model === "monthly") {
-      // Included/monthly features of the current plan are available. (Monthly
-      // fees are collected at plan subscription; the feature itself is on.)
-      entitled = true;
+      // Included/monthly features of the current plan are available — but only
+      // while the subscription carries the plan. (Monthly fees are collected
+      // at plan subscription / renewal; the feature itself is on.)
+      entitled = planEffective;
       source = "plan";
     } else if (model === "per_use") {
       // Per-use features are reachable (pay as you go), and a running free
       // promotion makes the feature usable outright during its window/quota.
-      entitled = true;
-      source = activePlanPromo ? "plan" : "plan";
+      entitled = planEffective;
+      source = "plan";
     } else if (model === "addon") {
       // Addons require purchase; the ownedEntitlement branch above handles it,
       // but a promo window can open the feature for free as well.

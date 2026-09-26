@@ -23,8 +23,11 @@ const SLUGS: {
 }[] = [
   { slug: "", label: "نمای کلی", hint: "خلاصهٔ وضعیت، مصرف و میان‌بُرهای بخش‌ها" },
   { slug: "settings", label: "تنظیمات کسب‌وکار", hint: "نام، منطقهٔ زمانی، نوع و نشانی اینترنتی" },
-  { slug: "plan", label: "پلن و مصرف", hint: "اشتراک، سقف‌ها و آمار فعالیت" },
-  { slug: "billing", label: "صورت‌حساب و پرداخت", hint: "اعتبار، تراکنش‌ها، شارژ دستی و قابلیت‌های خریداری‌شده", requires: ["billing.manage"] },
+  // The ONE commercial section (migration 0176): subscription, limits, usage,
+  // wallet, invoices and overrides. The old `plan` section redirects here
+  // (`?tab=subscription`); reads need only `billing.view`, which every admin
+  // role holds — writes are re-checked server-side per capability.
+  { slug: "billing", label: "صورت‌حساب و اشتراک", hint: "اشتراک و پلن، مصرف، اعتبار، تراکنش‌ها و فاکتورها", requires: ["billing.view"] },
   { slug: "features", label: "برنامه‌ها و قابلیت‌ها", hint: "پرچم‌های ویژگی، وضعیت چهار برنامه و جفت‌سازی نسخهٔ دسکتاپ" },
   {
     slug: "support",

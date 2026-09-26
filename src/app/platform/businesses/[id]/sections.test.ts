@@ -13,10 +13,11 @@ describe("business workspace navigation", () => {
     const sections = businessSections(BUSINESS_ID, CAPABILITIES_FOR("owner"));
     const hrefs = sections.map((section) => section.href);
 
+    // Migration 0176: the `plan` section is gone — it redirects into the
+    // consolidated commercial section (`billing?tab=subscription`).
     expect(hrefs).toEqual([
       "/platform/businesses/business-1",
       "/platform/businesses/business-1/settings",
-      "/platform/businesses/business-1/plan",
       "/platform/businesses/business-1/billing",
       "/platform/businesses/business-1/features",
       "/platform/businesses/business-1/support",
@@ -25,16 +26,18 @@ describe("business workspace navigation", () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 
-  it("hides a capability-gated billing and destructive entry without removing the safe detail IA", () => {
+  it("shows the consolidated billing section to every admin (billing.view) while hiding destructive entries", () => {
     const support = labelsFor("support");
     expect(support).toContain("تنظیمات کسب‌وکار");
     expect(support).toContain("برنامه‌ها و قابلیت‌ها");
     expect(support).toContain("دسترسی پشتیبانی");
-    expect(support).not.toContain("صورت‌حساب و پرداخت");
+    // Billing reads ride `billing.view`, which every role holds; the write
+    // actions inside the page are re-checked server-side per capability.
+    expect(support).toContain("صورت‌حساب و اشتراک");
     expect(support).not.toContain("منطقهٔ خطر");
 
     const engineer = labelsFor("engineer");
-    expect(engineer).toContain("صورت‌حساب و پرداخت");
+    expect(engineer).toContain("صورت‌حساب و اشتراک");
     expect(engineer).not.toContain("منطقهٔ خطر");
   });
 

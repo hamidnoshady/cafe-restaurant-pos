@@ -40,7 +40,14 @@ describe("/platform/ai ownership boundary", () => {
   });
 
   it("leaves monthly AI allowance owned by the plan builder", () => {
-    const plansPage = readFileSync("src/app/platform/plans/page.tsx", "utf8");
-    expect(plansPage).toContain("monthlyAiCreditRial");
+    // Migration 0176: the plan builder lives in the Billing Control Center
+    // now (the old /platform/plans page is a redirect).
+    const plansTab = readFileSync(
+      "src/app/platform/_components/billing/plans-tab.tsx",
+      "utf8",
+    );
+    expect(plansTab).toContain("monthlyAiCreditRial");
+    const retired = readFileSync("src/app/platform/plans/page.tsx", "utf8");
+    expect(retired).toContain('redirect("/platform/billing?tab=plans")');
   });
 });
