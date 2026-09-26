@@ -1342,18 +1342,50 @@ element, presses `ArrowDown` and confirms both the checked state *and*
 `document.activeElement` moved to the second way (not just one or the
 other — a common half-fix), then `ArrowUp` and confirms it wraps back.
 
-### 18.4 Tool run results
+### 18.4 A second instance of the same bug: the platform's industry picker
+
+`grep -rn 'role="radiogroup"'` across `src` turns up exactly four hits:
+the two correct ones above, the retail payment-way picker just fixed, and
+`src/app/platform/industry-picker.tsx` — the super-admin console's
+business-type radiogroup (used both on the provisioning form and a
+business's detail page). It had the identical gap: `role="radio"` buttons,
+no `tabIndex`, no `onKeyDown`. Fixed the same way, with one added wrinkle
+this component actually needs and the other three don't: some options are
+`disabled` (industries marked «به‌زودی», not yet enabled — currently none in
+practice, since `ENABLED_INDUSTRIES` lists all eight, but the component is
+built to support a partial rollout). A disabled tile can't take focus, so
+arrow-key navigation walks forward from the target until it lands on an
+enabled option, bounded by the option count so an all-disabled group
+(impossible today) can't spin forever; the whole handler also no-ops when
+the group's own `disabled` prop is set. `INDUSTRIES` is laid out as a
+`grid-cols-2` two-column grid, not a single row, but `role="radiogroup"`'s
+ARIA contract is linear (Up/Down/Left/Right all just mean next/previous
+along the group, regardless of visual wrapping) — the same helper applies
+unchanged; true 2-D grid arrow-key navigation would need `role="grid"`
+instead, which this control doesn't use and this fix didn't change.
+
+A new `industry-picker.test.tsx` covers: initial roving-tabindex state,
+`ArrowDown` moving the selection, wraparound at both ends, `Home`/`End`
+jumping to the first/last option, and that a fully `disabled` group ignores
+arrow keys entirely (needed once the group-level `disabled` early-return was
+added — without it, `fireEvent`'s programmatic dispatch doesn't respect the
+`disabled` HTML attribute the way a real browser would, so the test would
+pass for the wrong reason without the explicit guard).
+
+### 18.5 Tool run results
 
 ```
 $ npx tsc --noEmit                                              → 0 errors
-$ npx eslint src/app/dashboard/pos/retail-invoice-screen.tsx
-    src/app/dashboard/pos/retail-invoice-screen.test.tsx           → 0 problems
-$ npx vitest run src/app/dashboard/pos/retail-invoice-screen.test.tsx → 6/6 pass
+$ npx eslint .                                                   → 0 problems
+$ npx vitest run                                                 → 431 files / 6028 tests pass
+$ npm run build                                                  → succeeds
 ```
 
-**Net diff this section:** `retail-invoice-screen.tsx` (roving tabindex +
-`onKeyDown` on the payment-way radiogroup, using the existing
-`src/lib/radio-keys.ts` — no new shared code needed); one new test in
-`retail-invoice-screen.test.tsx`. §9/§17's RTL/accessibility item is
-narrowed by this section, not closed — see §18's own opening line and §17's
-note above for what is still open.
+**Net diff this section:** `retail-invoice-screen.tsx` and
+`industry-picker.tsx` (roving tabindex + `onKeyDown`, both using the
+existing `src/lib/radio-keys.ts` — no new shared code needed); two new test
+files, `retail-invoice-screen.test.tsx` (one added test) and
+`industry-picker.test.tsx` (new, four tests). §9/§17's RTL/accessibility
+item is narrowed by this section, not closed — see §18's own opening line
+and §17's note above for what is still open (no responsive-breakpoint
+sweep, and no audit outside these four files/these two component types).
