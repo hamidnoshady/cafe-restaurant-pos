@@ -26,6 +26,7 @@ import {
   MEDIA_STORAGE_FEATURE_KEY,
   MEDIA_TRASH_RETENTION_DAYS,
   normalizeSearchTerm,
+  type MediaAssetVariant,
   type MediaKind,
   type MediaSort,
   type MediaStorageConfig,
@@ -135,7 +136,7 @@ export type MediaAssetRecord = {
   tags: string[];
   aiStatus: "none" | "pending_review" | "confirmed" | "rejected";
   aiLabels: Record<string, unknown>;
-  variant: "original" | "enhanced" | "transformed";
+  variant: MediaAssetVariant;
   sourceAssetId: string | null;
   /** Phase G — how the asset entered the library. */
   source: "upload" | "ai_attachment" | "ai_generated";
@@ -406,7 +407,7 @@ export async function storeMediaAsset(input: {
   bytes: Buffer;
   sha256: string;
   folderId?: string | null;
-  variant?: "original" | "enhanced" | "transformed";
+  variant?: MediaAssetVariant;
   sourceAssetId?: string | null;
   /** Migration 0175 — which deterministic transform(s) produced this asset. */
   transformOps?: unknown[];

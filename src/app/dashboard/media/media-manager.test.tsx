@@ -212,6 +212,91 @@ describe("AssetDrawer WordPress push", () => {
   });
 });
 
+/**
+ * The three lightweight AI edit operations beyond crop/rotate/resize/enhance
+ * (migration 0176): background removal, upscale, variations. Each is a
+ * non-destructive POST that must only be offered on an 'original' asset (an
+ * already-derived one is not offered a second round in this drawer), and
+ * each must surface the server's own message rather than a generic one.
+ */
+describe("AssetDrawer AI edit operations", () => {
+  function aiEditFetch(overrides: Record<string, { status: number; body: unknown }> = {}) {
+    return vi.fn(async (url: string) => {
+      if (url === "/api/media/asset-1/usage") {
+        return { ok: true, status: 200, json: async () => ({ usage: { menuItems: [], inventoryItems: [] } }) };
+      }
+      if (url === "/api/media/asset-1/collections") {
+        return { ok: true, status: 200, json: async () => ({ collections: [] }) };
+      }
+      if (url === "/api/media/asset-1/wordpress") {
+        return { ok: true, status: 200, json: async () => ({ connections: [] }) };
+      }
+      const hit = overrides[url];
+      if (hit) return { ok: hit.status < 400, status: hit.status, json: async () => hit.body };
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  }
+
+  it("offers background removal, upscale, and variations only on an original asset, never on an already-derived one", async () => {
+    vi.stubGlobal("fetch", aiEditFetch());
+    render(
+      <AssetDrawer asset={baseAsset({ variant: "original" })} folders={[]} collections={[]} enhancePriceRial={0} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    expect(await screen.findByText("حذف پس‌زمینه")).not.toBeNull();
+    expect(screen.getByText("بزرگ‌نمایی")).not.toBeNull();
+    expect(screen.getByText(/ساخت ۳ تنوع از تصویر/)).not.toBeNull();
+    vi.unstubAllGlobals();
+    cleanup();
+
+    vi.stubGlobal("fetch", aiEditFetch());
+    render(
+      <AssetDrawer asset={baseAsset({ variant: "bg_removed" })} folders={[]} collections={[]} enhancePriceRial={0} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    await screen.findByText("ذخیره");
+    expect(screen.queryByText("حذف پس‌زمینه")).toBeNull();
+    expect(screen.queryByText("بزرگ‌نمایی")).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("removing the background posts to /bg-remove and surfaces the success notice", async () => {
+    vi.stubGlobal("fetch", aiEditFetch({ "/api/media/asset-1/bg-remove": { status: 201, body: { ok: true } } }));
+    render(
+      <AssetDrawer asset={baseAsset()} folders={[]} collections={[]} enhancePriceRial={5000} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    fireEvent.click(await screen.findByText(/حذف پس‌زمینه/));
+    await screen.findByText(/تصویر بدون پس‌زمینه ساخته و به کتابخانه اضافه شد/);
+    vi.unstubAllGlobals();
+  });
+
+  it("surfaces the server's own rejection message for a failed upscale rather than a generic one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      aiEditFetch({ "/api/media/asset-1/upscale": { status: 402, body: { message: "موجودی کیف پول کافی نیست." } } }),
+    );
+    render(
+      <AssetDrawer asset={baseAsset()} folders={[]} collections={[]} enhancePriceRial={5000} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    fireEvent.click(await screen.findByText(/بزرگ‌نمایی/));
+    await screen.findByText("موجودی کیف پول کافی نیست.");
+    vi.unstubAllGlobals();
+  });
+
+  it("variations reports how many alternates the server actually created", async () => {
+    vi.stubGlobal(
+      "fetch",
+      aiEditFetch({
+        "/api/media/asset-1/variations": { status: 201, body: { ok: true, assets: [{ id: "v1" }, { id: "v2" }] } },
+      }),
+    );
+    render(
+      <AssetDrawer asset={baseAsset()} folders={[]} collections={[]} enhancePriceRial={5000} onClose={() => {}} onUpdated={() => {}} onDeleted={() => {}} />,
+    );
+    fireEvent.click(await screen.findByText(/ساخت ۳ تنوع از تصویر/));
+    await screen.findByText(/۲ تنوع از تصویر ساخته و به کتابخانه اضافه شد/);
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("AssetDrawer crop tool", () => {
   it("hides the crop button for non-image assets", () => {
     render(

@@ -74,13 +74,25 @@ What actually changed, in the order it was built:
    against the CRUD endpoints that already had cycle/depth/cross-tenant safety. A
    removable active-filter-chip row was added over the existing dropdown filters. See
    Sections F, I, Section U item 15.
+10. **AI editing expansion: background removal, upscale, variations** (this session,
+    migration `0176`): three new derived-asset AI operations beyond crop/rotate/resize
+    and the existing "enhance" call, following the exact wallet-preflight-before-cost
+    pattern the enhance route already used. `POST /api/media/[id]/bg-remove` and
+    `POST /api/media/[id]/upscale` are single-asset, same-price-as-enhance flows
+    producing one new `bg_removed`/`upscaled` asset each; `POST /api/media/[id]/variations`
+    produces up to `MEDIA_VARIATIONS_COUNT = 3` new `variation` assets in one call,
+    all sharing `source_asset_id`, charged per image the provider actually returned
+    (never per the count requested, in case a provider returns fewer than asked). All
+    three are wired into the asset drawer next to the existing enhance button, gated to
+    `variant === "original"` assets only (consistent with the existing enhance button's
+    own restriction, so a derived asset is not offered a second uncontrolled round of AI
+    edits from this drawer). See Sections D, L, Q, T, U item 16.
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
-`0174`/`0175`, a full naming-system rebuild, centralized OCR/document-intelligence
-consumption by Accounting/CRM/Workspace, new AI editing operations beyond
-crop/rotate/resize (background removal, upscale, variations), a new numbered migration
-beyond `0174`/`0175`, dead-route removal, or E2E/mobile/accessibility/performance
-tests/CI changes. Section V lists these as genuine open work.
+`0174`/`0175`/`0176`, a full naming-system rebuild, centralized OCR/document-intelligence
+consumption by Accounting/CRM/Workspace, a new numbered migration beyond `0176`,
+dead-route removal, or E2E/mobile/accessibility/performance tests/CI changes. Section V
+lists these as genuine open work.
 
 Why the scope stopped where it did: the requested scope is a multi-week, multi-team
 program. Given the choice between (a) shipping a shallow, unverified pass across the
@@ -163,18 +175,29 @@ existed before this program still resolves to the same row with the same data.
 
 ## D. Database changes
 
-Two new migration files, both applied and verified against a real local Postgres
-(`npx tsx scripts/migrate.ts`, both forward-apply and the standard
-`migrations.integration.test.ts` upgrade-from-a-stale-snapshot path):
+Three new migration files, all applied and verified against a real local Postgres
+(`npx tsx scripts/migrate.ts` on a fresh database, plus the standard
+`migrations.integration.test.ts` forward-apply and upgrade-from-a-stale-snapshot paths):
 
 | Migration | Adds |
 |---|---|
 | `0174_media_library_phase2.sql` | `media_assets.deleted_at`; `media_collections`; `media_collection_items`; `wordpress_media_mapping`; two partial indexes for trash/non-trash listing |
 | `0175_media_deterministic_transforms.sql` | Widens `media_assets_variant_check` to include `'transformed'`; adds `media_assets.transform_ops jsonb NOT NULL DEFAULT '[]'` |
+| `0176_media_ai_edit_variants.sql` | Widens `media_assets_variant_check` again to include `'bg_removed'`, `'upscaled'`, `'variation'` — no new columns, no new table |
 
-Both are RLS-protected with the standard `tenant_isolation` policy pattern
+`0176` was verified this session (local `embedded-postgres` instance, no Docker/system
+package required — `npm run db:dev:start` then `DATABASE_URL=... npx tsx scripts/migrate.ts`
+against a database at `0011`): the migration applied cleanly on top of `0175`, the resulting
+`pg_get_constraintdef` on `media_assets_variant_check` reads exactly
+`variant = ANY (ARRAY['original','enhanced','transformed','bg_removed','upscaled','variation'])`,
+and both the full 217-migration forward-apply from empty and the `migrations.integration.test.ts`
+upgrade-from-`0011` path (7 tests) pass. The complete `test:db` suite (133 files / 1557 tests,
+1 pre-existing unrelated skip) was also run in full against the same instance and is unaffected.
+
+All three are RLS-protected with the standard `tenant_isolation` policy pattern
 (`app_rls_bypass() OR business_id = app_current_business()`), `FORCE ROW LEVEL SECURITY`,
-matching every other tenant-scoped table in the schema.
+matching every other tenant-scoped table in the schema — `0176` touches no RLS policy since
+it only widens a `CHECK` constraint on an already-protected table.
 
 ## E. Naming system
 
@@ -371,10 +394,54 @@ flow (`media-manager.test.tsx`, 4 new tests). 30 new tests total, all passing.
 
 ## L. AI media (editing / generation)
 
-- **AI-provider operations** (`enhance`): unchanged this session beyond the earlier
-  wallet-preflight and `detect`-response fixes. No background removal, upscale, or
-  variations operation was added.
-- **Deterministic (non-AI) operations** — new this session, migration `0175`:
+- **AI-provider operations** (`enhance`): unchanged beyond the earlier wallet-preflight
+  and `detect`-response fixes.
+- **Background removal, upscale, variations** — new this session, migration `0176`.
+  Three more single-provider-call operations on the same "one call → one new derived
+  asset, source untouched, wallet charged only after the provider actually returns
+  usable bytes" shape `enhance` already established, deliberately **not** a new editor —
+  no masking UI, no manual retouching, no resolution picker:
+  - `POST /api/media/[id]/bg-remove` and `POST /api/media/[id]/upscale` each call
+    `runMediaBackgroundRemoval`/`runMediaUpscale` (thin wrappers around the same generic
+    `runMediaImageEdit` `enhance` already used, posting multipart to `/images/edits` with
+    a different system prompt — `MEDIA_BG_REMOVE_PROMPT` asks for a transparent
+    background, `MEDIA_UPSCALE_PROMPT` asks for higher resolution/sharpening), charge
+    `mediaConfig.enhancePriceRial` under feature keys `media_bg_remove`/`media_upscale`,
+    and store one new `bg_removed`/`upscaled` asset with `source_asset_id` pointing at
+    the original.
+  - `POST /api/media/[id]/variations` calls `runMediaVariations`, which posts to a
+    **different** provider endpoint, `/images/variations` (no prompt, no edit
+    instructions — this is the OpenAI-compatible "give me alternates of this image"
+    call, not an edit), requesting `MEDIA_VARIATIONS_COUNT = 3` images. The wallet
+    preflight checks the **full requested-batch price**
+    (`enhancePriceRial × 3`) before the provider is ever called (never charge-first,
+    ask-never pattern this program has held to throughout); after a successful call the
+    route charges `enhancePriceRial × result.images.length` — the actual count the
+    provider returned, which the code deliberately does not assume equals the requested
+    count — and stores one `variation` asset per returned image, all sharing the same
+    `source_asset_id`.
+  - **Honesty note on "upscale"**: this is a `gpt-image-1`-style generative
+    resharpen/upsample through the same provider used for `enhance`, not a dedicated
+    super-resolution model. It is offered and labeled as a lightweight quality pass
+    ("بزرگ‌نمایی"), consistent with the "not Photoshop" constraint — it should not be
+    read as guaranteeing a specific resolution multiplier or true optical-quality
+    up-sampling.
+  - **UI reach**: three new buttons in the asset drawer next to the existing "تصویر
+    استاندارد محصول" (enhance) button — "حذف پس‌زمینه" (remove background), "بزرگ‌نمایی"
+    (upscale), "ساخت ۳ تنوع از تصویر" (make 3 variations) — each showing its Rial cost
+    when `enhancePriceRial > 0`, each gated to `asset.variant === "original"` (the same
+    restriction `enhance` already applied, so a derived asset from any of the four
+    provider operations is not offered a second uncontrolled round from this drawer),
+    and each new variant gets its own drawer badge (بدون پس‌زمینه / بزرگ‌نمایی‌شده /
+    تنوع), matching the existing "استاندارد" badge for `enhanced`. A "ویرایش‌شده" badge
+    was also added for the pre-existing `transformed` variant, which previously had no
+    badge at all — a small pre-existing gap this pass happened to notice and close while
+    touching the same badge block.
+  - **Not built**: no version-history UI walking a derived asset back to its full
+    ancestor chain beyond the existing per-asset "usage" panel; no way to pick which of
+    the 3 variation results to keep vs. discard beyond deleting the ones not wanted from
+    the grid like any other asset.
+- **Deterministic (non-AI) operations** — migration `0175`:
   `POST /api/media/[id]/transform` accepts `{operation: "crop"|"rotate"|"resize", ...}`,
   validated by `parseMediaTransformInput` (crop: integer x/y/width/height, 1..4000px;
   rotate: finite non-zero degrees, ±360; resize: at least one of width/height, 1..4000px,
@@ -542,6 +609,9 @@ all.
 | `GET /api/media/[id]/file` | permission model changed from unconditional `media.view` to usage-based (Section O.1) |
 | `GET /api/media/[id]/usage` **(new, first session)** | asset usage references for the delete-confirmation UI |
 | `GET/POST /api/media/[id]/wordpress` **(new)** | list WooCommerce push targets + current mapping / push a canonical asset out to one |
+| `POST /api/media/[id]/bg-remove` **(new)** | AI background removal; wallet preflight → 402; stores a new `bg_removed` asset |
+| `POST /api/media/[id]/upscale` **(new)** | AI upscale/resharpen; wallet preflight → 402; stores a new `upscaled` asset |
+| `POST /api/media/[id]/variations` **(new)** | AI variations (up to `MEDIA_VARIATIONS_COUNT = 3`); wallet preflight against the full batch price; stores one `variation` asset per image the provider actually returned |
 
 No routes were removed.
 
@@ -636,6 +706,37 @@ duplication to consolidate, not dead code to delete.
   `media-manager.test.tsx` (+4, the drawer panel's visibility gating, disabled state for
   a connection that cannot push, status badges with a working link, and the push flow
   itself).
+
+- AI editing expansion — background removal, upscale, variations (Section L, this
+  session) — 33 new tests across five files: `src/app/api/media/[id]/bg-remove/route.test.ts`
+  **(new file, 6 tests)** and `src/app/api/media/[id]/upscale/route.test.ts` **(new file, 6
+  tests, derived from the former by mechanical substitution then independently verified)**
+  cover 404 missing asset, 400 non-image, 402 wallet-preflight-before-any-provider-call,
+  201 success (correct `variant` stored, correct feature key charged), 502 on a
+  `MediaAiError("ai_auth")` with no charge, and 503 when AI is not configured;
+  `src/app/api/media/[id]/variations/route.test.ts` **(new file, 5 tests)** covers the
+  402 preflight checked against the full `enhancePriceRial × MEDIA_VARIATIONS_COUNT`
+  batch price (not a per-image price) before the provider is called, the provider being
+  asked for the fixed configured count rather than any caller-supplied one, charging and
+  storing exactly as many assets as the provider actually returned (proven with a
+  provider response shorter than the requested count), a 504-with-no-charge on
+  `MediaAiError("ai_network")`, and the non-image 400 guard; `src/lib/ai-media-service.test.ts`
+  **(6 new tests appended)** proves — against a stubbed `fetch`, no network — that
+  background removal's prompt asks for a transparent background while upscale's asks for
+  higher resolution/sharpening (never the enhance prompt, never each other's), that both
+  map 404/400 to `enhance_unsupported` exactly like the pre-existing `enhance` test
+  already proved, that variations posts to the distinct `/images/variations` endpoint
+  (not `/images/edits`) with an `n` form field and no `prompt` field at all, that it
+  returns every image the provider sent back, and that a network failure maps to
+  `ai_network` — closing the "only exercised indirectly through mocked route tests" gap
+  the route-test layer alone would have left; `src/app/dashboard/media/media-manager.test.tsx`
+  **(4 new tests appended)**: the three new buttons render only when `asset.variant ===
+  "original"` and disappear for a `bg_removed` asset (proving the same
+  no-second-uncontrolled-round restriction `enhance` already had is now shared by all
+  four AI operations), background removal's own success notice reaching the screen,
+  a failed upscale surfacing the server's actual Persian rejection message rather than a
+  generic fallback, and variations reporting the number of alternates the server actually
+  created rather than the number requested.
 
 No tests were skipped, stubbed, or marked as TODO anywhere in this program. Media now has
 two dedicated component-test files (`media-manager.test.tsx`'s crop and upload-panel
@@ -787,6 +888,53 @@ dedicated Media E2E/mobile/a11y coverage.
     **429/429 files, 6040/6040 tests passed** (up from 429/6036 by exactly these 4 new
     tests — 0 regressions elsewhere). No server-side route changed, so the DB integration
     suite was not re-run for this item.
+16. **Same follow-up session — AI editing expansion: background removal, upscale,
+    variations (migration `0176`, Sections D, L, Q)**: closed the "no background removal,
+    upscale, or variations operation" gap named in the prior report's Section L/V. Added
+    `MEDIA_BG_REMOVE_PROMPT`/`MEDIA_UPSCALE_PROMPT`/`imageVariationsUrl`/
+    `parseImageEditReplies` to `ai-media.ts`; `runMediaImageEdit` (generic, now exported),
+    `runMediaBackgroundRemoval`/`runMediaUpscale` (thin wrappers), `runMediaVariations` to
+    `ai-media-service.ts`; the `MediaAssetVariant` type and three new feature-key/price
+    constants to `media.ts`; three new routes
+    (`bg-remove`/`upscale`/`variations`) modeled tightly on the existing `enhance` route's
+    permission → storage-ready → asset-read → image/non-SVG guard → AI-config guard →
+    wallet preflight → provider call → charge-after-success → store-new-asset shape; and
+    UI wiring (three new drawer buttons, five new variant badges including one for the
+    pre-existing but previously unbadged `transformed` variant).
+    `npx tsc --noEmit -p tsconfig.json` clean throughout (checked after the lib layer, again
+    after the three routes, again after the UI wiring). `npx eslint --max-warnings=0` clean
+    on every touched/new file (`media.ts`, `media-service.ts`, `ai-media.ts`,
+    `ai-media-service.ts`, `ai-media-service.test.ts`, the three new routes and their three
+    new route-test files, `media-manager.tsx`, `media-manager.test.tsx`). New tests: 17
+    across three new route-test files (`bg-remove/route.test.ts` 6, `upscale/route.test.ts`
+    6, `variations/route.test.ts` 5 — 404/400/402/201-success/502-provider-error/
+    503-unavailable for the two single-asset routes; batch-price preflight, fixed
+    provider-side count, charge-for-actual-not-requested-count, provider-failure-no-charge,
+    and the image-type guard for variations), 6 direct provider-layer tests appended to
+    `ai-media-service.test.ts` (prompt selection distinguishing bg-remove from upscale from
+    the pre-existing enhance prompt, the `/images/variations` endpoint and its `n` form
+    field rather than `/images/edits`, and the shared `enhance_unsupported`/`ai_network`
+    error-code mapping already proven for `enhance` now proven for the three new
+    functions too — closing the "only exercised indirectly through mocked route tests"
+    gap the lib layer would otherwise have had), and 4 new RTL tests in
+    `media-manager.test.tsx` (all three buttons appear only on an `original` asset and
+    disappear on a derived one; background removal's success notice; a failed upscale
+    surfaces the server's own Persian message rather than a generic one; variations
+    reports the actual returned count, not the requested one). All new tests passed on
+    first run. Full unit suite re-run after every step, final state:
+    **432/432 files, 6070/6070 tests passed** (up from 429/6040 by exactly 3 new files
+    — the three route-test files — and 30 new tests: 3 from `api-guards.test.ts`
+    auto-discovering the new routes' permission guards + 17 route-level + 6
+    provider-layer + 4 RTL — 0 regressions anywhere). `npx eslint .` (whole repo)
+    re-run clean. Migration `0176` was applied and verified end-to-end against a real
+    local `embedded-postgres` instance this session (Section D): a fresh
+    217-migration forward-apply, the `migrations.integration.test.ts` upgrade-path
+    suite (7/7), and the **complete** DB integration suite (`vitest.db.config.ts`, all
+    133 files) — **133/133 files, 1557/1557 tests passed, 1 pre-existing unrelated
+    skip** — all against a database that had migration `0176` applied. A production
+    `next build` was not attempted this step (Section U item 10 already documents this
+    sandbox's build-time OOM ceiling as a standing, unrelated constraint, re-confirmed
+    rather than re-investigated).
 
 Net effect on the test suite across this whole program: **+35 unit tests from earlier
 sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx`
@@ -794,11 +942,17 @@ sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manag
 the WordPress-push step (`s3-lite.test.ts` +5, `src/app/api/media/[id]/wordpress/route.test.ts`
 +13 new file, `wp-plugin-admin-source.test.ts` +1), plus +19 unit tests from the Section H
 correction step's new `src/app/api/media/[id]/route.test.ts`, plus +4 unit tests from the
-folder-explorer/filter-chips step (`media-manager.test.tsx` 10→14), +14 integration tests
-from an earlier session (3 transform + 6 orphan-reconciliation + 5 parties) plus +7 from
-the WordPress-push step (3 `readMediaObjectDownloadUrl` + 4 WordPress-correlation), plus
-the phase-2 trash/collections/WordPress-mapping integration coverage from the middle of
-this program — 0 net regressions** at every checkpoint where the full suite was re-run.
+folder-explorer/filter-chips step (`media-manager.test.tsx` 10→14), plus +30 unit tests
+from the AI-editing-expansion step (`bg-remove/route.test.ts` +6 new file,
+`upscale/route.test.ts` +6 new file, `variations/route.test.ts` +5 new file,
+`ai-media-service.test.ts` +6, `media-manager.test.tsx` 14→18, plus 3 from
+`api-guards.test.ts` auto-discovering the three new routes' permission guards), +14
+integration tests from an earlier session (3 transform + 6 orphan-reconciliation + 5
+parties) plus +7 from the WordPress-push step (3 `readMediaObjectDownloadUrl` + 4
+WordPress-correlation), plus the phase-2 trash/collections/WordPress-mapping integration
+coverage from the middle of this program — 0 net regressions** at every checkpoint where
+the full suite was re-run (final state: 432 unit-suite files / 6070 tests, 133 DB
+integration files / 1557 tests, both fully green).
 
 ## V. Second audit / genuine remaining work
 
@@ -841,8 +995,19 @@ full-suite re-run this session, after every change, was green.
   source, pending-review-only, search, collection) now also renders as its own removable
   chip in a "فیلترهای فعال" row, with a "پاک کردن همهٔ فیلترها" to clear all at once — see
   Section U item 15.
-- **New AI editing operations** beyond crop/rotate/resize — no background removal,
-  upscale, or variations operation exists.
+- ~~**New AI editing operations** beyond crop/rotate/resize — no background removal,
+  upscale, or variations operation exists.~~ Closed in a follow-up session (migration
+  `0176`): `POST /api/media/[id]/bg-remove`, `.../upscale`, `.../variations`, all on the
+  existing wallet-preflight-before-cost, new-derived-asset, source-untouched shape
+  `enhance` already used, wired into the asset drawer with per-variant badges. See
+  Sections D, L, Q, T, U item 16. Genuinely still open within this closed item: no
+  version-history UI walking a derived asset back through its full ancestor chain (crop →
+  enhance → upscale, etc.) beyond the existing per-asset "usage" panel; "upscale" is a
+  generative resharpen through the same image-edit model `enhance` uses, not a dedicated
+  super-resolution model (disclosed in Section L, not a claim this report walks back
+  from); and once an asset has any of the four AI/transform variants, this drawer does
+  not offer a second round of AI edits on it (a deliberate, disclosed scope boundary
+  mirroring `enhance`'s own pre-existing restriction, not an oversight).
 - **Centralized OCR/document intelligence** for Accounting/CRM/Workspace — not built;
   `ai-receipt.ts` remains a deliberately ephemeral, single-purpose helper by its own
   documented design (Section M).
@@ -858,14 +1023,18 @@ full-suite re-run this session, after every change, was green.
 - **CI configuration** — untouched; no new CI job or gate was added for any of this
   program's new tests (they run under the same `npm test`/`npm run test:db` commands CI
   already invokes, but no new named CI step highlights them specifically).
-- **`npm run build` could not be completed in this sandbox this session** — it was
-  attempted 4 times and OOM-killed every time (confirmed by `dmesg`, not inferred), even
-  after lowering the heap limit, externalizing `sharp`, and (as a reverted diagnostic
-  only) disabling the build's internal type-check/lint pass. `tsc --noEmit` and `eslint`
-  are both clean against the exact same code, which is the strongest available signal
-  short of an actual production bundle, but a completed `next build` is a genuinely
-  unverified step this session, named here rather than assumed to still pass because it
-  once did earlier in this program.
+- **`npm run build` could not be completed in this sandbox** — it was attempted 4 times
+  in an earlier session and OOM-killed every time (confirmed by `dmesg`, not inferred),
+  even after lowering the heap limit, externalizing `sharp`, and (as a reverted
+  diagnostic only) disabling the build's internal type-check/lint pass; re-attempted once
+  more in the AI-editing-expansion follow-up session (`NODE_OPTIONS=--max-old-space-size=4096
+  npx next build`) and again `SIGKILL`-ed mid-compile, consistent with the same
+  documented ceiling rather than a new regression. `tsc --noEmit` and `eslint` are both
+  clean against the exact same code (including this session's own new routes/lib/UI
+  changes), which is the strongest available signal short of an actual production
+  bundle, but a completed `next build` remains a genuinely unverified step in this
+  sandbox, named here rather than assumed to still pass because it once did earlier in
+  this program.
 - **A pre-existing, unrelated bug was found and left unfixed on purpose**:
   `scripts/reconcile-opening-inventory.ts` cannot actually run via `npx tsx` in this
   environment (top-level `await` vs. the repo's `"type": "commonjs"`) — out of scope

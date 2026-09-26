@@ -311,6 +311,26 @@ export function dailyStorageCharge(storedBytes: number, config: MediaStorageConf
 export const MEDIA_STORAGE_FEATURE_KEY = "media_storage";
 /** wallet_ledger/feature_usage key for one AI product-image refine. */
 export const MEDIA_ENHANCE_FEATURE_KEY = "media_enhance";
+/** wallet_ledger/feature_usage key for one AI background-removal edit. */
+export const MEDIA_BG_REMOVE_FEATURE_KEY = "media_bg_remove";
+/** wallet_ledger/feature_usage key for one AI upscale edit. */
+export const MEDIA_UPSCALE_FEATURE_KEY = "media_upscale";
+/** wallet_ledger/feature_usage key for one AI variations batch (charged per image produced). */
+export const MEDIA_VARIATIONS_FEATURE_KEY = "media_variations";
+/** How many alternates one "variations" request produces — fixed, not caller-supplied, so the cost is bounded. */
+export const MEDIA_VARIATIONS_COUNT = 3;
+
+/**
+ * Every distinct value `media_assets.variant` can hold (migrations 0149,
+ * 0175, 0176): the two AI-generated derived kinds this file's editing
+ * operations produce (`enhanced`, plus `bg_removed`/`upscaled`/`variation`
+ * from the lightweight edit operations below), the free local
+ * crop/rotate/resize tier (`transformed`), and `original` for everything
+ * else. All four AI/edit variants share the same shape — a new row with
+ * `source_asset_id` pointing back at what it was derived from; the source is
+ * never overwritten.
+ */
+export type MediaAssetVariant = "original" | "enhanced" | "transformed" | "bg_removed" | "upscaled" | "variation";
 
 // ---------------------------------------------------------------------------
 // Folder / asset input rules shared by the routes and the client

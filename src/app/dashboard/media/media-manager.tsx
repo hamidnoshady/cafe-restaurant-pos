@@ -20,7 +20,15 @@ import { Button } from "@/components/ui/button";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { toPersianDigits } from "@/lib/digits";
-import { MEDIA_KIND_LABELS, MEDIA_SORTS, MEDIA_SORT_LABELS, type MediaKind, type MediaSort } from "@/lib/media";
+import {
+  MEDIA_KIND_LABELS,
+  MEDIA_SORTS,
+  MEDIA_SORT_LABELS,
+  MEDIA_VARIATIONS_COUNT,
+  type MediaAssetVariant,
+  type MediaKind,
+  type MediaSort,
+} from "@/lib/media";
 import { summarizeUploadResults, uploadFiles, type UploadProgressEvent } from "@/lib/media-uploader";
 import { EmptyState, SectionCard, SectionCardSkeleton, StatusBadge, cardClass } from "../page-chrome";
 import { FilterChip } from "../filters";
@@ -46,7 +54,7 @@ export interface AssetRow {
   tags: string[];
   aiStatus: "none" | "pending_review" | "confirmed" | "rejected";
   aiLabels: { category?: string | null; tags?: string[]; description?: string };
-  variant: "original" | "enhanced";
+  variant: MediaAssetVariant;
   sourceAssetId: string | null;
   source: "upload" | "ai_attachment" | "ai_generated";
   createdByAi: boolean;
@@ -1348,6 +1356,22 @@ export function MediaManager() {
                         <span className="absolute end-1 top-1">
                           <StatusBadge tone="positive">استاندارد</StatusBadge>
                         </span>
+                      ) : asset.variant === "bg_removed" ? (
+                        <span className="absolute end-1 top-1">
+                          <StatusBadge tone="positive">بدون پس‌زمینه</StatusBadge>
+                        </span>
+                      ) : asset.variant === "upscaled" ? (
+                        <span className="absolute end-1 top-1">
+                          <StatusBadge tone="positive">بزرگ‌نمایی‌شده</StatusBadge>
+                        </span>
+                      ) : asset.variant === "variation" ? (
+                        <span className="absolute end-1 top-1">
+                          <StatusBadge tone="positive">تنوع</StatusBadge>
+                        </span>
+                      ) : asset.variant === "transformed" ? (
+                        <span className="absolute end-1 top-1">
+                          <StatusBadge tone="positive">ویرایش‌شده</StatusBadge>
+                        </span>
                       ) : null}
                       {/* Phase G — where this asset came from. A generated image is
                           AI-authored; an attachment came from a chat. */}
@@ -1606,6 +1630,54 @@ export function AssetDrawer({
     // The original asset is untouched (non-destructive processing); only the
     // grid needs to learn about the new derived version. Keep the drawer open
     // on the original so the success message stays visible.
+    onUpdated(asset);
+  }
+
+  /** Same non-destructive shape as `enhance()` — new derived asset, source
+   * untouched — for the two other AI edit operations built on the same
+   * provider endpoint family (migration 0176). */
+  async function runAiEdit(op: "bg-remove" | "upscale", successMessage: string, failMessage: string) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const { ok, data } = await api<{ message?: string }>(`/api/media/${asset.id}/${op}`, { method: "POST" });
+    setBusy(false);
+    if (!ok) {
+      setError(data.message ?? failMessage);
+      return;
+    }
+    setNotice(successMessage);
+    onUpdated(asset);
+  }
+
+  const removeBackground = () =>
+    runAiEdit(
+      "bg-remove",
+      "تصویر بدون پس‌زمینه ساخته و به کتابخانه اضافه شد. آن را در فهرست ببینید.",
+      "حذف پس‌زمینه ناموفق بود.",
+    );
+
+  const upscale = () =>
+    runAiEdit(
+      "upscale",
+      "نسخهٔ بزرگ‌نمایی‌شده ساخته و به کتابخانه اضافه شد. آن را در فهرست ببینید.",
+      "بزرگ‌نمایی تصویر ناموفق بود.",
+    );
+
+  async function makeVariations() {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const { ok, data } = await api<{ message?: string; assets?: unknown[] }>(`/api/media/${asset.id}/variations`, {
+      method: "POST",
+    });
+    setBusy(false);
+    if (!ok) {
+      setError(data.message ?? "ساخت تنوع‌های تصویر ناموفق بود.");
+      return;
+    }
+    const count = Array.isArray(data.assets) ? data.assets.length : 0;
+    setNotice(`${toPersianDigits(count)} تنوع از تصویر ساخته و به کتابخانه اضافه شد. آن‌ها را در فهرست ببینید.`);
     onUpdated(asset);
   }
 
@@ -1991,10 +2063,26 @@ export function AssetDrawer({
                 تشخیص و برچسب هوشمند
               </Button>
               {asset.variant === "original" ? (
-                <Button variant="outline" disabled={busy} onClick={enhance}>
-                  تصویر استاندارد محصول
-                  {enhancePriceRial > 0 ? ` (${(enhancePriceRial / 10).toLocaleString("fa-IR")} تومان)` : ""}
-                </Button>
+                <>
+                  <Button variant="outline" disabled={busy} onClick={enhance}>
+                    تصویر استاندارد محصول
+                    {enhancePriceRial > 0 ? ` (${(enhancePriceRial / 10).toLocaleString("fa-IR")} تومان)` : ""}
+                  </Button>
+                  <Button variant="outline" disabled={busy} onClick={removeBackground}>
+                    حذف پس‌زمینه
+                    {enhancePriceRial > 0 ? ` (${(enhancePriceRial / 10).toLocaleString("fa-IR")} تومان)` : ""}
+                  </Button>
+                  <Button variant="outline" disabled={busy} onClick={upscale}>
+                    بزرگ‌نمایی
+                    {enhancePriceRial > 0 ? ` (${(enhancePriceRial / 10).toLocaleString("fa-IR")} تومان)` : ""}
+                  </Button>
+                  <Button variant="outline" disabled={busy} onClick={makeVariations}>
+                    {`ساخت ${toPersianDigits(MEDIA_VARIATIONS_COUNT)} تنوع از تصویر`}
+                    {enhancePriceRial > 0
+                      ? ` (${((enhancePriceRial * MEDIA_VARIATIONS_COUNT) / 10).toLocaleString("fa-IR")} تومان)`
+                      : ""}
+                  </Button>
+                </>
               ) : null}
             </>
           ) : null}
