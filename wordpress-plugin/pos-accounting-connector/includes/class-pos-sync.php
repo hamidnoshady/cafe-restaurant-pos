@@ -161,7 +161,13 @@ class POS_Connector_Sync {
 		if ( ! $refund ) {
 			return;
 		}
-		POS_Connector_Queue::enqueue( 'refund.created', $refund_id, self::refund_payload( $refund, $order_id ) );
+		self::safe_enqueue_callable(
+			'refund.created',
+			$refund_id,
+			static function () use ( $refund, $order_id ) {
+				return self::refund_payload( $refund, $order_id );
+			}
+		);
 	}
 
 	public static function on_product_changed( $product_id ) {
@@ -172,7 +178,13 @@ class POS_Connector_Sync {
 		if ( ! $product ) {
 			return;
 		}
-		POS_Connector_Queue::enqueue( 'product.updated', $product_id, self::product_payload( $product ) );
+		self::safe_enqueue_callable(
+			'product.updated',
+			$product_id,
+			static function () use ( $product ) {
+				return self::product_payload( $product );
+			}
+		);
 
 		// A variable product saved from the admin screen rewrites all of its
 		// children, and WooCommerce fires no hook for the ones it changed.
@@ -205,7 +217,13 @@ class POS_Connector_Sync {
 		if ( ! $parent ) {
 			return;
 		}
-		POS_Connector_Queue::enqueue( 'product.updated', $parent_id, self::product_payload( $parent ) );
+		self::safe_enqueue_callable(
+			'product.updated',
+			$parent_id,
+			static function () use ( $parent ) {
+				return self::product_payload( $parent );
+			}
+		);
 	}
 
 	public static function on_customer_changed( $customer_id ) {
@@ -216,7 +234,13 @@ class POS_Connector_Sync {
 		if ( ! $customer->get_id() ) {
 			return;
 		}
-		POS_Connector_Queue::enqueue( 'customer.updated', $customer_id, self::customer_payload( $customer ) );
+		self::safe_enqueue_callable(
+			'customer.updated',
+			$customer_id,
+			static function () use ( $customer ) {
+				return self::customer_payload( $customer );
+			}
+		);
 	}
 
 	// -----------------------------------------------------------------------
@@ -251,7 +275,13 @@ class POS_Connector_Sync {
 		// `status` field carries 'trash'/'publish', and the queue's
 		// (topic, remote_id) dedup means a trash followed by a restore in the
 		// same sweep sends the latest state rather than two fighting events.
-		POS_Connector_Queue::enqueue( 'content.updated', $post->post_type . ':' . $post->ID, self::content_payload( $post ) );
+		self::safe_enqueue_callable(
+			'content.updated',
+			$post->post_type . ':' . $post->ID,
+			static function () use ( $post ) {
+				return self::content_payload( $post );
+			}
+		);
 	}
 
 	/** A media attachment was uploaded or its title/metadata was edited. */
@@ -263,7 +293,13 @@ class POS_Connector_Sync {
 		if ( ! $post || 'attachment' !== $post->post_type ) {
 			return;
 		}
-		POS_Connector_Queue::enqueue( 'content.updated', 'attachment:' . $attachment_id, self::content_payload( $post ) );
+		self::safe_enqueue_callable(
+			'content.updated',
+			'attachment:' . $attachment_id,
+			static function () use ( $post ) {
+				return self::content_payload( $post );
+			}
+		);
 	}
 
 	/** A post/page is about to be permanently deleted (trash is an update). */
@@ -351,7 +387,57 @@ class POS_Connector_Sync {
 		if ( ! $order || $order->get_status() === 'trash' ) {
 			return;
 		}
-		POS_Connector_Queue::enqueue( $topic, $order_id, self::order_payload( $order ) );
+		self::safe_enqueue_callable(
+			$topic,
+			$order_id,
+			static function () use ( $order ) {
+				return self::order_payload( $order );
+			}
+		);
+	}
+
+	/**
+	 * Enqueue without letting sync errors abort a WooCommerce admin save.
+	 *
+	 * @return int Queue row id, or 0 when skipped or failed.
+	 */
+	private static function safe_enqueue( $topic, $remote_id, array $payload ) {
+		try {
+			return POS_Connector_Queue::enqueue( $topic, $remote_id, $payload );
+		} catch ( \Throwable $e ) {
+			POS_Connector_Log::error(
+				'enqueue',
+				sprintf(
+					'%s:%s — %s',
+					(string) $topic,
+					(string) $remote_id,
+					$e->getMessage()
+				)
+			);
+			return 0;
+		}
+	}
+
+	/** @return int Queue row id, or 0 when payload build or enqueue failed. */
+	private static function safe_enqueue_callable( $topic, $remote_id, callable $build_payload ) {
+		try {
+			$payload = $build_payload();
+			if ( ! is_array( $payload ) ) {
+				return 0;
+			}
+			return self::safe_enqueue( $topic, $remote_id, $payload );
+		} catch ( \Throwable $e ) {
+			POS_Connector_Log::error(
+				'enqueue',
+				sprintf(
+					'%s:%s — %s',
+					(string) $topic,
+					(string) $remote_id,
+					$e->getMessage()
+				)
+			);
+			return 0;
+		}
 	}
 
 	/** Queue every child of a variable product as its own event. */
@@ -367,7 +453,13 @@ class POS_Connector_Sync {
 		foreach ( $children as $child_id ) {
 			$child = wc_get_product( $child_id );
 			if ( $child ) {
-				POS_Connector_Queue::enqueue( 'product.updated', $child_id, self::product_payload( $child ) );
+				self::safe_enqueue_callable(
+					'product.updated',
+					$child_id,
+					static function () use ( $child ) {
+						return self::product_payload( $child );
+					}
+				);
 			}
 		}
 	}
@@ -552,6 +644,58 @@ class POS_Connector_Sync {
 			return $total;
 		}
 
+	/**
+	 * Map one raw WooCommerce attribute entry to the REST-shaped array the app reads.
+	 *
+	 * Some stores (legacy data, imports) return plain strings or slug => string
+	 * pairs instead of WC_Product_Attribute objects — product 13199 on zaniziba.com
+	 * was one example of the fatal that caused when `get_id()` ran on a string.
+	 *
+	 * @param string|int $key  Attribute key from get_attributes().
+	 * @param mixed      $attr Value from get_attributes().
+	 * @return array|null REST-shaped attribute, or null when the entry is unusable.
+	 */
+	public static function rest_attribute_from_raw( $key, $attr ) {
+		if ( is_array( $attr ) ) {
+			return array(
+				'id'        => 0,
+				'name'      => isset( $attr['name'] ) ? (string) $attr['name'] : '',
+				'position'  => 0,
+				'visible'   => true,
+				'variation' => true,
+				'options'   => isset( $attr['value'] ) ? array_map( 'trim', explode( ',', (string) $attr['value'] ) ) : array(),
+			);
+		}
+
+		if ( is_string( $attr ) ) {
+			$slug = is_string( $key ) ? str_replace( 'attribute_', '', $key ) : '';
+			$name = $slug && function_exists( 'wc_attribute_label' )
+				? wc_attribute_label( $slug )
+				: ( is_string( $key ) ? (string) $key : '' );
+			return array(
+				'id'        => 0,
+				'name'      => $name,
+				'position'  => 0,
+				'visible'   => true,
+				'variation' => true,
+				'options'   => array_map( 'trim', explode( ',', $attr ) ),
+			);
+		}
+
+		if ( is_object( $attr ) && method_exists( $attr, 'get_id' ) ) {
+			return array(
+				'id'        => (int) $attr->get_id(),
+				'name'      => $attr->get_name(),
+				'position'  => (int) $attr->get_position(),
+				'visible'   => (bool) $attr->get_visible(),
+				'variation' => (bool) $attr->get_variation(),
+				'options'   => $attr->get_options(),
+			);
+		}
+
+		return null;
+	}
+
 		public static function product_payload( $product ) {
 		$type         = $product->get_type();
 		$parent_id    = (int) $product->get_parent_id();
@@ -563,28 +707,11 @@ class POS_Connector_Sync {
 		// the concrete selections a variation picks (child). Standard shapes
 		// from WooCommerce's own REST API, which the app's TS types mirror.
 		$attributes = array();
-		foreach ( $product->get_attributes() as $attr ) {
-			if ( is_array( $attr ) ) {
-				// A variation's attributes come back as name => value pairs
-				// from some WooCommerce versions rather than as objects.
-				$attributes[] = array(
-					'id'        => 0,
-					'name'      => isset( $attr['name'] ) ? $attr['name'] : '',
-					'position'  => 0,
-					'visible'   => true,
-					'variation' => true,
-					'options'   => isset( $attr['value'] ) ? array_map( 'trim', explode( ',', $attr['value'] ) ) : array(),
-				);
-				continue;
+		foreach ( $product->get_attributes() as $attr_key => $attr ) {
+			$entry = self::rest_attribute_from_raw( $attr_key, $attr );
+			if ( null !== $entry ) {
+				$attributes[] = $entry;
 			}
-			$attributes[] = array(
-				'id'        => $attr->get_id(),
-				'name'      => $attr->get_name(),
-				'position'  => $attr->get_position(),
-				'visible'   => (bool) $attr->get_visible(),
-				'variation' => (bool) $attr->get_variation(),
-				'options'   => $attr->get_options(),
-			);
 		}
 
 		// Categories: a flat array of {id, name, slug} triples. A variation

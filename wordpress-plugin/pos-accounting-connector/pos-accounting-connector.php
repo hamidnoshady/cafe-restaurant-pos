@@ -3,7 +3,7 @@
  * Plugin Name:       POS Accounting Connector
  * Plugin URI:        https://github.com/hamidnoshady/cafe-restaurant-pos
  * Description:       اتصال امن دوطرفه فروشگاه ووکامرس به سامانهٔ فروش و حسابداری: ارسال سفارش، برگشت وجه، محصول و مشتری؛ دریافت موجودی و قیمت.
- * Version:           1.6.3
+ * Version:           1.6.4
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * WC requires at least: 7.0
@@ -77,7 +77,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'POS_CONNECTOR_VERSION', '1.6.3' );
+define( 'POS_CONNECTOR_VERSION', '1.6.4' );
+define( 'POS_CONNECTOR_DB_VERSION_OPTION', 'pos_connector_db_version' );
 define( 'POS_CONNECTOR_FILE', __FILE__ );
 define( 'POS_CONNECTOR_PATH', plugin_dir_path( __FILE__ ) );
 
@@ -127,6 +128,57 @@ function pos_connector_woocommerce_active() {
 function pos_connector_admin_capability() {
 	return pos_connector_woocommerce_active() ? 'manage_woocommerce' : 'manage_options';
 }
+
+/**
+ * Ensure plugin tables exist after activation, updates, or a failed first install.
+ *
+ * Some hosts never created `{prefix}pos_connector_queue` because dbDelta choked
+ * on SQL comments in the CREATE string; this self-heals without manual SQL.
+ */
+function pos_connector_maybe_upgrade_db() {
+	POS_Connector_Log::install_table();
+
+	$queue_ok = POS_Connector_Queue::maybe_install();
+	if ( $queue_ok ) {
+		update_option( POS_CONNECTOR_DB_VERSION_OPTION, POS_Connector_Queue::DB_VERSION, false );
+		delete_option( 'pos_connector_queue_install_failed' );
+		return;
+	}
+
+	update_option(
+		'pos_connector_queue_install_failed',
+		array(
+			'error'     => POS_Connector_Queue::last_install_error(),
+			'checked_at' => time(),
+		),
+		false
+	);
+}
+add_action( 'plugins_loaded', 'pos_connector_maybe_upgrade_db', 5 );
+
+function pos_connector_queue_install_admin_notice() {
+	if ( ! is_admin() || ! current_user_can( pos_connector_admin_capability() ) ) {
+		return;
+	}
+	$failed = get_option( 'pos_connector_queue_install_failed' );
+	if ( ! is_array( $failed ) || empty( $failed['error'] ) ) {
+		return;
+	}
+	if ( POS_Connector_Queue::table_exists() ) {
+		delete_option( 'pos_connector_queue_install_failed' );
+		return;
+	}
+	echo '<div class="notice notice-error"><p>';
+	echo esc_html(
+		sprintf(
+			/* translators: %s: database error message */
+			__( 'اتصال حسابداری: جدول صف ارسال ساخته نشد و همگام‌سازی در صف ذخیره نمی‌شود. %s', 'pos-accounting-connector' ),
+			(string) $failed['error']
+		)
+	);
+	echo '</p></div>';
+}
+add_action( 'admin_notices', 'pos_connector_queue_install_admin_notice' );
 
 function pos_connector_bootstrap() {
 	// The self-updater runs before the WooCommerce gate on purpose: a store
@@ -240,8 +292,7 @@ function pos_connector_schedule_event( $hook, $schedule ) {
 }
 
 function pos_connector_activate() {
-	POS_Connector_Log::install_table();
-	POS_Connector_Queue::install_table();
+	pos_connector_maybe_upgrade_db();
 
 	$settings = pos_connector_settings();
 

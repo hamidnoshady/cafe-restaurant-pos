@@ -23,6 +23,12 @@ class POS_Connector_Queue {
 
 	const TABLE = 'pos_connector_queue';
 
+	/** Bumped when the queue schema changes; stored in `pos_connector_db_version`. */
+	const DB_VERSION = 1;
+
+	/** Set when `install_table()` fails so admin notices can surface `$wpdb->last_error`. */
+	private static $last_install_error = '';
+
 	/** Give up after this many tries and leave the row for an operator to see. */
 	const MAX_ATTEMPTS = 8;
 
@@ -42,12 +48,38 @@ class POS_Connector_Queue {
 		return $wpdb->prefix . self::TABLE;
 	}
 
+	public static function last_install_error() {
+		return self::$last_install_error;
+	}
+
+	public static function table_exists() {
+		global $wpdb;
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) === $table;
+	}
+
+	/**
+	 * Create the queue table when missing (activation, upgrade, or first enqueue).
+	 *
+	 * @return bool True when the table is present after this call.
+	 */
+	public static function maybe_install() {
+		if ( self::table_exists() ) {
+			self::$last_install_error = '';
+			return true;
+		}
+		return self::install_table();
+	}
+
 	public static function install_table() {
 		global $wpdb;
 		$table   = self::table_name();
 		$charset = $wpdb->get_charset_collate();
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+		self::$last_install_error = '';
+		// dbDelta() cannot parse SQL line comments; they break CREATE TABLE on some hosts.
 		dbDelta(
 			"CREATE TABLE {$table} (
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -60,10 +92,6 @@ class POS_Connector_Queue {
 				last_error TEXT NULL,
 				created_at DATETIME NOT NULL,
 				updated_at DATETIME NOT NULL,
-				-- Earliest moment this row should be tried again. Set on
-				-- failure, reset on success; `due()` refuses rows whose time
-				-- has not come, which is what keeps one broken event from
-				-- consuming every batch until it gives up.
 				available_at DATETIME NOT NULL,
 				PRIMARY KEY  (id),
 				UNIQUE KEY delivery_id (delivery_id),
@@ -71,6 +99,12 @@ class POS_Connector_Queue {
 				KEY due_lookup (status, available_at)
 			) {$charset};"
 		);
+
+		if ( ! self::table_exists() ) {
+			self::$last_install_error = $wpdb->last_error ? (string) $wpdb->last_error : __( 'جدول صف ساخته نشد.', 'pos-accounting-connector' );
+			return false;
+		}
+		return true;
 	}
 
 	/**
@@ -82,6 +116,19 @@ class POS_Connector_Queue {
 	 * never touched — it is the record that the earlier state *was* delivered.
 	 */
 	public static function enqueue( $topic, $remote_id, array $payload ) {
+		if ( ! self::table_exists() && ! self::maybe_install() ) {
+			POS_Connector_Log::error(
+				'queue',
+				sprintf(
+					'صف در دسترس نیست؛ رویداد %s:%s ذخیره نشد. %s',
+					(string) $topic,
+					(string) $remote_id,
+					self::$last_install_error
+				)
+			);
+			return 0;
+		}
+
 		global $wpdb;
 		$table = self::table_name();
 		$now   = current_time( 'mysql', true );
@@ -131,6 +178,9 @@ class POS_Connector_Queue {
 	 * first, so events reach the app in the order they happened.
 	 */
 	public static function due( $limit = 50 ) {
+		if ( ! self::table_exists() ) {
+			return array();
+		}
 		global $wpdb;
 		$table = self::table_name();
 		$now   = current_time( 'mysql', true );
@@ -148,6 +198,9 @@ class POS_Connector_Queue {
 
 	/** How many rows are waiting their turn, for the admin screen's summary. */
 	public static function deferred_count() {
+		if ( ! self::table_exists() ) {
+			return 0;
+		}
 		global $wpdb;
 		$table = self::table_name();
 		$now   = current_time( 'mysql', true );
@@ -245,6 +298,13 @@ class POS_Connector_Queue {
 
 	/** Counts by status, for the admin screen's summary line. */
 	public static function counts() {
+		if ( ! self::table_exists() ) {
+			return array(
+				'pending' => 0,
+				'sent'    => 0,
+				'failed'  => 0,
+			);
+		}
 		global $wpdb;
 		$table = self::table_name();
 		$rows  = $wpdb->get_results( "SELECT status, COUNT(*) AS total FROM {$table} GROUP BY status", ARRAY_A );
