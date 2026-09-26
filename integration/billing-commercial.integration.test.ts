@@ -275,7 +275,7 @@ describe("usage ledger", () => {
       ],
     });
     if ("error" in missing) throw new Error(missing.error);
-    expect(missing.results).toEqual([{ eventId: "bw-missing", status: "rejected", reason: "unknown_site" }]);
+    expect(missing.results).toEqual([{ eventId: "cms:bw:miss", status: "rejected", reason: "unknown_site" }]);
   });
 
   it("refuses an older entitlement projection", async () => {
