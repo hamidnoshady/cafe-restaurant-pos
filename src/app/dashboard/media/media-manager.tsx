@@ -15,9 +15,10 @@
  * as the WordPress media mirror (`websites/wp/media-section.tsx`) rather than
  * a second implementation of the same three rules.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PersianNumberInput } from "@/components/ui/persian-number-input";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { toPersianDigits } from "@/lib/digits";
 import { MEDIA_KIND_LABELS, MEDIA_SORTS, MEDIA_SORT_LABELS, type MediaKind, type MediaSort } from "@/lib/media";
 import { summarizeUploadResults, uploadFiles, type UploadProgressEvent } from "@/lib/media-uploader";
@@ -126,6 +127,158 @@ const SOURCE_FILTERS: { key: "all" | AssetRow["source"]; label: string }[] = [
   { key: "ai_attachment", label: "از گفت‌وگو" },
 ];
 
+interface FolderTreeActions {
+  activeFolderId: string | "root" | null;
+  expanded: Set<string>;
+  onToggle: (id: string) => void;
+  onSelect: (id: string | "root" | null) => void;
+  onRename: (folder: FolderRow) => void;
+  onStartMove: (folder: FolderRow) => void;
+  onDelete: (folder: FolderRow) => void;
+  onCreateChild: (parentId: string | null) => void;
+}
+
+/**
+ * One tree node: expand/collapse toggle (only when it has children),
+ * select-into, and the same rename/move/delete/new-subfolder actions the
+ * flat chip row already offered — kept always visible (not hover-only), so
+ * the tree works the same on a touchscreen as with a mouse.
+ */
+function FolderTreeNode({ folder, depth, childrenByParent, actions }: {
+  folder: FolderRow;
+  depth: number;
+  childrenByParent: Map<string | null, FolderRow[]>;
+  actions: FolderTreeActions;
+}) {
+  const children = childrenByParent.get(folder.id) ?? [];
+  const isOpen = actions.expanded.has(folder.id);
+  const isActive = actions.activeFolderId === folder.id;
+  return (
+    <li>
+      <div className="flex items-center gap-0.5 py-0.5" style={{ paddingInlineStart: depth * 14 }}>
+        {children.length > 0 ? (
+          <button
+            type="button"
+            aria-label={isOpen ? `بستن پوشهٔ ${folder.name}` : `بازکردن پوشهٔ ${folder.name}`}
+            aria-expanded={isOpen}
+            onClick={() => actions.onToggle(folder.id)}
+            className="grid size-5 shrink-0 place-items-center rounded text-xs text-muted-foreground hover:bg-muted"
+          >
+            {isOpen ? "▾" : "◂"}
+          </button>
+        ) : (
+          <span className="inline-block size-5 shrink-0" aria-hidden="true" />
+        )}
+        <button
+          type="button"
+          onClick={() => actions.onSelect(folder.id)}
+          className={`flex min-w-0 flex-1 items-center gap-1.5 truncate rounded-lg px-2 py-1 text-start text-sm transition-colors ${isActive ? "bg-amber-100 font-medium text-amber-950 dark:bg-amber-500/20 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}
+        >
+          <span aria-hidden="true">📁</span>
+          <span className="truncate">{folder.name}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{toPersianDigits(folder.assetCount)}</span>
+        </button>
+        <span className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            aria-label={`پوشهٔ جدید داخل ${folder.name}`}
+            className="rounded px-1 text-xs text-muted-foreground hover:bg-muted"
+            onClick={() => actions.onCreateChild(folder.id)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            aria-label={`ویرایش نام پوشهٔ ${folder.name}`}
+            className="rounded px-1 text-xs text-muted-foreground hover:bg-muted"
+            onClick={() => actions.onRename(folder)}
+          >
+            ✎
+          </button>
+          <button
+            type="button"
+            aria-label={`جابه‌جایی پوشهٔ ${folder.name}`}
+            className="rounded px-1 text-xs text-muted-foreground hover:bg-muted"
+            onClick={() => actions.onStartMove(folder)}
+          >
+            ⇄
+          </button>
+          <button
+            type="button"
+            aria-label={`حذف پوشهٔ ${folder.name}`}
+            className="rounded px-1 text-xs text-destructive hover:bg-muted"
+            onClick={() => actions.onDelete(folder)}
+          >
+            ✕
+          </button>
+        </span>
+      </div>
+      {isOpen && children.length > 0 ? (
+        <ul>
+          {children.map((child) => (
+            <FolderTreeNode key={child.id} folder={child} depth={depth + 1} childrenByParent={childrenByParent} actions={actions} />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * The visual folder explorer: the whole hierarchy at once (not just the
+ * current level, unlike the breadcrumb + child-chip row above it), with
+ * "همهٔ فایل‌ها" (every asset, no folder filter) and "ریشه" (assets with no
+ * folder) as its two permanent top entries. Reused verbatim inline on
+ * desktop and inside a `Sheet` drawer on mobile — one component, one set of
+ * behaviors, two mount points.
+ */
+function FolderTreeExplorer({ folders, childrenByParent, actions }: {
+  folders: FolderRow[];
+  childrenByParent: Map<string | null, FolderRow[]>;
+  actions: FolderTreeActions;
+}) {
+  const roots = childrenByParent.get(null) ?? [];
+  return (
+    <ul className="max-h-72 space-y-0.5 overflow-y-auto overscroll-contain pe-1 text-sm" aria-label="درخت پوشه‌ها">
+      <li>
+        <button
+          type="button"
+          onClick={() => actions.onSelect(null)}
+          className={`w-full rounded-lg px-2 py-1 text-start transition-colors ${actions.activeFolderId === null ? "bg-amber-100 font-medium text-amber-950 dark:bg-amber-500/20 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}
+        >
+          🗂️ همهٔ فایل‌ها <span className="text-xs text-muted-foreground">({toPersianDigits(folders.reduce((n, f) => n + f.assetCount, 0))})</span>
+        </button>
+      </li>
+      <li>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => actions.onSelect("root")}
+            className={`flex-1 rounded-lg px-2 py-1 text-start transition-colors ${actions.activeFolderId === "root" ? "bg-amber-100 font-medium text-amber-950 dark:bg-amber-500/20 dark:text-amber-200" : "text-muted-foreground hover:bg-muted"}`}
+          >
+            📁 ریشه (بدون پوشه)
+          </button>
+          <button
+            type="button"
+            aria-label="پوشهٔ جدید در ریشه"
+            className="rounded px-1 text-xs text-muted-foreground hover:bg-muted"
+            onClick={() => actions.onCreateChild(null)}
+          >
+            +
+          </button>
+        </div>
+        {roots.length > 0 ? (
+          <ul>
+            {roots.map((folder) => (
+              <FolderTreeNode key={folder.id} folder={folder} depth={1} childrenByParent={childrenByParent} actions={actions} />
+            ))}
+          </ul>
+        ) : null}
+      </li>
+    </ul>
+  );
+}
+
 export function MediaManager() {
   const [payload, setPayload] = useState<Omit<LibraryPayload, "assets" | "total"> | null>(null);
   const [assets, setAssets] = useState<AssetRow[]>([]);
@@ -151,6 +304,12 @@ export function MediaManager() {
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [movingFolderId, setMovingFolderId] = useState<string | null>(null);
+  // Visual folder explorer: which nodes of the *whole* tree (not just the
+  // current level) are expanded. New folders default to expanded so a
+  // freshly-created subfolder is visible immediately; the operator's own
+  // collapses on other branches are preserved across reloads.
+  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
+  const [folderExplorerOpen, setFolderExplorerOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // The central uploader (src/lib/media-uploader.ts) drives every batch: this
@@ -159,6 +318,7 @@ export function MediaManager() {
   // debounce shared with the WordPress mirror.
   const [uploadEvents, setUploadEvents] = useState<UploadProgressEvent[]>([]);
   const uploadCancelRef = useRef<(() => void) | null>(null);
+  const seenFolderIds = useRef<Set<string>>(new Set());
 
   // Trash — a second view over the same grid, not a second screen: the
   // library's own filters (folder/kind/category/tag) do not apply to a view
@@ -479,11 +639,38 @@ export function MediaManager() {
     loadCollections();
   }
 
-  const folders = payload?.folders ?? [];
+  const folders = useMemo(() => payload?.folders ?? [], [payload]);
   const currentFolder = folderId && folderId !== "root" ? folders.find((f) => f.id === folderId) : null;
   const visibleFolders = folders.filter((f) =>
     folderId === null || folderId === "root" ? f.parentId === null : f.parentId === folderId,
   );
+
+  // Every folder's children, for the tree explorer below.
+  const childrenByParent = new Map<string | null, FolderRow[]>();
+  for (const f of folders) {
+    const key = f.parentId;
+    const list = childrenByParent.get(key);
+    if (list) list.push(f);
+    else childrenByParent.set(key, [f]);
+  }
+
+  // Newly-seen folders (freshly created, or the very first load) start
+  // expanded; a folder the operator explicitly collapsed stays collapsed
+  // across reloads instead of snapping back open under them.
+  useEffect(() => {
+    setTreeExpanded((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const f of folders) {
+        if (!seenFolderIds.current.has(f.id)) {
+          next.add(f.id);
+          changed = true;
+        }
+        seenFolderIds.current.add(f.id);
+      }
+      return changed ? next : prev;
+    });
+  }, [folders]);
 
   /** Every folder except `folder` itself and its own descendants — the legal move targets. */
   function eligibleMoveTargets(folder: FolderRow): FolderRow[] {
@@ -511,6 +698,78 @@ export function MediaManager() {
       cursor = parentId ? folders.find((f) => f.id === parentId) : undefined;
     }
     return path;
+  }
+
+  function toggleTreeNode(id: string) {
+    setTreeExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectFolderFromExplorer(id: string | "root" | null) {
+    setFolderId(id);
+    setFolderExplorerOpen(false); // no-op on desktop, closes the mobile drawer
+  }
+
+  function startCreateChildFolder(parentId: string | null) {
+    setFolderId(parentId ?? "root");
+    setCreatingFolder(true);
+    setFolderExplorerOpen(false);
+  }
+
+  const treeActions: FolderTreeActions = {
+    activeFolderId: folderId,
+    expanded: treeExpanded,
+    onToggle: toggleTreeNode,
+    onSelect: selectFolderFromExplorer,
+    onRename: renameFolder,
+    onStartMove: (folder) => {
+      setMovingFolderId(folder.id);
+      setFolderExplorerOpen(false);
+    },
+    onDelete: deleteFolder,
+    onCreateChild: startCreateChildFolder,
+  };
+
+  // Every filter currently narrowing the grid, as one removable chip each —
+  // so "why am I seeing this subset" is answered at a glance instead of by
+  // re-reading five separate dropdowns, and clearing one doesn't require
+  // hunting down which control set it.
+  const activeFilterChips: { key: string; label: string; onClear: () => void }[] = [];
+  if (kind !== "all") {
+    activeFilterChips.push({ key: "kind", label: `نوع: ${MEDIA_KIND_LABELS[kind]}`, onClear: () => setKind("all") });
+  }
+  if (category) {
+    activeFilterChips.push({ key: "category", label: `دسته: ${category}`, onClear: () => setCategory("") });
+  }
+  if (tag) {
+    activeFilterChips.push({ key: "tag", label: `برچسب: ${tag}`, onClear: () => setTag("") });
+  }
+  if (source !== "all") {
+    const sourceLabel = SOURCE_FILTERS.find((s) => s.key === source)?.label ?? source;
+    activeFilterChips.push({ key: "source", label: `منبع: ${sourceLabel}`, onClear: () => setSource("all") });
+  }
+  if (pendingOnly) {
+    activeFilterChips.push({ key: "pending", label: "در انتظار تأیید برچسب هوشمند", onClear: () => setPendingOnly(false) });
+  }
+  if (search) {
+    activeFilterChips.push({
+      key: "search",
+      label: `جست‌وجو: «${search}»`,
+      onClear: () => {
+        setSearchInput("");
+        setSearch("");
+      },
+    });
+  }
+  if (collectionId) {
+    const activeCollection = collections.find((c) => c.id === collectionId);
+    if (activeCollection) {
+      activeFilterChips.push({ key: "collection", label: `مجموعه: ${activeCollection.name}`, onClear: () => setCollectionId(null) });
+    }
   }
 
   if (loading && !payload) {
@@ -773,7 +1032,38 @@ export function MediaManager() {
               </button>
             </span>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setFolderExplorerOpen(true)}
+            className="ms-auto rounded-lg border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted md:hidden"
+          >
+            🗂️ کاوشگر پوشه‌ها
+          </button>
         </div>
+
+        {/* Visual folder explorer — the whole tree at once, not just the
+            current level. Inline and collapsible on a wide screen; a slide-in
+            drawer (the same `Sheet` primitive every other mobile panel in the
+            product uses) on a narrow one, opened by the button above. */}
+        <details className="mb-3 hidden rounded-xl border border-border md:block" open>
+          <summary className="cursor-pointer select-none rounded-xl px-3 py-2 text-sm font-medium text-foreground">
+            کاوشگر پوشه‌ها (نمای درختی)
+          </summary>
+          <div className="border-t border-border px-3 py-2">
+            <FolderTreeExplorer folders={folders} childrenByParent={childrenByParent} actions={treeActions} />
+          </div>
+        </details>
+
+        <Sheet open={folderExplorerOpen} onOpenChange={setFolderExplorerOpen}>
+          <SheetContent side="left" aria-label="کاوشگر پوشه‌ها" className="w-full max-w-xs">
+            <SheetHeader className="border-b border-border/80 px-4 py-3">
+              <SheetTitle>کاوشگر پوشه‌ها</SheetTitle>
+            </SheetHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+              <FolderTreeExplorer folders={folders} childrenByParent={childrenByParent} actions={treeActions} />
+            </div>
+          </SheetContent>
+        </Sheet>
 
         {movingFolderId ? (
           (() => {
@@ -911,6 +1201,42 @@ export function MediaManager() {
           />
           فقط موارد در انتظار تأیید برچسب هوشمند
         </label>
+
+        {/* Active-filter chips — every narrowing control above, summarized
+            and individually removable, so the operator never has to hunt
+            through five dropdowns to see (or undo) why the grid is short. */}
+        {activeFilterChips.length > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border pt-3 text-sm">
+            <span className="text-muted-foreground">فیلترهای فعال:</span>
+            {activeFilterChips.map((chip) => (
+              <span
+                key={chip.key}
+                className="flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-950 dark:bg-amber-500/20 dark:text-amber-200"
+              >
+                {chip.label}
+                <button
+                  type="button"
+                  aria-label={`حذف فیلتر: ${chip.label}`}
+                  className="rounded-full px-1 hover:bg-amber-200/70 dark:hover:bg-amber-500/30"
+                  onClick={chip.onClear}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+            {activeFilterChips.length > 1 ? (
+              <button
+                type="button"
+                className="rounded-full px-2 py-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => {
+                  for (const chip of activeFilterChips) chip.onClear();
+                }}
+              >
+                پاک کردن همهٔ فیلترها
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* Collections — an ad hoc set, not a tree slot: any asset can be in
             any number of these, unlike the single-parent folders above. */}

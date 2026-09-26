@@ -18,6 +18,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -555,5 +556,123 @@ describe("MediaManager upload panel", () => {
     // Only the 3 that actually started ever reached the network; the 2
     // still queued when cancel() fired never called fetch at all.
     expect(uploadCalls).toHaveLength(3);
+  });
+});
+
+/**
+ * The visual folder explorer (the whole tree, not just the current level)
+ * and the active-filter chip row — both new UI over data the manager
+ * already fetched, no new endpoint involved.
+ */
+describe("MediaManager folder explorer and active-filter chips", () => {
+  function libraryPayload(overrides: Record<string, unknown> = {}) {
+    return {
+      assets: [],
+      total: 0,
+      folders: [
+        { id: "f-root", parentId: null, name: "تصاویر", assetCount: 3 },
+        { id: "f-child", parentId: "f-root", name: "تابستان", assetCount: 1 },
+      ],
+      facets: { categories: ["نوشیدنی"], tags: ["ویژه"] },
+      usage: { totalBytes: 0, assetCount: 0 },
+      storage: {
+        ready: true,
+        billingEnabled: false,
+        dailyFlatRial: 0,
+        dailyPerGbRial: 0,
+        freeQuotaMb: 0,
+        enhancePriceRial: 0,
+      },
+      ...overrides,
+    };
+  }
+
+  function routeFetch() {
+    return vi.fn(async (url: string) => {
+      if (url.startsWith("/api/media?")) {
+        return new Response(JSON.stringify(libraryPayload()), { status: 200 });
+      }
+      if (url === "/api/media/collections") {
+        return new Response(JSON.stringify({ collections: [] }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  }
+
+  it("renders the whole folder hierarchy at once and lets you jump straight into a nested child", async () => {
+    const fetchMock = routeFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MediaManager />);
+    await screen.findByText("کاوشگر پوشه‌ها (نمای درختی)");
+
+    const tree = screen.getByRole("list", { name: "درخت پوشه‌ها" });
+    // Both the parent and its nested child are visible without any extra
+    // navigation click — a real tree, not a one-level-at-a-time picker.
+    expect(within(tree).getByText("تصاویر")).not.toBeNull();
+    expect(within(tree).getByText("تابستان")).not.toBeNull();
+
+    fetchMock.mockClear();
+    fireEvent.click(within(tree).getByText("تابستان"));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url]) => (url as string).startsWith("/api/media?"));
+      expect(call).toBeDefined();
+      expect((call![0] as string)).toContain("folderId=f-child");
+    });
+  });
+
+  it("collapsing a node hides its children until it is expanded again", async () => {
+    vi.stubGlobal("fetch", routeFetch());
+    render(<MediaManager />);
+    await screen.findByText("کاوشگر پوشه‌ها (نمای درختی)");
+
+    const tree = screen.getByRole("list", { name: "درخت پوشه‌ها" });
+    expect(within(tree).getByText("تابستان")).not.toBeNull();
+
+    fireEvent.click(within(tree).getByLabelText("بستن پوشهٔ تصاویر"));
+    expect(within(tree).queryByText("تابستان")).toBeNull();
+
+    fireEvent.click(within(tree).getByLabelText("بازکردن پوشهٔ تصاویر"));
+    expect(within(tree).getByText("تابستان")).not.toBeNull();
+  });
+
+  it("shows an active-filter chip for a chosen category and clears just that filter on ✕", async () => {
+    vi.stubGlobal("fetch", routeFetch());
+    render(<MediaManager />);
+    await screen.findByText("کاوشگر پوشه‌ها (نمای درختی)");
+
+    expect(screen.queryByText("فیلترهای فعال:")).toBeNull();
+
+    const categorySelect = screen.getByDisplayValue("همهٔ دسته‌بندی‌ها");
+    fireEvent.change(categorySelect, { target: { value: "نوشیدنی" } });
+
+    await screen.findByText("دسته: نوشیدنی");
+    expect(screen.getByText("فیلترهای فعال:")).not.toBeNull();
+
+    fireEvent.click(screen.getByLabelText("حذف فیلتر: دسته: نوشیدنی"));
+
+    await waitFor(() => {
+      expect(screen.queryByText("دسته: نوشیدنی")).toBeNull();
+    });
+    expect(screen.getByDisplayValue("همهٔ دسته‌بندی‌ها")).not.toBeNull();
+  });
+
+  it("\"پاک کردن همهٔ فیلترها\" clears every active filter at once", async () => {
+    vi.stubGlobal("fetch", routeFetch());
+    render(<MediaManager />);
+    await screen.findByText("کاوشگر پوشه‌ها (نمای درختی)");
+
+    fireEvent.change(screen.getByDisplayValue("همهٔ دسته‌بندی‌ها"), { target: { value: "نوشیدنی" } });
+    fireEvent.change(screen.getByDisplayValue("همهٔ برچسب‌ها"), { target: { value: "ویژه" } });
+    await screen.findByText("پاک کردن همهٔ فیلترها");
+
+    fireEvent.click(screen.getByText("پاک کردن همهٔ فیلترها"));
+
+    await waitFor(() => {
+      expect(screen.queryByText("فیلترهای فعال:")).toBeNull();
+    });
+    expect(screen.getByDisplayValue("همهٔ دسته‌بندی‌ها")).not.toBeNull();
+    expect(screen.getByDisplayValue("همهٔ برچسب‌ها")).not.toBeNull();
   });
 });

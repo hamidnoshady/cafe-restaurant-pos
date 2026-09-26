@@ -61,17 +61,26 @@ What actually changed, in the order it was built:
    plugin (v1.6.4) echoes the push's operation id back on the resulting attachment event,
    closing the loop to `confirmWordPressMediaSync`/`failWordPressMediaSync`; the asset
    drawer shows per-connection push status. See Section K.
+8. **Section H correction + a coverage gap it exposed** (follow-up session): found and
+   retracted a false claim in an earlier draft of this report — the AI-tagging
+   `pending_review`/`confirmed`/`rejected` review-workflow was *already implemented and
+   correct*, not "never implemented" as previously (and wrongly) stated. That audit
+   surfaced a real gap the false claim had masked: the route that persists the
+   confirm/reject decision had zero tests. Added
+   `src/app/api/media/[id]/route.test.ts` (19 tests). See Section H, Section U item 14.
+9. **Visual folder explorer, mobile drawer, active-filter chips** (follow-up session):
+   `FolderTreeExplorer` renders the whole folder hierarchy at once (not one level at a
+   time), reused inline (desktop) and inside the app's existing `Sheet` drawer (mobile),
+   against the CRUD endpoints that already had cycle/depth/cross-tenant safety. A
+   removable active-filter-chip row was added over the existing dropdown filters. See
+   Sections F, I, Section U item 15.
 
 It did **not** touch: the canonical-asset-schema redesign beyond the additive columns in
-`0174`/`0175`, a full naming-system rebuild, a visual folder explorer with a mobile
-drawer, rich filter-chip UI, centralized OCR/document-intelligence consumption by
-Accounting/CRM/Workspace, new AI editing operations beyond crop/rotate/resize (background
-removal, upscale, variations), a new numbered migration beyond `0174`/`0175`, dead-route
-removal, or E2E/mobile/accessibility/performance tests/CI changes. Section V lists these
-as genuine open work. (The AI-tagging `pending_review`/`confirmed`/`rejected`
-review-workflow is *not* on this list — it already existed, correctly, before this
-program started; earlier drafts of this report wrongly claimed otherwise, corrected in
-Section H.)
+`0174`/`0175`, a full naming-system rebuild, centralized OCR/document-intelligence
+consumption by Accounting/CRM/Workspace, new AI editing operations beyond
+crop/rotate/resize (background removal, upscale, variations), a new numbered migration
+beyond `0174`/`0175`, dead-route removal, or E2E/mobile/accessibility/performance
+tests/CI changes. Section V lists these as genuine open work.
 
 Why the scope stopped where it did: the requested scope is a multi-week, multi-team
 program. Given the choice between (a) shipping a shallow, unverified pass across the
@@ -181,9 +190,12 @@ Persian character folding, added in the first session) is a related but distinct
 rejects a move with `circular_move` (self-parent or move-into-own-descendant) or
 `too_deep` (exceeds the max-depth constant) before any row is written, backed by two
 pure, unit-tested helpers: `folderDepthOf` and `folderMoveCreatesCycle` (including a
-guard against infinite-looping on an already-corrupt cycle in the input data). No visual
-tree explorer or mobile drawer was built — folders are still a flat picker list in the
-manager UI.
+guard against infinite-looping on an already-corrupt cycle in the input data). A visual
+tree explorer and a mobile drawer were added in a follow-up session
+(`FolderTreeExplorer`, `src/app/dashboard/media/media-manager.tsx`): the whole hierarchy
+renders at once — not one level at a time — with expand/collapse per node, reused
+inline (desktop) and inside the app's `Sheet` drawer primitive (mobile), against these
+same CRUD endpoints; see Section U item 15, Section V.
 
 ## G. Collections — distinct from folders and tags
 
@@ -235,9 +247,11 @@ which had a test before either.
 server-side against literal allow-lists. Search-term handling is centralized in
 `normalizeSearchTerm` (trim/collapse whitespace/cap at 120 chars/fold Arabic ي‌ك to
 Persian ی‌ک) and `mediaSearchExpression` (the matching `translate(...)` SQL wrapper, so
-the folding is consistent at the database level, not just in application code). No rich
-filter-chip UI was built; filtering is still a set of dropdowns/toggles in the manager,
-not removable chips.
+the folding is consistent at the database level, not just in application code). Filtering
+is still a set of dropdowns/toggles for *choosing* a value (unchanged, low-risk to leave
+as-is), but a follow-up session added a removable active-filter-chip row summarizing
+every one currently applied (kind/category/tag/source/pending-only/search/collection),
+each independently clearable plus a clear-all action — see Section U item 15, Section V.
 
 ## J. Upload
 
@@ -757,17 +771,34 @@ dedicated Media E2E/mobile/a11y coverage.
     **429/429 files, 6036/6036 tests passed** (429/6036, up from the prior 428/6017 by
     exactly this 1 new file / 19 new tests — 0 regressions elsewhere). No server-side
     logic changed, so the DB integration suite was not re-run for this item.
+15. **Same follow-up session — visual folder explorer and active-filter chips (Sections F,
+    I, V)**: closed the "still flat dropdowns, not a tree/chip UI" gap. Added
+    `FolderTreeExplorer`/`FolderTreeNode` — the whole folder hierarchy rendered at once,
+    reused verbatim inline (desktop) and inside the app's existing `Sheet` drawer
+    (mobile), against the same `/api/media/folders` CRUD endpoints that already enforced
+    cycle/depth/cross-tenant safety (no backend change needed). Added a removable
+    active-filter-chip row (kind/category/tag/source/pending-only/search/collection) with
+    a clear-all action. `npx tsc --noEmit` clean; `npx eslint
+    src/app/dashboard/media/media-manager.tsx src/app/dashboard/media/media-manager.test.tsx
+    --max-warnings=0` clean. Added 4 new RTL tests (whole-tree navigation into a nested
+    child, collapse/expand, a category chip appearing and clearing itself, and "clear all
+    filters") — all 4 passed on first run against the implementation, and all 10
+    pre-existing tests in the same file kept passing unmodified. Full unit suite re-run:
+    **429/429 files, 6040/6040 tests passed** (up from 429/6036 by exactly these 4 new
+    tests — 0 regressions elsewhere). No server-side route changed, so the DB integration
+    suite was not re-run for this item.
 
 Net effect on the test suite across this whole program: **+35 unit tests from earlier
 sessions (`media.test.ts` 19→34, `media-transform.test.ts` 0→6, `media-manager.test.tsx`
-0→10 counting this step's +4, `media-uploader.test.ts` 0→8) plus +23 unit tests from the
-WordPress-push step (`s3-lite.test.ts` +5, `src/app/api/media/[id]/wordpress/route.test.ts`
-+13 new file, `wp-plugin-admin-source.test.ts` +1), plus +19 unit tests from this step's
-new `src/app/api/media/[id]/route.test.ts`, +14 integration tests from an earlier session
-(3 transform + 6 orphan-reconciliation + 5 parties) plus +7 from the WordPress-push step
-(3 `readMediaObjectDownloadUrl` + 4 WordPress-correlation), plus the phase-2
-trash/collections/WordPress-mapping integration coverage from the middle of this program
-— 0 net regressions** at every checkpoint where the full suite was re-run.
+0→10 counting an earlier step's +4, `media-uploader.test.ts` 0→8) plus +23 unit tests from
+the WordPress-push step (`s3-lite.test.ts` +5, `src/app/api/media/[id]/wordpress/route.test.ts`
++13 new file, `wp-plugin-admin-source.test.ts` +1), plus +19 unit tests from the Section H
+correction step's new `src/app/api/media/[id]/route.test.ts`, plus +4 unit tests from the
+folder-explorer/filter-chips step (`media-manager.test.tsx` 10→14), +14 integration tests
+from an earlier session (3 transform + 6 orphan-reconciliation + 5 parties) plus +7 from
+the WordPress-push step (3 `readMediaObjectDownloadUrl` + 4 WordPress-correlation), plus
+the phase-2 trash/collections/WordPress-mapping integration coverage from the middle of
+this program — 0 net regressions** at every checkpoint where the full suite was re-run.
 
 ## V. Second audit / genuine remaining work
 
@@ -797,9 +828,19 @@ full-suite re-run this session, after every change, was green.
   draft of this report wrongly listed it here; retracted. The one real thing this audit
   found and closed was a missing test file for the route that persists the decision —
   see Section U item 14.
-- **Visual folder explorer / mobile drawer, rich filter-chip UI** — the manager still
+- ~~**Visual folder explorer / mobile drawer, rich filter-chip UI** — the manager still
   uses flat dropdown/list controls, not the tree-explorer/chip UI the original request
-  described (Sections F, I).
+  described.~~ Closed in a follow-up session: `FolderTreeExplorer`
+  (`src/app/dashboard/media/media-manager.tsx`) renders the whole folder hierarchy at once
+  — not just the current level, unlike the breadcrumb strip it sits beside — with
+  expand/collapse per node and the same rename/move/delete/new-subfolder actions the flat
+  chip row already had, always visible rather than hover-only so it works the same on a
+  touchscreen. Inline (collapsible) on a wide screen; the identical component reused
+  inside the app's existing `Sheet` drawer primitive on a narrow one, opened by a
+  "کاوشگر پوشه‌ها" button next to the breadcrumb. Every active filter (kind, category, tag,
+  source, pending-review-only, search, collection) now also renders as its own removable
+  chip in a "فیلترهای فعال" row, with a "پاک کردن همهٔ فیلترها" to clear all at once — see
+  Section U item 15.
 - **New AI editing operations** beyond crop/rotate/resize — no background removal,
   upscale, or variations operation exists.
 - **Centralized OCR/document intelligence** for Accounting/CRM/Workspace — not built;
