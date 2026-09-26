@@ -99,6 +99,7 @@ export async function saveMediaConfig(config: MediaStorageConfig, adminId: strin
       adminId,
     ],
   );
+  await publishMediaPrices(config, adminId);
 }
 
 /**
@@ -125,6 +126,34 @@ export async function saveMediaTariff(
       adminId,
     ],
   );
+  await publishMediaPrices(tariff, adminId);
+}
+
+async function publishMediaPrices(
+  tariff: Pick<MediaStorageConfig, "billingEnabled" | "dailyFlatRial" | "dailyPerGbRial" | "freeQuotaMb" | "enhancePriceRial">,
+  adminId: string | null,
+): Promise<void> {
+  const { publishPriceVersion } = await import("./billing/runtime");
+  await publishPriceVersion({
+    targetType: "meter",
+    targetKey: "media.storage_byte_hour",
+    unit: "byte_hour",
+    unitAmountRial: Math.max(0, Math.floor(tariff.dailyFlatRial)),
+    metadata: {
+      dailyFlatRial: tariff.dailyFlatRial,
+      dailyPerGbRial: tariff.dailyPerGbRial,
+      freeQuotaMb: tariff.freeQuotaMb,
+      billingEnabled: tariff.billingEnabled,
+    },
+    createdBy: adminId,
+  });
+  await publishPriceVersion({
+    targetType: "meter",
+    targetKey: "media.image_enhance",
+    unit: "image",
+    unitAmountRial: Math.max(0, Math.floor(tariff.enhancePriceRial)),
+    createdBy: adminId,
+  });
 }
 
 function s3ConfigOf(config: MediaStorageConfig): S3Config {
@@ -521,6 +550,21 @@ export async function runMediaBillingTick(now: Date = new Date()): Promise<numbe
             priceRial: breakdown.totalRial,
             note: `هزینهٔ روزانهٔ فضای رسانه (${day})`,
             metadata: { day, storedBytes: Number(holder.bytes), metered: true },
+          });
+          const bytes = Number(holder.bytes);
+          const { appendUsageEvent } = await import("./billing/runtime");
+          await appendUsageEvent({
+            eventId: `media-storage:${holder.business_id}:${day}`,
+            businessId: holder.business_id,
+            meterKey: "media.storage_byte_hour",
+            source: "media",
+            quantity: bytes * 24,
+            unit: "byte_hour",
+            resource: "media_library",
+            resourceId: holder.business_id,
+            dimensions: { day, storedBytes: bytes, flatRial: breakdown.flatRial, perGbRial: breakdown.perGbRial },
+          }).catch((error) => {
+            console.error("media usage event failed:", holder.business_id, error);
           });
           charged += 1;
         } catch (error) {

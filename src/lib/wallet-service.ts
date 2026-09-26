@@ -106,6 +106,41 @@ function positiveInt(v: number): boolean {
   return Number.isSafeInteger(v) && v > 0;
 }
 
+/**
+ * Credit or debit the wallet on a connection that is already inside a
+ * transaction. Does not BEGIN or COMMIT.
+ */
+export async function postWalletEntryTx(
+  client: PoolClient,
+  entry: {
+    businessId: string;
+    kind: LedgerKind;
+    direction: "credit" | "debit";
+    amountRial: number;
+    featureKey?: string | null;
+    paymentId?: string | null;
+    note?: string | null;
+    metadata?: Record<string, unknown>;
+    userId?: string | null;
+    platformAdminId?: string | null;
+  },
+): Promise<{ id: string; balanceAfterRial: number }> {
+  await client.query(
+    `INSERT INTO business_wallets (business_id) VALUES ($1) ON CONFLICT (business_id) DO NOTHING`,
+    [entry.businessId],
+  );
+  await client.query(`SELECT business_id FROM business_wallets WHERE business_id = $1 FOR UPDATE`, [entry.businessId]);
+  if (entry.direction === "debit") {
+    const { rows } = await client.query<{ balance_rial: string }>(
+      `SELECT balance_rial FROM business_wallets WHERE business_id = $1`,
+      [entry.businessId],
+    );
+    const balance = n(rows[0]?.balance_rial);
+    if (balance < entry.amountRial) throw new WalletInsufficientFundsError(entry.amountRial, balance);
+  }
+  return writeLedger(client, entry);
+}
+
 /** Runs `fn` inside a transaction with the row lock on the wallet held. */
 async function withWalletTx<T>(
   client: PoolClient,
@@ -152,14 +187,19 @@ async function writeLedger(
   // Callers that debit (chargeFeatureUse / deductCredits) check cover before
   // writing; the GREATEST keeps a bug from ever producing a negative balance.
   const isTopUp = entry.kind === "top_up" || entry.kind === "payment";
+  const reversesSpend = entry.direction === "credit" && entry.metadata?.reversesSpend === true;
   await client.query(
     `UPDATE business_wallets
         SET balance_rial = GREATEST(0, balance_rial + $2),
             total_topped_up_rial = CASE WHEN $3 THEN total_topped_up_rial + $4 ELSE total_topped_up_rial END,
-            total_spent_rial     = CASE WHEN $5 THEN total_spent_rial + $4 ELSE total_spent_rial END,
+            total_spent_rial     = CASE
+                                     WHEN $5 THEN total_spent_rial + $4
+                                     WHEN $6 THEN GREATEST(0, total_spent_rial - $4)
+                                     ELSE total_spent_rial
+                                   END,
             updated_at = now()
       WHERE business_id = $1`,
-    [entry.businessId, delta, isTopUp, entry.amountRial, entry.direction === "debit"],
+    [entry.businessId, delta, isTopUp, entry.amountRial, entry.direction === "debit", reversesSpend],
   );
   const { rows: ledgerRows } = await client.query<{ id: string; balance_after_rial: string }>(
     `INSERT INTO wallet_ledger

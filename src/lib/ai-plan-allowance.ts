@@ -75,7 +75,11 @@ export async function getPlanAllowance(businessId: string): Promise<PlanAllowanc
 
 async function readAllowance(businessId: string, periodMonth: string): Promise<PlanAllowance> {
   const { rows } = await query<{ monthly_credit: string | null; used: string | null }>(
-    `SELECT p.monthly_ai_credit_rial AS monthly_credit,
+    `SELECT COALESCE(
+              (SELECT al.included_quantity FROM billing_plan_meter_allowances al
+                WHERE al.plan_key = p.key AND al.meter_key = 'ai.credit'),
+              p.monthly_ai_credit_rial
+            ) AS monthly_credit,
             a.used_rial AS used
        FROM businesses b
        LEFT JOIN billing_plans p ON p.key = b.plan
@@ -120,7 +124,11 @@ export async function consumePlanAllowanceTx(
   // they can ever reach this row. (Postgres also refuses FOR UPDATE on the
   // nullable side of this outer join.)
   const plan = await client.query<{ monthly_credit: string | null; used: string | null; granted: string | null }>(
-    `SELECT p.monthly_ai_credit_rial AS monthly_credit,
+    `SELECT COALESCE(
+              (SELECT al.included_quantity FROM billing_plan_meter_allowances al
+                WHERE al.plan_key = p.key AND al.meter_key = 'ai.credit'),
+              p.monthly_ai_credit_rial
+            ) AS monthly_credit,
             a.used_rial AS used,
             a.granted_rial AS granted
        FROM businesses b

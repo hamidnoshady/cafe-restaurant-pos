@@ -211,6 +211,15 @@ const INTERNAL_ROUTES: Record<string, string> = {
     "authenticates the x-internal-auth secret instead",
 };
 
+/**
+ * CMS → billing usage ingest. Not a tenant session and not the middleware
+ * secret: a dedicated credential whose only scope is billing.usage.write.
+ */
+const BILLING_SERVICE_ROUTES: Record<string, string> = {
+  "internal/billing/usage/v1/batch":
+    "eshobe-cms reports meter quantities; the route verifies the HMAC service credential and never trusts a business id",
+};
+
 /** Routes that guard via getSession() with route-specific logic instead of requireRole. */
 const SELF_GUARDING_ROUTES: Record<string, string> = {
   "auth/me": "returns the caller's own session (or null) — nothing else",
@@ -416,6 +425,10 @@ describe("every API route is guarded", () => {
           isMfaPendingGuarded(src),
           `src/app/api/${key}/route.ts must verify an MFA pending token and pin its authRealm`,
         ).toBe(true);
+        return;
+      }
+      if (BILLING_SERVICE_ROUTES[key]) {
+        expect(src, BILLING_SERVICE_ROUTES[key]).toMatch(/verifyBillingServiceRequest\(/);
         return;
       }
       if (INTERNAL_ROUTES[key]) {

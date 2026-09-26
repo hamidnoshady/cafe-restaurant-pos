@@ -202,12 +202,14 @@ export type ChargeOutcome =
  * genuinely new row goes on to debit the wallet, so a retried renewal or a
  * double-clicked domain order cannot bill twice.
  *
- * An insufficient balance throws `WalletInsufficientFundsError` *after* the
- * row was claimed, so the claim is rolled back by deleting it — a charge the
- * business did not pay must not block the retry that will.
+ * An insufficient balance throws `WalletInsufficientFundsError` and leaves
+ * both the claim and an open platform invoice. The next attempt pays that
+ * invoice; it does not open a second one, and it does not advance the period
+ * until the invoice is paid.
  */
 export async function recordWebsiteCharge(input: RecordChargeInput): Promise<ChargeOutcome> {
   const amount = Math.max(0, Math.floor(input.amountRial));
+  const invoiceReference = `website:${input.kind}:${input.reference}`;
   const { rows } = await query<{ id: string }>(
     `INSERT INTO website_service_charges
        (business_id, kind, description, amount_rial, reference, period_start, period_end)
@@ -225,9 +227,23 @@ export async function recordWebsiteCharge(input: RecordChargeInput): Promise<Cha
     ],
   );
   const claimed = rows[0];
-  if (!claimed) return { status: "duplicate" };
+  if (!claimed) {
+    const existing = await websiteInvoiceStatus(input.businessId, invoiceReference);
+    if (!existing || existing.status === "paid" || existing.status === "void" || amount === 0) {
+      return { status: "duplicate" };
+    }
+  }
 
   if (input.settle === false || amount === 0) return { status: "recorded" };
+
+  await ensureWebsiteInvoice({
+    businessId: input.businessId,
+    reference: invoiceReference,
+    amount,
+    description: input.description,
+    periodStart: input.periodStart ?? null,
+    periodEnd: input.periodEnd ?? null,
+  });
 
   try {
     const { balanceRial } = await chargeFeatureUse({
@@ -238,10 +254,65 @@ export async function recordWebsiteCharge(input: RecordChargeInput): Promise<Cha
       userId: input.userId ?? null,
       metadata: { kind: input.kind, reference: input.reference },
     });
+    await query(
+      `UPDATE billing_invoices SET status = 'paid', paid_rial = total_rial, updated_at = now()
+        WHERE business_id = $1 AND reference = $2 AND status <> 'void'`,
+      [input.businessId, invoiceReference],
+    );
     return { status: "charged", balanceRial };
   } catch (error) {
-    await query(`DELETE FROM website_service_charges WHERE id = $1`, [claimed.id]);
     throw error;
+  }
+}
+
+async function websiteInvoiceStatus(
+  businessId: string,
+  reference: string,
+): Promise<{ status: string } | null> {
+  const { rows } = await query<{ status: string }>(
+    `SELECT status FROM billing_invoices WHERE business_id = $1 AND reference = $2`,
+    [businessId, reference],
+  );
+  return rows[0] ?? null;
+}
+
+async function ensureWebsiteInvoice(input: {
+  businessId: string;
+  reference: string;
+  amount: number;
+  description: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+}): Promise<void> {
+  const { getPool } = await import("../db");
+  const { allocateInvoiceNumber } = await import("../billing/runtime");
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const number = await allocateInvoiceNumber(client);
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO billing_invoices
+         (business_id, invoice_number, status, subtotal_rial, total_rial, due_at,
+          period_start, period_end, reference, note)
+       VALUES ($1, $2, 'open', $3, $3, now(), $4, $5, $6, $7)
+       ON CONFLICT (business_id, reference) DO NOTHING
+       RETURNING id`,
+      [input.businessId, number, input.amount, input.periodStart, input.periodEnd, input.reference, input.description],
+    );
+    if (rows[0]) {
+      await client.query(
+        `INSERT INTO billing_invoice_lines
+           (invoice_id, kind, description, quantity, unit_amount_rial, amount_rial, sort_order)
+         VALUES ($1, 'addon', $2, 1, $3, $3, 0)`,
+        [rows[0].id, input.description, input.amount],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
 }
 

@@ -16,6 +16,7 @@
  * A per-business rate cap keeps one large campaign from locking out the others.
  */
 import { query, withoutTenantScope, withTenant } from "./db";
+import { appendUsageEvent } from "./billing/runtime";
 import {
   requireMessageProviders,
   reserveMessageSend,
@@ -24,7 +25,7 @@ import {
   type MessageResolvedConfig,
 } from "./messaging-billing";
 import type { MessageRate } from "./messaging-billing-pure";
-import { messageCostRial } from "./messaging-billing-pure";
+import { messageCostRial, smsSegmentCount } from "./messaging-billing-pure";
 import { providerErrorLabel } from "./messaging/provider";
 import { KavenegarMessageProvider } from "./messaging/providers/kavenegar-client";
 import { SmtpMessageProvider } from "./messaging/providers/smtp";
@@ -155,6 +156,19 @@ export async function runBusinessMessageDrain(
       );
       sent += 1;
       sentCost.total += sendResultCost(result, row.channel, row.body, config.rate);
+      const sms = row.channel === "sms";
+      await appendUsageEvent({
+        eventId: String(row.id),
+        businessId,
+        meterKey: sms ? "messaging.sms_segment" : "messaging.email_send",
+        source: "messaging",
+        quantity: sms ? Math.max(1, smsSegmentCount(row.body)) : 1,
+        unit: sms ? "segment" : "send",
+        resource: "message_outbox",
+        resourceId: String(row.id),
+      }).catch((error) => {
+        console.error("message usage event failed:", row.id, error);
+      });
     } else {
       const permanent = !result.retryable;
       const { rowCount } = await query<{ id: string }>(

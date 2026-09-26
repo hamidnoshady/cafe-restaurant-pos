@@ -60,9 +60,10 @@ export const GET = withPlatformScope(async () => {
     ),
     query<{ balance: string; usage: string }>(
       `SELECT
-         (SELECT COALESCE(SUM(amount_rial), 0)::text FROM message_credit_ledger) AS balance,
-         (SELECT COALESCE(SUM(amount_rial), 0)::text FROM message_credit_ledger
-           WHERE kind = 'usage' AND created_at >= date_trunc('month', now())) AS usage`,
+         (SELECT COALESCE(SUM(balance_rial), 0)::text FROM business_wallets) AS balance,
+         (SELECT COALESCE(SUM(amount_rial), 0)::text FROM wallet_ledger
+           WHERE feature_key = 'messaging' AND kind = 'feature_charge'
+             AND created_at >= date_trunc('month', now())) AS usage`,
     ),
     query<{ businesses: string; bytes: string; charges: string }>(
       `SELECT
