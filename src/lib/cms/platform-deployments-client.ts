@@ -15,9 +15,12 @@ export interface ThemePackageRow {
 }
 
 export interface SiteDeploymentStatus {
-  deployment: Record<string, unknown> | null;
-  attention: string | null;
-  packages?: ThemePackageRow[];
+  /** The live or in-progress deployment row from the CMS (`GET …/deployment`). */
+  current: Record<string, unknown> | null;
+  deployments?: Record<string, unknown>[];
+  renderedBy?: string;
+  needsRedeploy?: boolean;
+  attention?: string | null;
 }
 
 function platformConfig(config: CmsConfig): CmsConfig {

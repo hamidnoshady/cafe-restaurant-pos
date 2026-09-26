@@ -831,73 +831,218 @@ export function CmsMediaSection() {
 /* طراحی — theme packages, deployment, theme settings                  */
 /* ------------------------------------------------------------------ */
 
+type ThemePackageOption = { id: string; key: string; name: string; description?: string | null };
+
+type ThemeSettingsField = {
+  key: string;
+  label: string;
+  help: string | null;
+  required: boolean;
+  secret: boolean;
+  set?: boolean;
+  value?: string;
+};
+
+const DEPLOYMENT_STATUS_LABELS: Record<string, string> = {
+  queued: "در صف",
+  creating: "در حال ایجاد",
+  building: "در حال ساخت",
+  verifying: "در حال بررسی",
+  live: "فعال",
+  failed: "ناموفق",
+  stopped: "متوقف",
+};
+
 export function CmsDesignSection() {
   const site = useCmsSite({ withOverview: false });
-  const [packages, setPackages] = useState<{ key: string; name: string }[]>([]);
-  const [deploymentStatus, setDeploymentStatus] = useState<string>("");
+  const [packages, setPackages] = useState<ThemePackageOption[]>([]);
+  const [selectedPackage, setSelectedPackage] = useState("");
+  const [deploymentId, setDeploymentId] = useState<string | null>(null);
+  const [deploymentStatus, setDeploymentStatus] = useState("");
+  const [deployBusy, setDeployBusy] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(true);
-  const [themeFields, setThemeFields] = useState<{ key: string; label: string; value?: string }[]>([]);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [canEditSettings, setCanEditSettings] = useState(false);
+  const [themeFields, setThemeFields] = useState<ThemeSettingsField[]>([]);
+  const [draftValues, setDraftValues] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadDeployment = useCallback(async () => {
+    const { ok, data } = await api<{ current?: { id?: string; status?: string } | null; error?: string }>(
+      "/api/cms/website/design/deployment",
+    );
+    if (!ok) {
+      setError(errorMessageOrRaw(data.error));
+      return;
+    }
+    const current = data.current;
+    const status = String(current?.status ?? "");
+    setDeploymentStatus(status);
+    setDeploymentId(current?.id ? String(current.id) : null);
+    return status;
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    setSettingsLoading(true);
+    const { ok, data } = await api<{
+      settings?: { canEdit: boolean; fields: ThemeSettingsField[] };
+      error?: string;
+    }>("/api/cms/website/design/theme-settings");
+    setSettingsLoading(false);
+    if (!ok || !data.settings) {
+      setError(errorMessageOrRaw(data.error));
+      return;
+    }
+    setError("");
+    setCanEditSettings(data.settings.canEdit);
+    setThemeFields(data.settings.fields ?? []);
+    const next: Record<string, string> = {};
+    for (const field of data.settings.fields ?? []) {
+      if (!field.secret && field.value) next[field.key] = field.value;
+    }
+    setDraftValues(next);
+  }, []);
 
   useEffect(() => {
     if (!site.connection) return;
-    void api<{ packages?: { key: string; name: string }[] }>("/api/cms/website/design/theme-packages").then(({ ok, data }) => {
-      if (ok && data.packages) setPackages(data.packages.map((p) => ({ key: p.key, name: p.name })));
+    void api<{ packages?: ThemePackageOption[] }>("/api/cms/website/design/theme-packages").then(({ ok, data }) => {
+      if (ok && data.packages) {
+        setPackages(data.packages);
+        if (data.packages[0] && !selectedPackage) setSelectedPackage(data.packages[0].id);
+      }
     });
-    void api<{ deployment?: { status?: string } | null }>("/api/cms/website/design/deployment").then(({ ok, data }) => {
-      if (ok) setDeploymentStatus(String(data.deployment?.status ?? "—"));
-    });
-    setSettingsLoading(true);
-    void api<{ settings?: { fields: { key: string; label: string; value?: string }[] } }>(
+    void loadDeployment();
+    void loadSettings();
+  }, [site.connection, loadDeployment, loadSettings, selectedPackage]);
+
+  useEffect(() => {
+    if (!deploymentId) return;
+    const pending = ["queued", "creating", "building", "verifying"];
+    if (!pending.includes(deploymentStatus)) return;
+    pollRef.current = setInterval(() => {
+      void api<{ deployment?: { status?: string }; error?: string }>("/api/cms/website/design/deployment", {
+        method: "POST",
+        body: JSON.stringify({ action: "poll", deployment: deploymentId }),
+      }).then(async ({ ok, data }) => {
+        if (!ok) return;
+        const status = String(data.deployment?.status ?? "");
+        setDeploymentStatus(status);
+        if (!pending.includes(status)) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          await loadDeployment();
+          await loadSettings();
+        }
+      });
+    }, 4000);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [deploymentId, deploymentStatus, loadDeployment, loadSettings]);
+
+  async function startDeploy() {
+    if (!selectedPackage) return;
+    setDeployBusy(true);
+    const { ok, data } = await api<{ deployment?: string; status?: string; error?: string }>(
+      "/api/cms/website/design/deployment",
+      { method: "POST", body: JSON.stringify({ package: selectedPackage }) },
+    );
+    setDeployBusy(false);
+    if (!ok) {
+      toast.error(errorMessageOrRaw(data.error));
+      return;
+    }
+    toast.success("استقرار در صف قرار گرفت.");
+    if (data.deployment) setDeploymentId(data.deployment);
+    if (data.status) setDeploymentStatus(data.status);
+    void loadDeployment();
+  }
+
+  async function saveSettings() {
+    setSettingsSaving(true);
+    const { ok, data } = await api<{ settings?: { fields: ThemeSettingsField[] }; error?: string }>(
       "/api/cms/website/design/theme-settings",
-    ).then(({ ok, data }) => {
-      setSettingsLoading(false);
-      if (ok && data.settings) setThemeFields(data.settings.fields ?? []);
-      else setError(errorMessageOrRaw((data as { error?: string }).error));
-    });
-  }, [site.connection]);
+      { method: "POST", body: JSON.stringify({ values: draftValues }) },
+    );
+    setSettingsSaving(false);
+    if (!ok) {
+      toast.error(errorMessageOrRaw(data.error));
+      return;
+    }
+    toast.success("تنظیمات پوسته ذخیره شد.");
+    if (data.settings) setThemeFields(data.settings.fields ?? []);
+    void loadSettings();
+  }
 
   if (site.loading) return <SectionCardSkeleton rows={4} />;
   if (!site.connection) return <NoSiteYet what="طراحی سایت" />;
 
+  const statusLabel = DEPLOYMENT_STATUS_LABELS[deploymentStatus] ?? (deploymentStatus || "—");
+
   return (
     <div className="space-y-4 sm:space-y-5">
-      <SectionCard title="پوسته و استقرار" description="پوستهٔ فعال و وضعیت استقرار روی لبه (edge).">
+      <SectionCard
+        title="پوسته و استقرار"
+        description="پوستهٔ منتشرشده را انتخاب کنید و با استقرار edge روی دامنهٔ سایت فعال کنید."
+      >
+        <ErrorBox>{error}</ErrorBox>
         <p className="text-sm text-muted-foreground">
-          وضعیت استقرار: <span className="font-medium text-foreground">{deploymentStatus || "—"}</span>
+          وضعیت استقرار: <span className="font-medium text-foreground">{statusLabel}</span>
         </p>
         {packages.length === 0 ? (
           <EmptyState className="mt-3">پوستهٔ منتشرشده‌ای برای این نوع سایت یافت نشد.</EmptyState>
         ) : (
-          <ul className="mt-3 divide-y divide-border">
-            {packages.map((pkg) => (
-              <li key={pkg.key} className="py-2 text-sm">
-                <span className="font-medium text-foreground">{pkg.name}</span>
-                <span dir="ltr" className="ms-2 text-xs text-muted-foreground">
-                  {pkg.key}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-3 space-y-3">
+            <Field label="پوسته">
+              <select
+                className={inputClass}
+                value={selectedPackage}
+                onChange={(event) => setSelectedPackage(event.target.value)}
+              >
+                {packages.map((pkg) => (
+                  <option key={pkg.id} value={pkg.id}>
+                    {pkg.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Button type="button" disabled={deployBusy || !selectedPackage} onClick={() => void startDeploy()}>
+              {deployBusy ? "در حال ثبت…" : "استقرار روی لبه (edge)"}
+            </Button>
+          </div>
         )}
       </SectionCard>
-      <SectionCard title="تنظیمات پوسته" description="متغیرهایی که پوسته از شما می‌پرسد.">
-        <ErrorBox>{error}</ErrorBox>
+      <SectionCard title="تنظیمات پوسته" description="متغیرهایی که پوسته از شما می‌پرسد (مقادیر محرمانه نمایش داده نمی‌شوند).">
         {settingsLoading ? (
           <LoadingSkeleton rows={2} compact label="در حال بارگذاری تنظیمات" />
         ) : themeFields.length === 0 ? (
           <EmptyState>پوستهٔ مستقرشده‌ای با تنظیمات tenant وجود ندارد.</EmptyState>
         ) : (
-          <ul className="divide-y divide-border">
+          <div className="space-y-3">
             {themeFields.map((field) => (
-              <li key={field.key} className="py-2 text-sm">
-                <p className="font-medium text-foreground">{field.label}</p>
-                <p dir="ltr" className="text-xs text-muted-foreground">
-                  {field.value?.trim() ? field.value : "—"}
-                </p>
-              </li>
+              <Field key={field.key} label={field.label} hint={field.help ?? undefined}>
+                {field.secret ? (
+                  <p className="text-sm text-muted-foreground">{field.set ? "مقدار ذخیره شده است" : "هنوز تنظیم نشده"}</p>
+                ) : (
+                  <input
+                    className={inputClass}
+                    value={draftValues[field.key] ?? ""}
+                    disabled={!canEditSettings}
+                    onChange={(event) =>
+                      setDraftValues((current) => ({ ...current, [field.key]: event.target.value }))
+                    }
+                  />
+                )}
+              </Field>
             ))}
-          </ul>
+            {canEditSettings ? (
+              <Button type="button" disabled={settingsSaving} onClick={() => void saveSettings()}>
+                {settingsSaving ? "در حال ذخیره…" : "ذخیره تنظیمات"}
+              </Button>
+            ) : (
+              <InfoBox>فقط مالک سایت می‌تواند تنظیمات پوسته را تغییر دهد.</InfoBox>
+            )}
+          </div>
         )}
       </SectionCard>
     </div>
