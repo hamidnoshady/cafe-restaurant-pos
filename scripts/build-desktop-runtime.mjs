@@ -134,6 +134,10 @@ async function main() {
   // Next's node-file-traced server dependency graph. This contains only the
   // runtime node_modules files reached by production routes, not root deps.
   await cp(standaloneDir, outDir, { recursive: true });
+  // Cloud-only CMS entitlement push is traced into standalone via lazy imports
+  // from subscription changes; the desktop installer never runs that tick and
+  // serves compiled route chunks from .next/server, not this raw src copy.
+  await rm(path.join(outDir, "src/lib/billing/entitlement"), { recursive: true, force: true });
   await mkdir(path.join(outDir, ".next"), { recursive: true });
   await cp(path.join(nextDir, "static"), path.join(outDir, ".next", "static"), { recursive: true });
   await cp(path.join(root, "public"), path.join(outDir, "public"), { recursive: true });
