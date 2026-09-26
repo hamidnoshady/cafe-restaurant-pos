@@ -111,12 +111,27 @@ class POS_Connector_CLI {
 			);
 		}
 
-		if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
-			WP_CLI::log( '' );
-			WP_CLI::warning(
-				__( 'WP-Cron همچنان فعال است و فقط هنگام بازدید از سایت اجرا می‌شود. برای همگام‌سازی دقیق، آن را غیرفعال و یک کرون واقعی تنظیم کنید:', 'pos-accounting-connector' )
+		WP_CLI::log( '' );
+		$examples = pos_connector_system_cron_examples( ABSPATH );
+		if ( pos_connector_uses_system_cron() ) {
+			WP_CLI::log(
+				WP_CLI::colorize(
+					'%G' . __( 'کرون سیستمی (DISABLE_WP_CRON=true) — این خطوط را در crontab سرور قرار دهید:', 'pos-accounting-connector' ) . '%n'
+				)
 			);
-			WP_CLI::log( '  */5 * * * * wp --path=' . ABSPATH . ' pos-connector sync > /dev/null 2>&1' );
+			foreach ( $examples as $line ) {
+				WP_CLI::log( '  ' . $line );
+			}
+			WP_CLI::log(
+				'  # ' . __( 'فقط یکی از دو خط بالا کافی است؛ خط دوم همهٔ رویدادهای سررسید ووکامرس/افزونه را هم اجرا می‌کند.', 'pos-accounting-connector' )
+			);
+		} else {
+			WP_CLI::warning(
+				__( 'WP-Cron فعال است و فقط هنگام بازدید از سایت اجرا می‌شود — برای همگام‌سازی دقیق، DISABLE_WP_CRON را در wp-config.php true کنید و کرون سیستمی بگذارید:', 'pos-accounting-connector' )
+			);
+			foreach ( $examples as $line ) {
+				WP_CLI::log( '  ' . $line );
+			}
 		}
 	}
 

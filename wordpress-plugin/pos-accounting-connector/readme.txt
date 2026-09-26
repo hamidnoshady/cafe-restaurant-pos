@@ -43,8 +43,17 @@ HMAC-SHA256 روی متن دقیق درخواست است. توکن فقط برا
    «فعال‌سازی محلی افزونه» را بزنید و ذخیره کنید.
 4. «آزمایش اتصال از وردپرس» را بزنید.
 5. در بخش «همگام‌سازی» دورهٔ هر بازخوانی را انتخاب کنید. برای اجرای
-   دقیق، یک کرون واقعی تنظیم کنید:
+   دقیق روی فروشگاه‌های کش‌شده یا کم‌بازدید، `DISABLE_WP_CRON` را در
+   `wp-config.php` فعال کنید و یکی از این خطوط را در crontab سرور بگذارید
+   (مسیر سایت را عوض کنید):
+
    `*/5 * * * * wp --path=/path/to/site pos-connector sync`
+
+   یا برای اجرای همهٔ رویدادهای سررسید (بازخوانی سفارش، کاتالوگ، مشتری، محتوا):
+
+   `*/5 * * * * wp --path=/path/to/site cron event run --due-now`
+
+   خروجی `wp pos-connector status` همین راهنما را چاپ می‌کند.
 
 == Frequently Asked Questions ==
 
@@ -65,8 +74,18 @@ HMAC-SHA256 روی متن دقیق درخواست است. توکن فقط برا
 
 = همگام‌سازی هر چند وقت اجرا می‌شود? =
 
-هر پنج دقیقه، از طریق WP-Cron. چون WP-Cron با بازدید سایت اجرا می‌شود، در
-سایت‌های کم‌بازدید بهتر است یک cron واقعی روی `wp-cron.php` تنظیم کنید.
+پنج رویداد زمان‌بندی‌شده دارد: همگام‌سازی سریع (هر ۵ دقیقه)، بازخوانی
+سفارش‌ها، بازخوانی کاتالوگ، و بازخوانی روزانهٔ مشتریان و محتوا. با WP-Cron
+پیش‌فرض وردپرس، این‌ها فقط هنگام بازدید از سایت اجرا می‌شوند. برای تولید،
+`DISABLE_WP_CRON` را true کنید و crontab سیستمی با `wp pos-connector sync` یا
+`wp cron event run --due-now` تنظیم کنید (جزئیات در بخش نصب و پیشخوان «اشوبه»).
+
+= اگر سرور به‌روزرسانی (update.json) در دسترس نباشد? =
+
+افزونه آخرین پاسخ موفق را نگه می‌دارد و خطا را فقط گاهی در گزارش رویدادها
+ثبت می‌کند. برای بازگشت به GitHub، `POS_CONNECTOR_UPDATE_URL` را در
+`pos-accounting-connector.php` خالی بگذارید یا فیلتر `pos_connector_update_url`
+را override کنید. راهنما: `docs/wordpress-plugin-updates.md`.
 
 = اگر سامانهٔ حسابداری در دسترس نباشد چه می‌شود? =
 
@@ -76,8 +95,23 @@ HMAC-SHA256 روی متن دقیق درخواست است. توکن فقط برا
 == Changelog ==
 
 = 1.6.4 =
-* Fix queue table install on activation; fix product attribute payload fatal; self-heal missing queue table.
-* رفع ساخت جدول صف هنگام فعال‌سازی (حذف توضیحات SQL که dbDelta را می‌شکست)، جلوگیری از خطای fatal هنگام ذخیره محصول با ویژگی‌های legacy رشته‌ای، و ساخت خودکار جدول صف پس از به‌روزرسانی.
+* Fix queue table install on activation; fix product attribute payload fatal; self-heal missing queue table; harden hook enqueue; fix WP-CLI cron hints when DISABLE_WP_CRON; reduce update manifest log noise.
+* رفع ساخت جدول صف (dbDelta بدون comment)، payload ویژگی‌های رشته‌ای، self-heal جدول صف، ایمن‌سازی enqueue در هوک‌ها، اصلاح راهنمای crontab در WP-CLI، و کاهش spam لاگ به‌روزرسانی.
+
+== Deploy notes (operators) ==
+
+After upgrading to 1.6.4+ on an existing store:
+
+1. Visit wp-admin once (or run `wp plugin activate pos-accounting-connector`) so
+   the plugin can create `{prefix}pos_connector_queue` if it was missing.
+2. Save a product in WooCommerce admin to confirm no white screen; check
+   «اشوبه ← عیب‌یابی» if sync errors occur (they are logged, not fatal).
+3. If `DISABLE_WP_CRON` is true, confirm system crontab runs
+   `wp pos-connector sync` or `wp cron event run --due-now` every ~5 minutes
+   (`wp pos-connector status` prints example lines).
+4. Self-updates: if `updates.eshobe.app` is unreachable, the plugin stays on
+   the last good version info; fix DNS/host or clear `POS_CONNECTOR_UPDATE_URL`
+   to use GitHub until the manifest is back.
 
 = 1.6.3 =
 * بهبودها و رفع اشکال.

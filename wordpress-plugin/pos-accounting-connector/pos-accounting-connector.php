@@ -129,6 +129,27 @@ function pos_connector_admin_capability() {
 	return pos_connector_woocommerce_active() ? 'manage_woocommerce' : 'manage_options';
 }
 
+/** True when wp-config.php disables WP-Cron (system crontab must drive jobs). */
+function pos_connector_uses_system_cron() {
+	return defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+}
+
+/**
+ * Example crontab lines for production. `pos-connector sync` is the fast lane;
+ * `cron event run --due-now` runs every due WordPress hook (resync sweeps too).
+ *
+ * @param string|null $wp_path Absolute site path; defaults to ABSPATH.
+ * @return string[] Lines suitable for crontab or WP-CLI status output.
+ */
+function pos_connector_system_cron_examples( $wp_path = null ) {
+	$path = null === $wp_path ? ABSPATH : $wp_path;
+	$path = rtrim( wp_normalize_path( $path ), '/' );
+	return array(
+		'*/5 * * * * wp --path=' . $path . ' pos-connector sync > /dev/null 2>&1',
+		'*/5 * * * * wp --path=' . $path . ' cron event run --due-now > /dev/null 2>&1',
+	);
+}
+
 /**
  * Ensure plugin tables exist after activation, updates, or a failed first install.
  *
@@ -155,6 +176,70 @@ function pos_connector_maybe_upgrade_db() {
 	);
 }
 add_action( 'plugins_loaded', 'pos_connector_maybe_upgrade_db', 5 );
+add_action( 'admin_init', 'pos_connector_maybe_upgrade_db', 5 );
+
+function pos_connector_handle_admin_notice_dismiss() {
+	if ( ! is_admin() || ! current_user_can( pos_connector_admin_capability() ) ) {
+		return;
+	}
+	if ( empty( $_GET['pos_connector_dismiss'] ) ) {
+		return;
+	}
+	$key = sanitize_key( wp_unslash( $_GET['pos_connector_dismiss'] ) );
+	if ( ! wp_verify_nonce( isset( $_GET['_pos_dismiss'] ) ? sanitize_text_field( wp_unslash( $_GET['_pos_dismiss'] ) ) : '', 'pos_connector_dismiss_' . $key ) ) {
+		return;
+	}
+	update_user_meta( get_current_user_id(), 'pos_connector_dismiss_' . $key, 1 );
+	wp_safe_redirect( remove_query_arg( array( 'pos_connector_dismiss', '_pos_dismiss' ) ) );
+	exit;
+}
+add_action( 'admin_init', 'pos_connector_handle_admin_notice_dismiss', 20 );
+
+function pos_connector_cron_admin_notice() {
+	if ( ! is_admin() || ! current_user_can( pos_connector_admin_capability() ) ) {
+		return;
+	}
+	$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+	if ( $screen && false === strpos( (string) $screen->id, 'pos-connector' ) ) {
+		return;
+	}
+
+	if ( pos_connector_uses_system_cron() ) {
+		if ( get_user_meta( get_current_user_id(), 'pos_connector_dismiss_system_cron', true ) ) {
+			return;
+		}
+		$dismiss = wp_nonce_url(
+			add_query_arg( 'pos_connector_dismiss', 'system_cron' ),
+			'pos_connector_dismiss_system_cron',
+			'_pos_dismiss'
+		);
+		echo '<div class="notice notice-info is-dismissible"><p><strong>';
+		esc_html_e( 'کرون سیستمی فعال است (DISABLE_WP_CRON).', 'pos-accounting-connector' );
+		echo '</strong> ';
+		esc_html_e( 'WP-Cron اجرا نمی‌شود؛ این خطوط را در crontab سرور قرار دهید:', 'pos-accounting-connector' );
+		echo '</p><pre dir="ltr" style="direction:ltr;text-align:left;overflow:auto;">';
+		echo esc_html( implode( "\n", pos_connector_system_cron_examples() ) );
+		echo '</pre><p>';
+		esc_html_e( 'خط اول فقط همگام‌سازی سریع را اجرا می‌کند؛ خط دوم همهٔ رویدادهای سررسید (بازخوانی سفارش، کاتالوگ، مشتری، محتوا) را هم اجرا می‌کند.', 'pos-accounting-connector' );
+		echo ' <a href="' . esc_url( $dismiss ) . '">' . esc_html__( 'دیگر نشان نده', 'pos-accounting-connector' ) . '</a></p></div>';
+		return;
+	}
+
+	if ( get_user_meta( get_current_user_id(), 'pos_connector_dismiss_wp_cron_warning', true ) ) {
+		return;
+	}
+	$dismiss = wp_nonce_url(
+		add_query_arg( 'pos_connector_dismiss', 'wp_cron_warning' ),
+		'pos_connector_dismiss_wp_cron_warning',
+		'_pos_dismiss'
+	);
+	echo '<div class="notice notice-warning is-dismissible"><p><strong>';
+	esc_html_e( 'WP-Cron فقط با بازدید از سایت اجرا می‌شود.', 'pos-accounting-connector' );
+	echo '</strong> ';
+	esc_html_e( 'برای فروشگاه‌های کش‌شده یا کم‌بازدید، در wp-config.php مقدار DISABLE_WP_CRON را true کنید و کرون سیستمی تنظیم کنید؛ جزئیات در readme افزونه و خروجی wp pos-connector status.', 'pos-accounting-connector' );
+	echo ' <a href="' . esc_url( $dismiss ) . '">' . esc_html__( 'دیگر نشان نده', 'pos-accounting-connector' ) . '</a></p></div>';
+}
+add_action( 'admin_notices', 'pos_connector_cron_admin_notice' );
 
 function pos_connector_queue_install_admin_notice() {
 	if ( ! is_admin() || ! current_user_can( pos_connector_admin_capability() ) ) {

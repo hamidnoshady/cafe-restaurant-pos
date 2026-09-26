@@ -50,3 +50,37 @@ describe("WordPress plugin product attribute payload", () => {
     expect(sync).toContain("on_product_changed");
   });
 });
+
+describe("WordPress plugin production cron hints", () => {
+  const cli = readFileSync(
+    "wordpress-plugin/pos-accounting-connector/includes/class-pos-cli.php",
+    "utf8",
+  );
+
+  it("shows system crontab examples when DISABLE_WP_CRON is true", () => {
+    expect(main).toContain("pos_connector_uses_system_cron");
+    expect(main).toContain("pos_connector_system_cron_examples");
+    expect(cli).toContain("pos_connector_uses_system_cron()");
+    expect(cli).toMatch(
+      /if\s*\(\s*pos_connector_uses_system_cron\(\)\s*\)/,
+    );
+    expect(cli).not.toMatch(
+      /if\s*\(\s*!\s*defined\(\s*'DISABLE_WP_CRON'\s*\)\s*\|\|\s*!\s*DISABLE_WP_CRON\s*\)/,
+    );
+  });
+});
+
+describe("WordPress plugin self-update logging", () => {
+  const updater = readFileSync(
+    "wordpress-plugin/pos-accounting-connector/includes/class-pos-updater.php",
+    "utf8",
+  );
+
+  it("deduplicates manifest failure logs", () => {
+    expect(updater).toContain("maybe_log_update_failure");
+    expect(updater).toContain("CHECK_FAILURE_LOG_INTERVAL");
+    expect(updater).not.toMatch(
+      /if\s*\(\s*''\s*!==\s*\$result\['error'\]\s*\)\s*\{\s*POS_Connector_Log::error\(\s*'update'/,
+    );
+  });
+});

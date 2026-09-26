@@ -354,6 +354,9 @@ class POS_Connector_Admin {
 		?>
 		<section class="pos-panel">
 			<h2><?php esc_html_e( 'به‌روزرسانی افزونه', 'pos-accounting-connector' ); ?></h2>
+			<?php if ( ! empty( $update['error'] ) && empty( $update['ok'] ) ) : ?>
+				<div class="notice notice-info inline"><p><?php echo esc_html( POS_Connector_Updater::explain_error( $update['error'] ) ); ?></p></div>
+			<?php endif; ?>
 			<?php self::card( __( 'نسخه و منبع', 'pos-accounting-connector' ), array( __( 'نسخه نصب‌شده', 'pos-accounting-connector' ) => POS_CONNECTOR_VERSION, __( 'آخرین نسخه', 'pos-accounting-connector' ) => $update['version'] ? $update['version'] : __( 'نامشخص', 'pos-accounting-connector' ), __( 'آخرین بررسی', 'pos-accounting-connector' ) => $update['checked_at'] ? gmdate( 'Y-m-d H:i:s', (int) $update['checked_at'] ) . ' UTC' : '—', __( 'منبع', 'pos-accounting-connector' ) => POS_Connector_Updater::update_url() ? POS_Connector_Updater::update_url() : __( 'GitHub اختیاری/توسعه', 'pos-accounting-connector' ) ) ); ?>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="pos-inline-action">
 				<?php wp_nonce_field( 'pos_connector_check_update' ); ?><input type="hidden" name="action" value="pos_connector_check_update" /><?php submit_button( __( 'بررسی به‌روزرسانی', 'pos-accounting-connector' ), 'secondary', 'submit', false ); ?>
