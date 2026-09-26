@@ -71,7 +71,7 @@ describe("ending a support session", () => {
   it("records the first forwarded address and the user agent", () => {
     const headers = new Headers({ "x-forwarded-for": "203.0.113.9, 10.0.0.1", "user-agent": "UA" });
     expect(supportCloseMeta(headers, "tenant_banner")).toEqual({ channel: "tenant_banner", ipAddress: "203.0.113.9", userAgent: "UA" });
-    expect(supportCloseMeta(new Headers(), "x")).toEqual({ channel: "x", ipAddress: null, userAgent: null });
+    expect(supportCloseMeta(new Headers(), "x")).toEqual({ channel: "x", ipAddress: "unknown", userAgent: null });
   });
 });
 

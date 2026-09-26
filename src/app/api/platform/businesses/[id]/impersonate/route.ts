@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePlatformCapability, withPlatformScope } from "@/lib/platform-auth";
+import { clientIpFrom } from "@/lib/rate-limit";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "@/lib/auth";
 import { businessHost, hostRoutingEnabled, preferredProto, rootDomain } from "@/lib/host";
 import {
@@ -75,7 +76,7 @@ export const POST = withPlatformScope(async (request: NextRequest, ctx: Ctx) => 
       minutes: body.minutes,
       ticketId: body.ticketId,
       allowedCapabilities: mode === "controlled" ? ["printer.test", "connection.test", "sync.retry", "integration.test", "diagnostics.run"] : [],
-      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ipAddress: clientIpFrom(request.headers, 0),
       userAgent: request.headers.get("user-agent"),
     });
 
