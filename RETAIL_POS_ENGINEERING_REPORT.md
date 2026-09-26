@@ -1389,3 +1389,236 @@ files, `retail-invoice-screen.test.tsx` (one added test) and
 item is narrowed by this section, not closed — see §18's own opening line
 and §17's note above for what is still open (no responsive-breakpoint
 sweep, and no audit outside these four files/these two component types).
+
+## 19. Follow-up session — RTL/accessibility audit, round 3: the rest of the retail-invoice flow
+
+§18 covered the payment-way radiogroup. This session's explicit brief widened
+the same audit to the rest of the retail-invoice flow: the issuance screen,
+invoice management view, the detail modal, payment dialogs, filters,
+print-progress UI, and shared components those actually use — still no
+accounting, void/reversal, payment-calculation or permission-semantics
+changes, and still not the café order screen (`pos-screen.tsx`) or its
+exclusive dependents, which stay out of scope.
+
+Scope was resolved by import graph, not by name: `src/app/dashboard/filters.tsx`
+("filters") turned out to be imported only by `pos-screen.tsx` —
+`invoice-management-view.tsx` builds its own filter chips inline — so it is
+out of scope and untouched. `payment-ways.tsx`'s `PaymentWays` UI component is
+likewise only rendered from the café order path (a comment in
+`retail-invoice-screen.tsx` says as much); the retail screen only takes the
+data hook `usePaymentMethods` from that file, so `PaymentWays`'s markup was
+left alone. `retail-invoice-screen.tsx`'s own split-payment UI (the
+`role="radiogroup"` picker fixed in §18, plus the per-row split inputs) *is*
+the in-scope "payment dialogs" surface. `print-job-modal.tsx` is the
+"print-progress UI" (confirmed via `subscribePrintProgress` and its mount in
+`src/app/layout.tsx`).
+
+### 19.1 What was checked and came back clean
+
+- `retail-invoice-detail-modal.tsx` — read in full; correctly built on the
+  shared `Dialog`/`Tabs` primitives, no findings.
+- `invoice-management-view.tsx`'s filter chips, dual table/card responsive
+  layout, `min-h-10`/`min-h-11` touch targets, `aria-busy` on the results
+  region, sr-only search label, `EmptyState`, and CSV export flow — all
+  correct.
+- `ui.tsx`'s `Field`/`inputClass` — `Field` already documents and handles the
+  `<label>`-forwards-clicks-to-its-first-descendant footgun (its `as="div"`
+  escape hatch for multi-control groups); no finding.
+- `retail-invoice-screen.tsx`'s split-payment tender rows, note field, and
+  hold-to-confirm submit control — correct touch targets and labelling.
+
+### 19.2 `page-chrome.tsx`'s `TabBar`/`TabPanel`: another `aria-pressed` tab strip
+
+Same defect class as §18.2/§18.4, a third and fourth time over: the retail
+invoice screen's «صدور فاکتور» / «مدیریت فاکتورها» switcher is built on the
+dashboard-wide `TabBar`/`TabPanel` pair in `page-chrome.tsx` — used by twelve
+files (`printing-manager.tsx`, `template-gallery.tsx`,
+`data-transfer-settings.tsx`, `content-section.tsx`, `project-detail.tsx`,
+`tasks-section.tsx`, `vision-count-dialog.tsx`, `parties-section.tsx`,
+`party-form.tsx`, `retail-invoice-screen.tsx`, `product-add-section.tsx`,
+`section-nav.tsx`), not just this screen. It rendered a `<nav>` of
+`aria-pressed` toggle buttons with a plain `role="region"` panel: visually a
+tab strip, but a screen reader announced it as a navigation landmark of
+buttons, with no roving tabindex and no arrow-key support, and the panel
+carried no relationship back to which tab controlled it.
+
+Fixed to the real `role="tablist"` contract, same helper as every other fix
+in §18/§19: `<nav>` → `<div role="tablist" aria-label={label}>`; each button
+is now `role="tab"` + `aria-selected` + roving `tabIndex` (`0` on the active
+tab, `-1` on the rest) + `aria-controls` pointing at the panel id; `onKeyDown`
+resolves Left/Right/Home/End via `radioMoveForKey`/`radioTargetIndex`
+(`src/lib/radio-keys.ts`) and moves DOM focus with a `buttonsRef` array, same
+pattern as §18.2/§18.4. `TabPanel`'s `role="region"` became `role="tabpanel"`
+with `tabIndex={0}` and `aria-labelledby` pointing at the active tab's id
+(already present before this fix), plus `outline-none` in its className to
+match the shadcn `TabsContent` convention (a focusable panel needs *a* focus
+style story, and the rest of the app already answers that with "none,
+because the tab that opened it just had one").
+
+**Fixing this in `page-chrome.tsx` directly, rather than only in the one
+in-scope caller, needed a small structural change to keep the file buildable.**
+`page-chrome.tsx` is deliberately not a client component — a page shell is
+markup, and Server Components (`src/app/loading.tsx` among them) import it
+directly — but the roving-focus `TabBar` now needs `useRef`, and Next's
+compiler rejects a hook in a file with no `"use client"` directive regardless
+of who ends up rendering it. Rather than force the whole file (and every
+Server-Component caller of `PageShell`/`PageHeader`/`SectionCard`/etc.) onto
+the client bundle, `TabBar`/`TabPanel` moved into a new `tab-bar.tsx` marked
+`"use client"`, and the `cardClass`/`overlayPanelClass`/`popoverPanelClass`
+tokens they (and the rest of page-chrome.tsx) share moved into a
+dependency-free `page-chrome-styles.ts` so the client file and the server-safe
+file can both import `cardClass` without an import cycle. `page-chrome.tsx`
+re-exports all five names, so every existing
+`import { TabBar, TabPanel, cardClass, … } from "../page-chrome"` across the
+codebase is untouched. `src/app/dashboard/design-lint.test.ts`'s
+hand-rolled-shadow/hand-rolled-card-chrome rules — which allowlist
+`page-chrome.tsx` by filename as the one sanctioned place those literal
+Tailwind strings may appear — needed `page-chrome-styles.ts` added to both
+allowlists, since that is now where the strings actually live.
+
+### 19.3 `jalali-date-picker.tsx`: the calendar dialog had no focus management
+
+`JalaliDatePicker` (used by `invoice-management-view.tsx`'s `dateFrom`/
+`dateTo` filters, and a shared, theme-agnostic component usable anywhere else
+in the app) opens a `role="dialog"` popover, which promises the ARIA APG
+Date Picker Dialog pattern's focus contract. It kept none of it:
+
+- Opening the calendar never moved focus into the dialog — a screen-reader
+  user got no indication anything had appeared, discoverable only by
+  continuing to Tab forward and hoping.
+- There was no Tab-trap: tabbing through the panel's controls (prev/next
+  month, day cells, «امروز», «پاک کردن») eventually left the still-open
+  popover for unrelated page content.
+- Closing the popover — Escape, picking a day, «امروز», or «پاک کردن» — never
+  returned focus to the trigger button; only the outside-click path correctly
+  left focus alone (the one case that should *not* steal it back).
+- Separately: the small "×" clear button that sits beside the trigger when a
+  date is set removes itself from the DOM the instant it's clicked (it only
+  renders `clearable && value`, and the click clears `value`). Left focused,
+  that stranded keyboard focus at `<body>` — a real, independent
+  focus-management bug, not part of the dialog contract but the same species
+  of problem.
+
+Fixed: a `useEffect` on `open` focuses the selected (`aria-pressed="true"`)
+or today (`aria-current="date"`) day button, falling back to the panel's
+first button, when the calendar opens. A `close()` helper
+(`useCallback`-memoized so it's a stable effect dependency) closes the
+popover and returns focus to the trigger; it now backs Escape, picking a day,
+«امروز», and «پاک کردن» (the outside-click handler deliberately still calls
+plain `setOpen(false)`, unchanged). A `trapTab` keydown handler on the
+`role="dialog"` div wraps Tab/Shift+Tab between the panel's first and last
+focusable buttons, and the dialog gained `aria-modal="true"` to match the
+trap that now actually exists. The standalone clear button now also calls
+`triggerRef.current?.focus()` before it unmounts itself.
+
+New `jalali-date-picker.test.tsx` (none existed before): focus lands on
+today's cell on open; Escape returns focus to the trigger; picking a day
+closes the calendar and returns focus to the trigger; Tab from the last
+control wraps to the first and Shift+Tab from the first wraps to the last;
+the top clear button doesn't strand focus at `<body>` when it unmounts
+itself.
+
+### 19.4 `invoice-management-view.tsx`: no announcement for the loading/result-count state
+
+The "در حال به‌روزرسانی…" pill (shown mid-refresh while the previous page of
+rows is still on screen) and the pagination summary ("صفحهٔ X از Y — N
+نتیجه") were both purely visual. A screen-reader user changing a filter or
+page got no indication a refresh started, finished, or changed the result
+count. Fixed by adding `role="status" aria-live="polite"` to the loading
+pill's wrapper and `aria-live="polite"` to the summary `<p>`. Two new tests in
+`invoice-management-view.test.tsx`: the summary carries `aria-live="polite"`,
+and triggering a filter change while a request is in flight surfaces a
+`role="status"` region containing "در حال به‌روزرسانی".
+
+### 19.5 `retail-invoice-screen.tsx`: inline error/success text had no ARIA role
+
+Four structurally-identical `previewError` blocks (gold/watch weight-and-price
+preview validation) and the barcode `scanError` line rendered as plain red
+`<p>` text — a screen reader focused elsewhere never learned a scan or a
+preview failed. The `done` success banner ("فاکتور شمارهٔ … ثبت شد") had the
+same gap in the other direction. Fixed: `role="alert"` on all five error
+`<p>`s, `role="status"` on the success banner's wrapping `<div>`. (The shared
+`ErrorBox`/`Alert` component used for the screen's top-level error already
+carried `role="alert"` — that one needed no change.) A new test drives an
+unmatched barcode scan and asserts the resulting message carries
+`role="alert"`; an existing submit-flow test was extended to assert the
+success banner is inside a `role="status"` element.
+
+### 19.6 `print-job-modal.tsx`: print progress was silent to screen readers
+
+The only feedback during a print job (`آماده‌سازی سند` → `ارسال به چاپگر` →
+`به چاپگر ارسال شد`, or a failure) was a checkmark/dot/circle glyph marked
+`aria-hidden` next to plain text — with no live region, none of those phase
+changes were ever announced. Fixed: the step list and the success message
+both sit inside a `role="status" aria-live="polite"` wrapper so every phase
+transition is announced; each step also gained a `sr-only` text equivalent of
+its glyph ("انجام شد"/"در حال انجام"/"در انتظار") since the glyph itself is
+`aria-hidden`; a failure's error line is `role="alert"` inside that same
+region, so it interrupts immediately rather than waiting its turn in the
+polite queue; and the dialog gained a `sr-only` `DialogDescription`
+("وضعیت پیشرفت ارسال سند به چاپگر"), matching how every other dialog in the
+codebase (`pos-screen.tsx`, `table-picker-dialog.tsx`, `customer-picker.tsx`,
+etc.) already supplies one. New `print-job-modal.test.tsx` (none existed
+before) mocks `subscribePrintProgress` and drives all four phases, asserting
+the live region's content and role at each step and that a failure surfaces
+`role="alert"`.
+
+### 19.7 `SearchableSelect`: arrow-key highlight was invisible to screen readers
+
+`SearchableSelect` (used by `retail-invoice-screen.tsx` for its
+customer/product pickers) keeps DOM focus on its filter `<input>` and moves a
+virtual `activeIndex` with the arrow keys — the input never blurs, by design,
+so type-to-filter keeps working. But with no `aria-activedescendant` wiring,
+a screen-reader user arrowing through the list had no way to know which
+option was highlighted; they would hear nothing until they guessed right and
+pressed Enter. `src/app/dashboard/pos/pos-screen.tsx` already solves this
+exact problem for its own product-search combobox
+(`role="combobox"`/`aria-controls`/`aria-activedescendant`), so
+`SearchableSelect` was brought in line with that existing, in-app pattern:
+the filter input gained `role="combobox"`, `aria-expanded`, `aria-controls`
+(pointing at the listbox's new `id`), and `aria-activedescendant` (pointing at
+the active option's new per-option `id`, generated with `useId()`). New
+`searchable-select.test.tsx` (none existed before): `aria-activedescendant`
+points at the first option on open, moves to the next on `ArrowDown`, and
+`Enter` selects whichever option it was pointing at.
+
+### 19.8 Tests added this round
+
+- `page-chrome.test.tsx` (new) — `TabBar`/`TabPanel`: tablist/tab roles and
+  roving tabindex, `tabpanel`/`aria-labelledby` wiring, `ArrowLeft` moving
+  selection+focus (and updating the panel), wraparound plus `Home`/`End`.
+- `jalali-date-picker.test.tsx` (new) — see §19.3.
+- `print-job-modal.test.tsx` (new) — see §19.6.
+- `searchable-select.test.tsx` (new) — see §19.7.
+- `invoice-management-view.test.tsx` (extended) — see §19.4.
+- `retail-invoice-screen.test.tsx` (extended) — see §19.5.
+
+### 19.9 Tool run results
+
+```
+$ NODE_OPTIONS="--max-old-space-size=4096" npx tsc --noEmit   → 0 errors
+$ npx eslint .                                                 → 0 problems
+$ npx vitest run                                               → 435 files / 6047 tests pass
+$ NODE_OPTIONS="--max-old-space-size=6144" npm run build        → succeeds
+```
+
+(`tsc`/`next build`'s type-check step needed a larger heap in this sandbox to
+finish without an OOM abort — unrelated to this session's changes, just this
+machine's default V8 heap being tight for this repo's size.)
+
+**Net diff this section:** `page-chrome.tsx` (TabBar/TabPanel → real tablist,
+plus its `TabBar`/`TabPanel`/style-token definitions extracted to new files);
+`tab-bar.tsx` (new, `"use client"`); `page-chrome-styles.ts` (new);
+`jalali-date-picker.tsx` (dialog focus management); `invoice-management-view.tsx`
+(two `aria-live` regions); `retail-invoice-screen.tsx` (five `role="alert"`/
+`role="status"` additions); `print-job-modal.tsx` (live-region progress
+announcements + dialog description); `searchable-select.tsx`
+(`aria-activedescendant`); `design-lint.test.ts` (two allowlist entries for
+the new `page-chrome-styles.ts`); six test files new or extended (§19.8). No
+accounting, void/reversal, payment-calculation, or permission-semantics
+change anywhere in this diff, and no new feature — every change is markup/ARIA/
+focus-management on existing behavior. §9/§17's RTL/accessibility item is
+narrowed further, not closed: `filters.tsx` and `payment-ways.tsx`'s
+`PaymentWays` UI are confirmed out of scope (café-only), and the café order
+screen itself remains entirely unaudited, as does everything outside the
+retail-invoice flow.

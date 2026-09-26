@@ -281,7 +281,11 @@ export function InvoiceManagementView({ canVoidInvoice = false }: { canVoidInvoi
 
         <div className="relative mt-4" aria-busy={loading}>
           {loading && rows ? (
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center">
+            <div
+              role="status"
+              aria-live="polite"
+              className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center"
+            >
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200">
                 در حال به‌روزرسانی…
               </span>
@@ -376,7 +380,7 @@ export function InvoiceManagementView({ canVoidInvoice = false }: { canVoidInvoi
               </div>
 
               <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground" aria-live="polite">
                   صفحهٔ {toPersianDigits(page)} از {toPersianDigits(pageCount)} — {toPersianDigits(count)} نتیجه
                 </p>
                 <div className="flex w-full items-center gap-2 sm:w-auto">

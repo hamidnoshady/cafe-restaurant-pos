@@ -381,9 +381,34 @@ describe("RetailInvoiceScreen — submitting a sale", () => {
     await flush();
     await flush();
 
-    expect(screen.getByText(/فاکتور شمارهٔ ۴۲/)).toBeTruthy();
+    const banner = screen.getByText(/فاکتور شمارهٔ ۴۲/);
+    expect(banner).toBeTruthy();
+    // The success banner used to be purely visual; a screen-reader user
+    // focused elsewhere on the page never learned the sale went through.
+    expect(banner.closest('[role="status"]')).not.toBe(null);
     await flushUntil(() => expect(toastWarning).toHaveBeenCalled());
     expect(printReceipt).not.toHaveBeenCalled();
+  });
+
+  it("announces an unmatched barcode scan as an alert, not just red text", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("/api/barcodes/lookup")) {
+          return new Response(JSON.stringify({ matches: [] }), { status: 200 });
+        }
+        const [match] = routeFor(url);
+        if (match) return new Response(JSON.stringify(match.body), { status: 200 });
+        return new Response(JSON.stringify({}), { status: 404 });
+      }),
+    );
+
+    render(<RetailInvoiceScreen industry="accessories" />);
+    await flush();
+    await scanAndFlush("UNKNOWN-CODE");
+
+    const message = screen.getByText("بارکدی با این کد یافت نشد.");
+    expect(message.getAttribute("role")).toBe("alert");
   });
 
   it("refuses a credit sale with no customer before it ever reaches the network", async () => {

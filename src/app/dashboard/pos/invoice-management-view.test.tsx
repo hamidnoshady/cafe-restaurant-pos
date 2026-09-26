@@ -115,6 +115,57 @@ describe("InvoiceManagementView filters", () => {
   });
 });
 
+describe("InvoiceManagementView screen-reader announcements", () => {
+  function onePage() {
+    return new Response(
+      JSON.stringify({
+        invoices: [
+          {
+            id: "inv-1",
+            orderNumber: 101,
+            status: "completed",
+            total: 4_500_000,
+            closedAt: new Date().toISOString(),
+            customerName: "مشتری تست",
+            lineCount: 1,
+            paymentMethods: [{ method: "cash", name: "نقدی" }],
+          },
+        ],
+        count: 1,
+        timeZone: "Asia/Tehran",
+      }),
+      { status: 200 },
+    );
+  }
+
+  it("marks the result-count summary as a polite live region, so page/filter changes are announced", async () => {
+    fetchMock.mockImplementation(async () => onePage());
+    render(<InvoiceManagementView />);
+    await flush();
+
+    const summary = screen.getByText(/نتیجه$/);
+    expect(summary.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("announces the mid-refresh state through a role=status live region, not just a visual pill", async () => {
+    render(<InvoiceManagementView />);
+    await flush();
+
+    // A second request is issued for the status filter change, and this
+    // time never resolves — mimicking the window where a refresh is in
+    // flight while the previous rows are still on screen.
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    click("باطل‌شده");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.textContent).toContain("در حال به‌روزرسانی");
+  });
+});
+
 describe("InvoiceManagementView split-payment display", () => {
   function pageWithSplitInvoice() {
     return new Response(

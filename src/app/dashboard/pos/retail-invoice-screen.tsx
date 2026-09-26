@@ -499,7 +499,10 @@ export function RetailInvoiceScreen({
 
       <ErrorBox>{error}</ErrorBox>
       {done ? (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 bg-emerald-50 dark:bg-emerald-500/15 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
+        <div
+          role="status"
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 bg-emerald-50 dark:bg-emerald-500/15 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100"
+        >
           <span>
             فاکتور شمارهٔ {toPersianDigits(done.orderNumber)} به مبلغ {money.format(done.total)} ثبت شد.
           </span>
@@ -1007,7 +1010,7 @@ function BarcodeScanField({
       {scanBusy ? (
         <LoadingSkeleton rows={1} compact className="mt-2" label="در حال جست‌وجوی کالا" />
       ) : null}
-      {scanError ? <p className="mt-2 text-xs leading-5 text-rose-700 dark:text-rose-300">{scanError}</p> : null}
+      {scanError ? <p role="alert" className="mt-2 text-xs leading-5 text-rose-700 dark:text-rose-300">{scanError}</p> : null}
     </Panel>
   );
 }
@@ -1165,7 +1168,7 @@ function GoldLineForm({
         </p>
       ) : null}
       {previewError ? (
-        <p className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
+        <p role="alert" className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
       ) : null}
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
@@ -1276,7 +1279,7 @@ function WatchLineForm({
         </Field>
       </div>
       {previewError ? (
-        <p className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
+        <p role="alert" className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
       ) : null}
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
@@ -1409,7 +1412,7 @@ function AccessoryLineForm({
         </Field>
       </div>
       {previewError ? (
-        <p className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
+        <p role="alert" className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
       ) : null}
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
@@ -1540,7 +1543,7 @@ function CosmeticsLineForm({
         </Field>
       </div>
       {previewError ? (
-        <p className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
+        <p role="alert" className="mb-3 text-xs text-rose-700 dark:text-rose-300">{previewError}</p>
       ) : null}
       {preview ? (
         <p className="mb-3 text-xs leading-6 text-muted-foreground">
