@@ -469,6 +469,135 @@ export const PARTY_REFERENCES: readonly PartyReference[] = [
       "A document filed against the customer. Leaving it on the loser removes it from the surviving file's document list, which is how a signed contract scan goes missing.",
   },
 
+  // -- AEC (issue #799 Wave 2) ----------------------------------------------
+  // Migration 0194's three party columns. All four are `move`: they name a live
+  // counterparty on a project that is still running, and the migration's own
+  // trigger refuses an archived or merged-away party — so leaving one pointing
+  // at the loser would not merely hide it, it would make the row unwritable on
+  // the next edit.
+  {
+    table: "aec_project_profiles",
+    column: "employer_party_id",
+    scope: "business",
+    disposition: "move",
+    reason:
+      "The project's employer — the party the work is being delivered for. A duplicate-record merge must not leave the profile naming an archived company.",
+    preview: true,
+    previewLabel: "کارفرمای پروژه",
+  },
+  {
+    table: "aec_project_profiles",
+    column: "lead_consultant_party_id",
+    scope: "business",
+    disposition: "move",
+    reason:
+      "The lead consultant on the project. Same rule as the employer: the merged-away record must not remain the consultant of record.",
+  },
+  {
+    table: "aec_project_profiles",
+    column: "main_contractor_party_id",
+    scope: "business",
+    disposition: "move",
+    reason:
+      "The main contractor on the project, and a party the profile's trigger requires to be live and unmerged.",
+  },
+  {
+    table: "aec_project_participants",
+    column: "party_id",
+    scope: "business",
+    disposition: "move",
+    reason:
+      "An external participant's role on a project. It belongs to the surviving counterparty, and its trigger refuses a merged-away party just as the profile's does.",
+    preview: true,
+    previewLabel: "طرف‌های پروژه",
+  },
+
+  // -- AEC (issue #799 Wave 4) ----------------------------------------------
+  {
+    table: "aec_boq_items",
+    column: "party_id",
+    scope: "business",
+    disposition: "move",
+    // Only a *draft* revision may be written at all: migration 0196's line
+    // guard refuses an UPDATE to any line of a submitted, approved or
+    // superseded revision, so moving a frozen row would abort the whole merge.
+    // Skipping them is also the right answer rather than a workaround — an
+    // approved estimate is a historical document, and the supplier it named is
+    // part of what was approved. Draft lines do move, because a draft stays
+    // editable and its trigger refuses a merged-away party: leaving one behind
+    // would make the next edit of that line fail.
+    filterSql:
+      "EXISTS (SELECT 1 FROM aec_estimate_versions v WHERE v.id = {t}.version_id AND v.status = 'draft')",
+    reason:
+      "The supplier or contractor a draft measured line is priced against. A draft line moves with the surviving record; a frozen revision keeps the name it was approved with.",
+    preview: true,
+    previewLabel: "ردیف‌های متره (پیش‌نویس)",
+  },
+  {
+    table: "aec_transmittals",
+    column: "sender_party_id",
+    scope: "business",
+    disposition: "move",
+    // Same reasoning as the BOQ line: migration 0197's transmittal guard refuses
+    // any content change to an issued transmittal, so a frozen one keeps the
+    // sender it was issued under. Drafts move, because a draft stays editable
+    // and its trigger refuses a merged-away party.
+    filterSql:
+      "EXISTS (SELECT 1 FROM aec_transmittals tm WHERE tm.id = {t}.id AND tm.status = 'draft')",
+    reason:
+      "The party a draft transmittal says it came from. A draft moves with the surviving record; an issued transmittal keeps the sender named in the record it issued.",
+    preview: true,
+    previewLabel: "برگه‌های ارسال (پیش‌نویس)",
+  },
+  {
+    table: "aec_transmittal_recipients",
+    column: "party_id",
+    scope: "business",
+    disposition: "move",
+    // Only a *draft* transmittal's recipients may be rewritten: 0197 freezes the
+    // recipient rows of an issued one, so moving a frozen row would abort the
+    // merge — and keeping it is right, because that row is also the receipt.
+    filterSql:
+      "EXISTS (SELECT 1 FROM aec_transmittals tm WHERE tm.id = {t}.transmittal_id AND tm.status = 'draft')",
+    reason:
+      "Who a draft transmittal is addressed to. Drafts follow the surviving party; an issued transmittal keeps the recipient it was sent to, because that row is the receipt.",
+    preview: true,
+    previewLabel: "گیرندگان برگهٔ ارسال (پیش‌نویس)",
+  },
+
+  // -- AEC (issue #799 Wave 6) ----------------------------------------------
+  {
+    table: "aec_rfis",
+    column: "responsible_party_id",
+    scope: "business",
+    disposition: "move",
+    // Migration 0198's RFI guard freezes number, subject, question and the
+    // original ask once the RFI leaves draft, and freezes the response once one
+    // exists. The party that owes the answer is *not* among the frozen fields,
+    // so the column always moves with the surviving record — a draft in
+    // progress and an answered RFI alike. Leaving a closed RFI pointing at a
+    // merged-away party would fail the trigger the next time the row is touched
+    // (and the RFI's history would name a party that no longer exists).
+    reason:
+      "The party that owes (or owed) the answer to a project question. Always moves with the surviving record; who was asked is not part of a frozen RFI.",
+    preview: true,
+    previewLabel: "استعلام‌ها (RFI)",
+  },
+  {
+    table: "aec_submittals",
+    column: "responsible_party_id",
+    scope: "business",
+    disposition: "move",
+    // Same shape: 0198's submittal guard freezes the identity of a register
+    // entry once a revision has been submitted, but the responsible party is not
+    // part of that identity — the submitter keeps moving so a live log never
+    // names a party the merge removed.
+    reason:
+      "The party answerable for a submittal. Always moves with the surviving record; it is not part of what a submitted revision froze.",
+    preview: true,
+    previewLabel: "سابمیتال‌ها",
+  },
+
   // -- Historical / audit: deliberately NOT moved ---------------------------
   {
     table: "crm_merges",

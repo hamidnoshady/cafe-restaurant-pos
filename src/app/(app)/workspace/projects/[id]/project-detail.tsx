@@ -32,6 +32,7 @@ import { api, ErrorBox, PrimaryButton, SecondaryButton } from "@/app/dashboard/u
 import { useMoney } from "@/components/money/money-context";
 import { WORKSPACE_MODULE_HOME } from "@/lib/app-routes";
 import { toPersianDigits } from "@/lib/digits";
+import { aecProjectTabs, type ProjectTab } from "@/lib/aec-cockpit";
 import {
   PHASE_STATUS_LABELS,
   WORKSPACE_ROLE_LABELS,
@@ -56,6 +57,11 @@ import { TeamsSection } from "../../teams-section";
 import { ApprovalsSection } from "../../approvals-section";
 import { CalendarSection } from "../../calendar-section";
 import { ProjectAssistantPanels } from "./project-assistant-panels";
+import { AecParticipantsTab, AecProjectProfileCard } from "./aec-panels";
+import { BoqTab } from "./boq-panel";
+import { AecDocumentsTab } from "./documents-panel";
+import { AecRfisTab } from "./rfis-panel";
+import { AecSubmittalsTab } from "./submittals-panel";
 
 interface ProjectDetail {
   id: string;
@@ -106,29 +112,19 @@ interface Activity {
   createdAt: string;
 }
 
-const TABS = [
-  { key: "record", label: "پرونده" },
-  { key: "tasks", label: "وظایف" },
-  { key: "documents", label: "اسناد" },
-  { key: "contracts", label: "قراردادها" },
-  { key: "team", label: "تیم" },
-  { key: "approvals", label: "تأییدها" },
-  { key: "calendar", label: "تقویم" },
-  { key: "assistant", label: "دستیار" },
-] as const;
-
-type TabKey = (typeof TABS)[number]["key"];
 
 export function ProjectDetail({
   projectId,
   canManage,
   canManageContracts,
   canApprove,
+  canIssueDocuments,
 }: {
   projectId: string;
   canManage: boolean;
   canManageContracts: boolean;
   canApprove: boolean;
+  canIssueDocuments: boolean;
 }) {
   const money = useMoney();
   const lookups = useWorkspaceLookups();
@@ -139,7 +135,7 @@ export function ProjectDetail({
   const [role, setRole] = useState<WorkspaceRole | null>(null);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
-  const [tab, setTab] = useState<TabKey>("record");
+  const [tab, setTab] = useState<ProjectTab["key"]>("record");
 
   const load = useCallback(() => {
     api<{
@@ -187,6 +183,14 @@ export function ProjectDetail({
 
   const percent = completionPercent(project.doneTaskCount, project.taskCount);
 
+  // Issue #799 §21 — the cockpit. For an AEC tenant the bar gains
+  // «طرف‌های پروژه» and the existing tabs take their industry names; for every
+  // other tenant `aecProjectTabs(null)` returns exactly the bar this page had,
+  // so nothing about the other nine industries changes.
+  const tabs = aecProjectTabs(
+    lookups.aecCapabilities ? { capabilities: lookups.aecCapabilities } : null,
+  );
+
   return (
     <div className="flex flex-col gap-4">
       {error ? <ErrorBox>{error}</ErrorBox> : null}
@@ -226,7 +230,7 @@ export function ProjectDetail({
       <TabBar
         idPrefix="workspace-project"
         label="بخش‌های پروژه"
-        tabs={TABS.map((item) => ({ key: item.key, label: item.label }))}
+        tabs={tabs.map((item) => ({ key: item.key, label: item.label }))}
         active={tab}
         onChange={setTab}
       />
@@ -234,6 +238,10 @@ export function ProjectDetail({
       <TabPanel idPrefix="workspace-project" active={tab}>
         {tab === "record" ? (
         <div className="flex flex-col gap-4">
+          {lookups.aecCapabilities ? (
+            <AecProjectProfileCard projectId={projectId} canManage={canManage} lookups={lookups} />
+          ) : null}
+
           <SectionCard title="پروندهٔ پروژه" description={project.description || undefined}>
             <dl className="grid gap-3 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
               <Fact label="مشتری / طرف حساب" value={project.partyName ?? "—"} />
@@ -334,13 +342,30 @@ export function ProjectDetail({
           <TasksSection lookups={lookups} canManage={canManage} projectId={projectId} />
         ) : null}
 
+        {/* Issue #799 §9 — the drawing register. For an AEC business with
+            document control the tab opens with the register and the
+            transmittals, and the ordinary document list follows underneath:
+            the register *references* documents rather than replacing them, so
+            files that are not drawings still have their own screen here.
+            `document_control` is what decides — an office whose profile leaves
+            it off sees exactly the documents tab it had before. */}
         {tab === "documents" ? (
-          <DocumentsSection
-            lookups={lookups}
-            canManage={canManage}
-            canRequestApproval={canManage}
-            projectId={projectId}
-          />
+          <div className="flex flex-col gap-4">
+            {lookups.aecCapabilities?.includes("document_control") ? (
+              <AecDocumentsTab
+                projectId={projectId}
+                canManage={canManage}
+                canIssueDocuments={canIssueDocuments}
+                lookups={lookups}
+              />
+            ) : null}
+            <DocumentsSection
+              lookups={lookups}
+              canManage={canManage}
+              canRequestApproval={canManage}
+              projectId={projectId}
+            />
+          </div>
         ) : null}
 
         {/* The contracts register filters itself by project through its own
@@ -351,6 +376,42 @@ export function ProjectDetail({
             lookups={lookups}
             canManageContracts={canManageContracts}
             canRequestApproval={canManage}
+          />
+        ) : null}
+
+        {tab === "participants" ? (
+          <AecParticipantsTab projectId={projectId} canManage={canManage} lookups={lookups} />
+        ) : null}
+
+        {/* Issue #799 §7 — the project's priced work. Mounted only when the tab
+            is in the bar, which `aecProjectTabs` decides from the business's own
+            `boq` capability: an office that does not estimate neither sees the
+            tab nor mounts the component that would fetch its data. */}
+        {tab === "boq" ? (
+          <BoqTab
+            projectId={projectId}
+            canManage={canManage}
+            canApprove={canApprove}
+            lookups={lookups}
+          />
+        ) : null}
+
+        {/* Issue #799 §10 — the RFI register. Every AEC shape has it (an RFI is
+            a question asked of a client, not a capability), so the tab exists
+            wherever the business is AEC at all. */}
+        {tab === "rfis" ? (
+          <AecRfisTab projectId={projectId} canManage={canManage} lookups={lookups} />
+        ) : null}
+
+        {/* Issue #799 §11 — the submittal log, gated by `document_control` in
+            the tab bar itself: it is a document cycle pointing at §9's register,
+            and reviewing is `workspace.approve`, not ordinary edit rights. */}
+        {tab === "submittals" ? (
+          <AecSubmittalsTab
+            projectId={projectId}
+            canManage={canManage}
+            canApprove={canApprove}
+            lookups={lookups}
           />
         ) : null}
 
